@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Tests\Integration;
+namespace SlyTab\Tests\Integration;
 
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Slim\App as SlimApp;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Factory\StreamFactory;
-use SlySplit\App;
-use SlySplit\Db\Db;
-use SlySplit\Db\Migrator;
+use SlyTab\App;
+use SlyTab\Db\Db;
+use SlyTab\Db\Migrator;
 
 /**
- * End-to-end auth flow against a real MySQL (slysplit_test — rebuilt fresh
+ * End-to-end auth flow against a real MySQL (slytab_test — rebuilt fresh
  * each run by the bootstrap-selected test database). Skips cleanly when no
  * database is reachable (e.g. a checkout without the dev environment).
  */

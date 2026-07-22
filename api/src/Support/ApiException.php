@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Support;
+namespace SlyTab\Support;
 
 /**
  * A request-level failure that maps to the error envelope

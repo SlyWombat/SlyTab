@@ -15,13 +15,13 @@ jobs:
         with:
           node-version: 22
       - name: Install (core + web workspaces)
-        run: npm install --no-audit --no-fund -w @slysplit/core -w @slysplit/web
+        run: npm install --no-audit --no-fund -w @slytab/core -w @slytab/web
       - name: Typecheck core
-        run: npm run typecheck -w @slysplit/core
+        run: npm run typecheck -w @slytab/core
       - name: Test core (includes shared vectors)
-        run: npm run test -w @slysplit/core
+        run: npm run test -w @slytab/core
       - name: Typecheck + build web
-        run: npm run build -w @slysplit/web
+        run: npm run build -w @slytab/web
 
   php:
     name: PHP (api + parity gate + MySQL integration)
@@ -31,8 +31,8 @@ jobs:
         image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: ci
-          MYSQL_DATABASE: slysplit_test
-          MYSQL_USER: slysplit
+          MYSQL_DATABASE: slytab_test
+          MYSQL_USER: slytab
           MYSQL_PASSWORD: ci
         ports:
           - 3306:3306
@@ -44,9 +44,9 @@ jobs:
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: '3306'
-      DB_NAME: slysplit_test
-      DB_TEST_NAME: slysplit_test
-      DB_USER: slysplit
+      DB_NAME: slytab_test
+      DB_TEST_NAME: slytab_test
+      DB_USER: slytab
       DB_PASS: ci
       SESSION_PEPPER: ci-only-pepper
     steps:

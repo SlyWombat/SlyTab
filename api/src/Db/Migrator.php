@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Db;
+namespace SlyTab\Db;
 
 use PDO;
 

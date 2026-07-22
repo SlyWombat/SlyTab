@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
-import { formatMinor, tokens } from '@slysplit/core';
+import { formatMinor, tokens } from '@slytab/core';
 
 const c = tokens.color.dark;
 
@@ -12,7 +12,7 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>
-        Sly<Text style={{ color: c.text2 }}>Split</Text>
+        Sly<Text style={{ color: c.text2 }}>Tab</Text>
       </Text>
       <Text style={styles.tagline}>
         Split expenses with the people you actually share life with.

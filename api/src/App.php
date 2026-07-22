@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace SlySplit;
+namespace SlyTab;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App as SlimApp;
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
-use SlySplit\Db\Db;
-use SlySplit\Middleware\RequireAuth;
-use SlySplit\Services\AuthService;
-use SlySplit\Support\ApiException;
-use SlySplit\Support\Env;
+use SlyTab\Db\Db;
+use SlyTab\Middleware\RequireAuth;
+use SlyTab\Services\AuthService;
+use SlyTab\Support\ApiException;
+use SlyTab\Support\Env;
 
 /**
  * Application factory — used by public/index.php and by integration tests
@@ -49,7 +49,7 @@ final class App
                         [500, 'INTERNAL', 'something went wrong on our side'],
                 };
                 if ($status === 500) {
-                    error_log('slysplit-api: ' . $e::class . ': ' . $e->getMessage());
+                    error_log('slytab-api: ' . $e::class . ': ' . $e->getMessage());
                 }
                 return self::json($app->getResponseFactory()->createResponse($status), [
                     'error' => ['code' => $code, 'message' => $message],
@@ -68,7 +68,7 @@ final class App
             $g->get('/health', function (Request $request, Response $response): Response {
                 return self::json($response, [
                     'status' => 'ok',
-                    'service' => 'slysplit-api',
+                    'service' => 'slytab-api',
                     'schemaVersion' => 1,
                 ]);
             });

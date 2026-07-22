@@ -1,4 +1,4 @@
-# SlySplit — Local Development Environment
+# SlyTab — Local Development Environment
 
 **Date:** 2026-07-22 · **Status:** Set up and verified on the dev machine
 (WSL2 + Docker Desktop) and kdocker2.
@@ -13,7 +13,7 @@ MySQL runs on the always-on Docker host. This mirrors production shape
 |---|---|---|
 | Node 22 / npm | WSL native | already installed |
 | PHP 8.2 + Composer | Local Docker Desktop containers (`php:8.2-cli`, `composer:2`) | wrapped by npm scripts, no local install |
-| MySQL 8.4 | `slysplit-mysql` container on **kdocker2** (`192.168.10.11:3306`) | persistent volume `slysplit-mysql-data`, `--restart unless-stopped` |
+| MySQL 8.4 | `slytab-mysql` container on **kdocker2** (`192.168.10.11:3306`) | persistent volume `slytab-mysql-data`, `--restart unless-stopped` |
 | Credentials | gitignored root `.env` (`DB_*`) | generated at container creation; chmod 600 |
 
 kdocker2 is reachable as `ssh kdocker2` from the dev machine. If direct SSH
@@ -34,7 +34,7 @@ to the containerized API transparently.
 
 ## Database
 
-- Dev database: `slysplit_dev`, user `slysplit` (password in `.env`;
+- Dev database: `slytab_dev`, user `slytab` (password in `.env`;
   root password in `.env` as `DB_ROOT_PASS`).
 - Schema v1 (`api/src/Db/migrations/001_init.sql`) is applied and verified —
   13 tables, `schema_migrations` at version 1.
@@ -42,14 +42,14 @@ to the containerized API transparently.
 
 ```bash
 set -a; . ./.env; set +a
-ssh kdocker2 "docker exec -i -e MYSQL_PWD='$DB_PASS' slysplit-mysql \
-  mysql -uslysplit slysplit_dev" < api/src/Db/migrations/NNN_name.sql
+ssh kdocker2 "docker exec -i -e MYSQL_PWD='$DB_PASS' slytab-mysql \
+  mysql -uslytab slytab_dev" < api/src/Db/migrations/NNN_name.sql
 ```
 
 - Reset the dev database completely:
 
 ```bash
-ssh kdocker2 'docker rm -f slysplit-mysql && docker volume rm slysplit-mysql-data'
+ssh kdocker2 'docker rm -f slytab-mysql && docker volume rm slytab-mysql-data'
 # then re-create the container (new passwords → update .env) and re-apply
 # migrations in order
 ```
@@ -59,7 +59,7 @@ ssh kdocker2 'docker rm -f slysplit-mysql && docker volume rm slysplit-mysql-dat
 - `mysql:8.4` container up on kdocker2, schema v1 applied.
 - `composer install` + PHPUnit green in `php:8.2-cli` (17 tests — the same
   shared vectors Vitest runs).
-- `GET /api/v1/health` → `{"status":"ok","service":"slysplit-api","schemaVersion":1}`
+- `GET /api/v1/health` → `{"status":"ok","service":"slytab-api","schemaVersion":1}`
   from the containerized Slim app.
 
 ## Notes & gotchas

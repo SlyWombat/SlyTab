@@ -9,8 +9,8 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-use SlySplit\Db\Db;
-use SlySplit\Db\Migrator;
+use SlyTab\Db\Db;
+use SlyTab\Db\Migrator;
 
 $ran = (new Migrator(Db::pdo()))->migrate();
 echo $ran === []

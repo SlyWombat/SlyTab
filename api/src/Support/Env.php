@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Support;
+namespace SlyTab\Support;
 
 /**
  * Configuration bootstrap. Resolution order:

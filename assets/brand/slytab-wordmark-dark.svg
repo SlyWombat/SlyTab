@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" width="300" height="64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="240" height="64">
   <!-- Wordmark for dark backgrounds. Requires Space Grotesk installed or
        @font-face'd; falls back to the system sans otherwise. -->
   <defs>
     <mask id="seam-wm-d">
-      <rect width="300" height="64" fill="#fff"/>
+      <rect width="240" height="64" fill="#fff"/>
       <path d="M32 5.3 A13.3 13.3 0 0 0 32 32 A13.3 13.3 0 0 1 32 58.7"
             fill="none" stroke="#000" stroke-width="3.3" stroke-linecap="round"/>
     </mask>
@@ -15,5 +15,5 @@
           fill="#34c98e"/>
   </g>
   <text x="76" y="43" font-family="'Space Grotesk', 'Segoe UI', system-ui, sans-serif"
-        font-size="34" font-weight="600" letter-spacing="-0.5" fill="#eef2fa">Sly<tspan fill="#a9b4cc">Split</tspan></text>
+        font-size="34" font-weight="600" letter-spacing="-0.5" fill="#eef2fa">Sly<tspan fill="#a9b4cc">Tab</tspan></text>
 </svg>

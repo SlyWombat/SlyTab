@@ -1,13 +1,13 @@
-# SlySplit
+# SlyTab
 
 **Split expenses with the people you actually share life with.**
 
-SlySplit tracks who paid for what and who owes whom — for households, trips,
+SlyTab tracks who paid for what and who owes whom — for households, trips,
 and friend groups. Snap a receipt and let it itemize itself, split in any
 currency, and settle up with a single tap. No ads, no analytics, no selling
 your data.
 
-🌐 Web app: [electricrv.ca/slysplit](https://electricrv.ca/slysplit)
+🌐 Web app: [electricrv.ca/slytab](https://electricrv.ca/slytab)
 📱 iOS and Android apps built with React Native + Expo.
 
 ## Features
@@ -16,7 +16,7 @@ your data.
   a two-person group; balances roll up the same way everywhere.
 - **Any split you need** — equal, exact amounts, shares, percentages, or
   adjustments ("+$10 because Dave got the steak").
-- **Receipt scanning** — photograph a receipt; SlySplit itemizes it with the
+- **Receipt scanning** — photograph a receipt; SlyTab itemizes it with the
   Claude API and lets you drag items to people. Tax and tip prorate
   automatically.
 - **Multi-currency** — every expense carries its own currency; balances convert
@@ -24,7 +24,7 @@ your data.
   date (ECB daily rates).
 - **Debt simplification** — five people, twenty expenses, minimum number of
   transfers to settle everyone up.
-- **Settle up without a middleman** — SlySplit never holds money. It records
+- **Settle up without a middleman** — SlyTab never holds money. It records
   settlements and deep-links to how each person likes to be paid: Interac
   e-Transfer, PayPal.Me, or Venmo.
 - **Private by design** — no telemetry, no analytics SDKs, no third-party
@@ -52,8 +52,8 @@ only external service call, made server-side to the Claude API.
 ## Run it locally
 
 ```bash
-git clone https://github.com/SlyWombat/SlySplit.git
-cd SlySplit
+git clone https://github.com/SlyWombat/SlyTab.git
+cd SlyTab
 npm ci && composer install -d api
 npm run dev          # PHP API (php -S :8100) + web app (:8000)
 npm run dev:mobile   # Expo dev server for the mobile app

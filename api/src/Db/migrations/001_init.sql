@@ -1,4 +1,4 @@
--- 001_init — SlySplit schema v1 (docs/architecture.md §4).
+-- 001_init — SlyTab schema v1 (docs/architecture.md §4).
 -- MySQL 8 / MariaDB 10.6+. All money columns are BIGINT minor units in the
 -- row's own currency; converted values are derived via fx_rate, never stored.
 

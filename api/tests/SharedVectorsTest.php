@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Tests;
+namespace SlyTab\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use SlySplit\Domain\Simplify;
-use SlySplit\Domain\Split;
+use SlyTab\Domain\Simplify;
+use SlyTab\Domain\Split;
 
 /**
  * The cross-language parity gate (architecture §3): these are the SAME

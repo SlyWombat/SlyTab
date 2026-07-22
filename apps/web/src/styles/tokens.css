@@ -1,5 +1,5 @@
 /* Ledger design tokens — generated from docs/design/DESIGN.md (source of
- * truth). Mobile consumes the same values via @slysplit/core tokens.ts. */
+ * truth). Mobile consumes the same values via @slytab/core tokens.ts. */
 
 :root {
   /* Surfaces (dark — the default) */

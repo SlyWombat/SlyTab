@@ -1,4 +1,4 @@
-# SlySplit — UI Requirements
+# SlyTab — UI Requirements
 
 **Date:** 2026-07-22 · **Status:** v1.0 screen inventory. Companion to
 [DESIGN.md](DESIGN.md) (tokens/components) and
@@ -14,9 +14,9 @@ Mobile: bottom tab bar with four tabs — **Home**, **Groups**, **Activity**,
 screens. Web: left sidebar with the same four destinations; FAB becomes a
 persistent "New expense" button in the header.
 
-Deep links: `slysplit://join/<token>` (and
-`electricrv.ca/slysplit/join/<token>`) → Join Group screen;
-`slysplit://expense/<id>` → Expense Detail (used by push notifications).
+Deep links: `slytab://join/<token>` (and
+`electricrv.ca/slytab/join/<token>`) → Join Group screen;
+`slytab://expense/<id>` → Expense Detail (used by push notifications).
 
 ## 2. Screen inventory
 

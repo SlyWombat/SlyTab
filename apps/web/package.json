@@ -1,5 +1,5 @@
 {
-  "name": "@slysplit/web",
+  "name": "@slytab/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@slysplit/core": "*",
+    "@slytab/core": "*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

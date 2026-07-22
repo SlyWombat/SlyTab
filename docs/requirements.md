@@ -1,10 +1,10 @@
-# SlySplit — Requirements
+# SlyTab — Requirements
 
 **Version:** 1.0 draft · **Date:** 2026-07-22 · **Status:** Approved scope
 
 ## 1. Product summary
 
-SlySplit is a shared-expense tracker for personal use: family, couples, and
+SlyTab is a shared-expense tracker for personal use: family, couples, and
 friend groups. It answers one question well — *who owes whom, and how much* —
 and makes the two surrounding chores painless: getting expenses in (receipt
 scanning, fast entry) and getting money moving (simplified debts, payment
@@ -118,7 +118,7 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 
 ### 2.7 Settling up (payment integration)
 
-- **FR-7.1 (MUST)** SlySplit records settlements ("Alice paid Dave $40 on
+- **FR-7.1 (MUST)** SlyTab records settlements ("Alice paid Dave $40 on
   July 3") which offset balances exactly like expenses do.
 - **FR-7.2 (MUST)** Payment deep links, generated from the payee's saved
   handles: Interac e-Transfer (mailto with amount/memo prefilled), PayPal.Me
@@ -149,7 +149,7 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **NFR-1 Privacy.** No analytics/telemetry SDKs anywhere (family
   convention). The only third-party calls are: Claude API (receipt images,
   server-side), frankfurter (currency codes only), and Expo push (device
-  tokens). A privacy policy at `electricrv.ca/slysplit/marketing/privacy/`
+  tokens). A privacy policy at `electricrv.ca/slytab/marketing/privacy/`
   names Electric RV (Ontario, Canada) as data controller, per PIPEDA.
 - **NFR-2 Security.** All traffic over HTTPS. Argon2id password hashing,
   opaque session tokens (hashed at rest), per-group authorization checks on

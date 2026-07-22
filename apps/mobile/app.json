@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "SlySplit",
-    "slug": "slysplit",
+    "name": "SlyTab",
+    "slug": "slytab",
     "version": "0.1.0",
-    "scheme": "slysplit",
+    "scheme": "slytab",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0c1220",
     "ios": {
-      "bundleIdentifier": "ca.electricrv.slysplit",
+      "bundleIdentifier": "ca.electricrv.slytab",
       "supportsTablet": false
     },
     "android": {
-      "package": "com.slywombat.slysplit",
+      "package": "com.slywombat.slytab",
       "adaptiveIcon": {
         "backgroundColor": "#0c1220"
       }

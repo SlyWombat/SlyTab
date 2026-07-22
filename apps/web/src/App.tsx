@@ -1,9 +1,9 @@
-import { formatMinor } from '@slysplit/core';
+import { formatMinor } from '@slytab/core';
 
-/** Split-coin mark (assets/brand/slysplit-mark.svg, inlined). */
+/** Split-coin mark (assets/brand/slytab-mark.svg, inlined). */
 function Mark({ size = 56 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 96 96" width={size} height={size} role="img" aria-label="SlySplit">
+    <svg viewBox="0 0 96 96" width={size} height={size} role="img" aria-label="SlyTab">
       <defs>
         <mask id="seam">
           <rect width="96" height="96" fill="#fff" />
@@ -37,7 +37,7 @@ export function App() {
     >
       <Mark />
       <h1 style={{ font: '600 34px/1.2 var(--ss-font-display)', letterSpacing: '-0.02em' }}>
-        Sly<span style={{ color: 'var(--ss-text-2)' }}>Split</span>
+        Sly<span style={{ color: 'var(--ss-text-2)' }}>Tab</span>
       </h1>
       <p style={{ color: 'var(--ss-text-2)', maxWidth: '38ch' }}>
         Split expenses with the people you actually share life with.

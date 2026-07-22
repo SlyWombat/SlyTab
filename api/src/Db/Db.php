@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Db;
+namespace SlyTab\Db;
 
 use PDO;
-use SlySplit\Support\Env;
+use SlyTab\Support\Env;
 
 /** Lazy PDO holder. Configuration comes from Env (see Support\Env). */
 final class Db

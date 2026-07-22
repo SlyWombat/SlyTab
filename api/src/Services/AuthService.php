@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Services;
+namespace SlyTab\Services;
 
 use PDO;
-use SlySplit\Db\Db;
-use SlySplit\Support\ApiException;
-use SlySplit\Support\Env;
-use SlySplit\Support\Ulid;
+use SlyTab\Db\Db;
+use SlyTab\Support\ApiException;
+use SlyTab\Support\Env;
+use SlyTab\Support\Ulid;
 
 /**
  * Accounts and sessions — FR-1.x. Passwords are argon2id; session tokens

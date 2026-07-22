@@ -1,6 +1,6 @@
 {
-    "name": "slywombat/slysplit-api",
-    "description": "SlySplit REST API — PHP 8.2 + MySQL on cPanel",
+    "name": "slywombat/slytab-api",
+    "description": "SlyTab REST API — PHP 8.2 + MySQL on cPanel",
     "type": "project",
     "license": "Apache-2.0",
     "require": {
@@ -13,12 +13,12 @@
     },
     "autoload": {
         "psr-4": {
-            "SlySplit\\": "src/"
+            "SlyTab\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "SlySplit\\Tests\\": "tests/"
+            "SlyTab\\Tests\\": "tests/"
         }
     },
     "scripts": {

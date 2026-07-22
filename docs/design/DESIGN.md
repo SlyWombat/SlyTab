@@ -1,11 +1,11 @@
-# SlySplit — Design Language & Tokens
+# SlyTab — Design Language & Tokens
 
 **Date:** 2026-07-22 · **Status:** Source of truth for `tokens.css` (web) and
 `packages/core/src/tokens.ts` (mobile). Change tokens here first.
 
 ## 1. Design language: "Ledger"
 
-SlySplit's visual language is called **Ledger** — a money app that feels like
+SlyTab's visual language is called **Ledger** — a money app that feels like
 a well-kept notebook, not a bank. It inherits the family DNA (CaseMaker's
 "Industrial Parametric": dark navy surfaces, token-first, no CSS framework,
 Space Grotesk / Inter / JetBrains Mono) and softens it for a consumer app
@@ -40,10 +40,10 @@ Assets (source of truth, all SVG, in `assets/brand/`):
 
 | File | Use |
 |---|---|
-| `slysplit-mark.svg` | Standalone mark, transparent seam — works on any background |
-| `slysplit-icon.svg` | 1024×1024 app-icon master (navy ground, 224px corner radius). Export PNG sets for iOS/Android/favicon from this. |
-| `slysplit-wordmark-dark.svg` | Mark + "SlySplit" set in Space Grotesk 600, for dark grounds |
-| `slysplit-wordmark-light.svg` | Same, colour-adjusted for light grounds (AA-safe darkened hues) |
+| `slytab-mark.svg` | Standalone mark, transparent seam — works on any background |
+| `slytab-icon.svg` | 1024×1024 app-icon master (navy ground, 224px corner radius). Export PNG sets for iOS/Android/favicon from this. |
+| `slytab-wordmark-dark.svg` | Mark + "SlyTab" set in Space Grotesk 600, for dark grounds |
+| `slytab-wordmark-light.svg` | Same, colour-adjusted for light grounds (AA-safe darkened hues) |
 
 Usage rules:
 

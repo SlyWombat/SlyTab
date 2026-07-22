@@ -1,5 +1,5 @@
 /**
- * All money in SlySplit is integer minor units (cents) in a named currency.
+ * All money in SlyTab is integer minor units (cents) in a named currency.
  * Floats never carry money — they may only appear transiently inside
  * conversion, immediately rounded back to an integer.
  */

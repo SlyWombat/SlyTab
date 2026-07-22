@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Middleware;
+namespace SlyTab\Middleware;
 
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use SlySplit\Services\AuthService;
-use SlySplit\Support\ApiException;
+use SlyTab\Services\AuthService;
+use SlyTab\Support\ApiException;
 
 /**
  * Bearer-token authentication. On success the request carries a `user`

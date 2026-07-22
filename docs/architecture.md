@@ -1,10 +1,10 @@
-# SlySplit — Architecture
+# SlyTab — Architecture
 
 **Date:** 2026-07-22 · **Status:** Design approved, pre-implementation
 
 ## 1. Overview
 
-SlySplit departs from CaseMaker/SlyLED in one important way: expense sharing
+SlyTab departs from CaseMaker/SlyLED in one important way: expense sharing
 is inherently **multi-user shared state**, so it needs a backend. Everything
 else follows family conventions — TypeScript strict, token-first CSS, cPanel
 hosting at a path-based URL, gitignored `.env` secrets, no telemetry.
@@ -19,7 +19,7 @@ hosting at a path-based URL, gitignored `.env` secrets, no telemetry.
        └────────────────┼───────────────┘
                 ┌───────┴────────┐
                 │   PHP 8 API    │  Slim 4, native PHP on cPanel
-                │  api/          │  electricrv.ca/slysplit/api
+                │  api/          │  electricrv.ca/slytab/api
                 ├────────────────┤
                 │ MySQL/MariaDB  │  PDO + SQL migrations
                 │ receipts/ dir  │  uploaded images (outside web root)
@@ -34,10 +34,10 @@ hosting at a path-based URL, gitignored `.env` secrets, no telemetry.
 
 ## 2. Repository layout
 
-Monorepo (npm workspaces), repo `github.com/SlyWombat/SlySplit`:
+Monorepo (npm workspaces), repo `github.com/SlyWombat/SlyTab`:
 
 ```
-SlySplit/
+SlyTab/
 ├── README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE  .env (gitignored)
 ├── docs/                      # this documentation + design/
 ├── packages/core/             # shared TS domain logic (no I/O)
@@ -51,7 +51,7 @@ SlySplit/
 │   │   └── tokens.ts          # design tokens as TS constants (mobile)
 │   └── test-vectors/          # JSON fixtures asserted by BOTH Vitest & PHPUnit
 ├── api/                       # PHP 8.2 API (Slim 4 + PDO/MySQL)
-│   ├── public/index.php       # front controller → /slysplit/api
+│   ├── public/index.php       # front controller → /slytab/api
 │   ├── src/
 │   │   ├── Routes/            # auth, groups, expenses, settlements,
 │   │   │                      # receipts, rates, export
@@ -96,7 +96,7 @@ diverge between platforms.
   prepared statements only, forward-only numbered SQL migrations applied by
   the deploy step. Amounts are `BIGINT` minor units; all money invariants
   re-checked in the service layer.
-- **Files:** receipt images stored under a `slysplit-data/receipts/<groupId>/`
+- **Files:** receipt images stored under a `slytab-data/receipts/<groupId>/`
   directory **above** `public_html` (never web-servable directly), streamed
   through an authenticated route, resized to ≤2000px longest edge on upload.
 
@@ -113,7 +113,7 @@ deploy credentials):
 
 **✅ DECIDED 2026-07-22: Option A — PHP 8 + MySQL on cPanel** (user's call).
 
-- API lives at `public_html/slysplit/api/public/` (front controller only;
+- API lives at `public_html/slytab/api/public/` (front controller only;
   `src/`, vendor, config, and data directories sit above the web root),
   deployed with the same UAPI upload script as the SPA. Zero new
   infrastructure, zero monthly cost. FX-rate refresh and backups run as
@@ -138,7 +138,7 @@ deploy credentials):
   shared middleware. No cross-group data can leak through IDs.
 - Rate limits: 10/min on auth routes, 20/day default on receipt parsing
   (per FR-4.5), 120/min general.
-- Invites: `slysplit://join/<token>` + web equivalent; token = signed
+- Invites: `slytab://join/<token>` + web equivalent; token = signed
   (HMAC), single-group, 7-day expiry, revocable.
 
 ## 4. Data model
@@ -262,7 +262,7 @@ stores it on the row, done. No client ever calls the rate API directly.
 React 19 + Vite (dev port 8000), React Router, **Zustand** for client state,
 TanStack Query for server state/caching. Plain CSS with `--ss-*` tokens
 (see `docs/design/DESIGN.md`). Built SPA deploys to
-`public_html/slysplit/` → `electricrv.ca/slysplit`, with `.htaccess` SPA
+`public_html/slytab/` → `electricrv.ca/slytab`, with `.htaccess` SPA
 rewrite + immutable asset caching (CaseMaker pattern), `VERSION.txt` stamped
 with version + git SHA.
 
@@ -270,7 +270,7 @@ with version + git SHA.
 
 Expo (managed workflow) + Expo Router; same Zustand/TanStack Query stack;
 tokens consumed from `packages/core/src/tokens.ts`. IDs follow the family
-convention: Android `com.slywombat.slysplit`, iOS `ca.electricrv.slysplit`
+convention: Android `com.slywombat.slytab`, iOS `ca.electricrv.slytab`
 (SlyLED precedent). Camera via `expo-camera`/`expo-image-picker`; push via
 Expo notifications (opt-in).
 
@@ -289,7 +289,7 @@ Expo notifications (opt-in).
   (cPanel UAPI `Fileman::upload_files`, token auth from `.env`:
   `CPANEL_HOST/PORT/USER/TOKEN`, `WEB_ROOT`) — lifted from CaseMaker.
 - **Deploy API:** same UAPI upload for `api/` — the front controller goes
-  under `public_html/slysplit/api/`, everything else above the web root.
+  under `public_html/slytab/api/`, everything else above the web root.
   The deploy script finishes by calling an admin-token-protected migrate
   endpoint to apply pending SQL migrations. PHP is stateless, so there is
   no restart step.

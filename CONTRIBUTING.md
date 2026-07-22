@@ -1,6 +1,6 @@
-# Contributing to SlySplit
+# Contributing to SlyTab
 
-SlySplit follows the same conventions as the other SlyWombat projects
+SlyTab follows the same conventions as the other SlyWombat projects
 (CaseMaker, SlyLED). The short version: **issue first, regression test with
 every fix, small focused PRs.**
 

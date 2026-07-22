@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Domain;
+namespace SlyTab\Domain;
 
 use InvalidArgumentException;
 

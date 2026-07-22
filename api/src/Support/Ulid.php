@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SlySplit\Support;
+namespace SlyTab\Support;
 
 /**
  * ULID generator — 26-char Crockford base32, 48-bit ms timestamp +
