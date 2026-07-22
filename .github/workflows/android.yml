@@ -1,0 +1,33 @@
+name: Android APK
+
+# Manual trigger: builds a sideloadable release APK (debug-signed — fine
+# for family distribution outside the Play Store). Download the artifact
+# and publish it to electricrv.ca/slytab/downloads/ via the deploy tooling.
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install JS deps
+        run: npm install --no-audit --no-fund
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --no-install
+        working-directory: apps/mobile
+      - name: Gradle assembleRelease
+        run: ./gradlew assembleRelease --no-daemon
+        working-directory: apps/mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slytab-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30

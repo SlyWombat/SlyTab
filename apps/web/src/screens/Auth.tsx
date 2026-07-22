@@ -76,6 +76,12 @@ export function Auth({ onSignedIn, joinPending }: {
           Forgot password?
         </button>
       )}
+      <p className="muted" style={{ paddingTop: 8 }}>
+        📱 Android:{' '}
+        <a href={`${import.meta.env.BASE_URL}downloads/slytab.apk`} style={{ color: 'var(--ss-brand)' }}>
+          download the app (APK)
+        </a>
+      </p>
     </div>
   );
 }

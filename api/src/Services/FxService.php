@@ -58,6 +58,25 @@ final class FxService
         if ($currency === 'EUR') {
             return 1.0;
         }
+        $rate = $this->lookup($date, $currency);
+        if ($rate === null && $date < gmdate('Y-m-d')) {
+            // Historical date (e.g. Splitwise import): fetch that day's ECB
+            // reference from frankfurter on demand. Currency codes only.
+            $this->fetchHistorical($date);
+            $rate = $this->lookup($date, $currency);
+        }
+        if ($rate === null) {
+            throw new ApiException(
+                'FX_RATE_UNAVAILABLE',
+                "no exchange rate available for {$currency} on {$date} — enter the rate manually",
+                422,
+            );
+        }
+        return $rate;
+    }
+
+    private function lookup(string $date, string $currency): ?float
+    {
         $stmt = $this->pdo->prepare(
             'SELECT rate FROM fx_rates
              WHERE base = ? AND quote = ? AND rate_date <= ? AND rate_date >= DATE_SUB(?, INTERVAL ? DAY)
@@ -65,13 +84,29 @@ final class FxService
         );
         $stmt->execute(['EUR', $currency, $date, $date, self::MAX_FALLBACK_DAYS]);
         $rate = $stmt->fetchColumn();
-        if ($rate === false) {
-            throw new ApiException(
-                'FX_RATE_UNAVAILABLE',
-                "no exchange rate available for {$currency} on {$date} — enter the rate manually",
-                422,
-            );
+        return $rate === false ? null : (float) $rate;
+    }
+
+    private function fetchHistorical(string $date): void
+    {
+        if (\SlyTab\Support\Env::get('FX_OFFLINE') !== '') {
+            return; // tests: never reach for the network
         }
-        return (float) $rate;
+        $json = @file_get_contents("https://api.frankfurter.dev/v1/{$date}?base=EUR");
+        if ($json === false) {
+            return; // lookup miss will surface as FX_RATE_UNAVAILABLE
+        }
+        try {
+            $data = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO fx_rates (rate_date, base, quote, rate) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE rate = VALUES(rate)',
+        );
+        foreach (($data['rates'] ?? []) + ['EUR' => 1.0] as $quote => $rate) {
+            $stmt->execute([$data['date'] ?? $date, 'EUR', $quote, (string) $rate]);
+        }
     }
 }

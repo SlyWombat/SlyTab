@@ -19,6 +19,7 @@ export function GroupScreen({ groupId, user, onBack }: {
   const [balances, setBalances] = useState<Balances | null>(null);
   const [adding, setAdding] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,6 +130,9 @@ export function GroupScreen({ groupId, user, onBack }: {
         <button className="btn sm" onClick={() => setInviting(true)}>Invite</button>
         <a className="btn sm" style={{ textDecoration: 'none', lineHeight: '32px' }}
           href={`${import.meta.env.BASE_URL}api/v1/groups/${group.id}/export.csv`}>Export CSV</a>
+        {group.archivedAt === null && (
+          <button className="btn sm" onClick={() => setImporting(true)}>Import from Splitwise</button>
+        )}
       </div>
 
       {group.archivedAt === null && (
@@ -139,6 +143,10 @@ export function GroupScreen({ groupId, user, onBack }: {
           onSaved={() => { setAdding(false); reload(); }} />
       )}
       {inviting && <InviteSheet groupId={group.id} onClose={() => setInviting(false)} />}
+      {importing && (
+        <ImportSheet group={group} onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); reload(); }} />
+      )}
       {settling && (
         <SettleSheet group={group} to={settling.to} suggested={settling.suggested}
           onClose={() => setSettling(null)} onDone={() => { setSettling(null); reload(); }} />
@@ -481,6 +489,127 @@ function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => voi
           <button className="btn primary block" onClick={() => {
             navigator.clipboard.writeText(link).then(() => setCopied(true));
           }}>{copied ? 'Copied ✓' : 'Copy link'}</button>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+// ---- Splitwise import: pick CSV → map members → import ----
+
+function ImportSheet({ group, onClose, onDone }: {
+  group: Group; onClose: () => void; onDone: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [inspect, setInspect] = useState<Awaited<ReturnType<typeof api.inspectSplitwise>> | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.importSplitwise>> | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function pick(f: File) {
+    setBusy(true);
+    setError(null);
+    try {
+      const info = await api.inspectSplitwise(group.id, f);
+      setFile(f);
+      setInspect(info);
+      // Pre-map by name similarity where obvious.
+      const auto: Record<string, string> = {};
+      for (const name of info.members) {
+        const hit = group.members.find((m) =>
+          m.displayName.toLowerCase() === name.toLowerCase()
+          || name.toLowerCase().startsWith(m.displayName.toLowerCase()));
+        if (hit) auto[name] = hit.id;
+      }
+      setMapping(auto);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run() {
+    if (file === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await api.importSplitwise(group.id, file, mapping));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const complete = inspect !== null
+    && inspect.members.every((m) => (mapping[m] ?? '') !== '')
+    && new Set(Object.values(mapping)).size === inspect.members.length;
+
+  return (
+    <Sheet title="Import from Splitwise" onClose={onClose}>
+      {error && <div className="error" role="alert">{error}</div>}
+
+      {result !== null ? (
+        <>
+          <p style={{ fontSize: 14, paddingBottom: 8 }}>
+            Imported <b>{result.imported.expenses}</b> expenses and{' '}
+            <b>{result.imported.settlements}</b> settlements
+            {result.imported.skipped > 0 && <> · {result.imported.skipped} personal expenses skipped</>}.
+          </p>
+          {result.errors.length > 0 && (
+            <div className="error">
+              {result.errors.length} rows could not be imported:
+              <ul style={{ paddingLeft: 18 }}>
+                {result.errors.slice(0, 5).map((e, i) => <li key={i} style={{ fontSize: 12 }}>{e}</li>)}
+              </ul>
+            </div>
+          )}
+          <button className="btn primary block" onClick={onDone}>Done</button>
+        </>
+      ) : inspect === null ? (
+        <>
+          <p className="muted" style={{ paddingBottom: 10 }}>
+            In Splitwise: open the group → Settings → "Export as spreadsheet",
+            then pick the CSV here. Everyone in the Splitwise group must
+            already be a member of this SlyTab group.
+          </p>
+          <button className="btn primary block" disabled={busy}
+            onClick={() => fileInput.current?.click()}>
+            {busy ? 'Reading…' : 'Choose CSV file'}
+          </button>
+          <input ref={fileInput} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }} />
+        </>
+      ) : (
+        <>
+          <p className="muted" style={{ paddingBottom: 8 }}>
+            {inspect.expenseRows} expenses · {inspect.paymentRows} payments ·{' '}
+            {inspect.currencies.join(', ')}
+            {inspect.dateRange && <> · {inspect.dateRange.from} → {inspect.dateRange.to}</>}
+          </p>
+          <div className="sect" style={{ paddingLeft: 0 }}>Who is who?</div>
+          {inspect.members.map((name) => (
+            <label className="field" key={name}>
+              <span>Splitwise: "{name}"</span>
+              <select value={mapping[name] ?? ''}
+                onChange={(e) => setMapping({ ...mapping, [name]: e.target.value })}>
+                <option value="">— pick a member —</option>
+                {group.members.map((m) => (
+                  <option key={m.id} value={m.id}>{m.displayName}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <button className="btn primary block" disabled={!complete || busy} onClick={run}>
+            {busy ? 'Importing…' : 'Import everything'}
+          </button>
+          <p className="muted" style={{ textAlign: 'center', paddingTop: 8 }}>
+            Every row is imported balance-exactly; payments become confirmed
+            settlements.
+          </p>
         </>
       )}
     </Sheet>

@@ -145,9 +145,10 @@ export interface ReceiptResult {
   parseError?: string;
 }
 
-async function upload<T>(path: string, field: string, file: File): Promise<T> {
+async function upload<T>(path: string, field: string, file: File, extra: Record<string, string> = {}): Promise<T> {
   const fd = new FormData();
   fd.append(field, file);
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v);
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -178,6 +179,16 @@ export const api = {
     req<User>('PATCH', '/me', data),
   uploadReceipt: (groupId: string, file: File) =>
     upload<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', file),
+  inspectSplitwise: (groupId: string, file: File) =>
+    upload<{
+      members: string[]; expenseRows: number; paymentRows: number;
+      currencies: string[]; dateRange: { from: string; to: string } | null;
+    }>(`/groups/${groupId}/import/splitwise`, 'csv', file, { dryRun: '1' }),
+  importSplitwise: (groupId: string, file: File, mapping: Record<string, string>) =>
+    upload<{
+      imported: { expenses: number; settlements: number; skipped: number };
+      errors: string[];
+    }>(`/groups/${groupId}/import/splitwise`, 'csv', file, { mapping: JSON.stringify(mapping) }),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
 
   groups: () => req<{ items: Group[] }>('GET', '/groups'),

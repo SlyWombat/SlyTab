@@ -21,3 +21,4 @@ foreach (['SESSION_PEPPER', 'INVITE_HMAC_KEY', 'MIGRATE_TOKEN'] as $key) {
     }
 }
 putenv('MAIL_DISABLE=1'); // never attempt real mail from a test run
+putenv('FX_OFFLINE=1');   // never fetch live FX rates from a test run

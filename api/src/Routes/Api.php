@@ -17,6 +17,7 @@ use SlyTab\Services\BalanceService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
 use SlyTab\Services\GroupService;
+use SlyTab\Services\ImportService;
 use SlyTab\Services\Mailer;
 use SlyTab\Services\PasswordResetService;
 use SlyTab\Services\RateLimiter;
@@ -42,6 +43,7 @@ final class Api
         $receipts = new ReceiptService($pdo);
         $limiter = new RateLimiter($pdo);
         $resets = new PasswordResetService($pdo, new Mailer());
+        $importer = new ImportService($pdo, $groups, $expenses, $activity);
 
         $ip = static fn(Request $rq): string =>
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
@@ -64,7 +66,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip,
+            $limiter, $resets, $ip, $importer,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -99,7 +101,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
@@ -232,6 +234,30 @@ final class Api
                     $rs->getBody()->write(file_get_contents($img['path']));
                     return $rs->withHeader('Content-Type', $img['mime'])
                         ->withHeader('Cache-Control', 'private, max-age=86400');
+                });
+
+                // Splitwise import: dryRun=1 inspects (member names, counts);
+                // with a mapping it imports every row balance-exactly.
+                $p->post('/groups/{id}/import/splitwise', function (Request $rq, Response $rs, array $a) use ($groups, $importer): Response {
+                    $userId = Http::user($rq)['id'];
+                    $groups->assertMember($a['id'], $userId);
+                    $file = $rq->getUploadedFiles()['csv'] ?? null;
+                    if ($file === null || $file->getError() !== UPLOAD_ERR_OK) {
+                        throw new ApiException('VALIDATION', "multipart field 'csv' is required");
+                    }
+                    if (($file->getSize() ?? 0) > 5 * 1024 * 1024) {
+                        throw new ApiException('VALIDATION', 'CSV must be 5 MB or smaller', 413);
+                    }
+                    $csv = (string) $file->getStream();
+                    $body = $rq->getParsedBody();
+                    if (($body['dryRun'] ?? '') === '1') {
+                        return Http::json($rs, $importer->inspect($csv));
+                    }
+                    $mapping = json_decode((string) ($body['mapping'] ?? '{}'), true);
+                    if (!is_array($mapping)) {
+                        throw new ApiException('VALIDATION', "field 'mapping' must be a JSON object");
+                    }
+                    return Http::json($rs, $importer->import($a['id'], $userId, $csv, $mapping));
                 });
 
                 // activity + export + rates

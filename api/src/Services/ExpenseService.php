@@ -28,7 +28,7 @@ final class ExpenseService
     ) {}
 
     /** @param array<string,mixed> $data @return array<string,mixed> */
-    public function create(string $groupId, string $userId, array $data): array
+    public function create(string $groupId, string $userId, array $data, bool $recordActivity = true): array
     {
         $this->groups->assertWritable($groupId);
         $v = $this->validate($groupId, $data);
@@ -46,9 +46,11 @@ final class ExpenseService
                 $v['notes'], $v['receiptId'], $userId,
             ]);
             $this->insertParticipants($id, $v);
-            $this->activity->record($groupId, $userId, 'added', 'expense', $id, [
-                'description' => $v['description'], 'amount' => $v['amount'], 'currency' => $v['currency'],
-            ]);
+            if ($recordActivity) {
+                $this->activity->record($groupId, $userId, 'added', 'expense', $id, [
+                    'description' => $v['description'], 'amount' => $v['amount'], 'currency' => $v['currency'],
+                ]);
+            }
             $this->pdo->commit();
         } catch (\Throwable $e) {
             $this->pdo->rollBack();
