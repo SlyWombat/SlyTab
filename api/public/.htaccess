@@ -1,0 +1,11 @@
+# SlySplit API — route everything through the Slim front controller.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Nothing here is cacheable by intermediaries.
+<IfModule mod_headers.c>
+  Header set Cache-Control "no-store"
+</IfModule>

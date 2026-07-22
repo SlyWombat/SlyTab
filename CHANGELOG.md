@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Monorepo scaffold (2026-07-22): npm workspaces with `packages/core`
+  (money/split/balance/simplify/currency implemented + Zod schemas + design
+  tokens, 28 Vitest tests green), `api/` (Slim 4 skeleton, health route,
+  MySQL schema v1 migration, PHP twins of the split/simplify algorithms
+  with the PHPUnit parity suite), `apps/web` (React 19 + Vite welcome
+  screen on Ledger tokens, builds clean), `apps/mobile` (Expo SDK 54
+  placeholder), `scripts/deploy-cpanel.mjs` (adapted from CaseMaker), and
+  GitHub Actions CI (JS + PHP parity gate).
+
 - Initial project documentation: requirements, architecture, design
   specification, and UI requirements (2026-07-22).
 - Brand identity: "split coin" logo mark, app icon master, and light/dark

@@ -1,0 +1,37 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  background: var(--ss-bg);
+  color: var(--ss-text);
+  font: 400 15px/1.47 var(--ss-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.amount {
+  font-family: var(--ss-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.amount--owed { color: var(--ss-owed); }
+.amount--owe { color: var(--ss-owe); }
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid var(--ss-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

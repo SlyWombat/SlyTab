@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  js:
+    name: TypeScript (core + web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install (core + web workspaces)
+        run: npm install --no-audit --no-fund -w @slysplit/core -w @slysplit/web
+      - name: Typecheck core
+        run: npm run typecheck -w @slysplit/core
+      - name: Test core (includes shared vectors)
+        run: npm run test -w @slysplit/core
+      - name: Typecheck + build web
+        run: npm run build -w @slysplit/web
+
+  php:
+    name: PHP (api + parity gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: Install
+        run: composer install --no-interaction --no-progress
+        working-directory: api
+      - name: PHPUnit (shared vectors — TS/PHP parity gate)
+        run: ./vendor/bin/phpunit
+        working-directory: api

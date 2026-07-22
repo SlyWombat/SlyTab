@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "SlySplit",
+    "slug": "slysplit",
+    "version": "0.1.0",
+    "scheme": "slysplit",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0c1220",
+    "ios": {
+      "bundleIdentifier": "ca.electricrv.slysplit",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.slywombat.slysplit",
+      "adaptiveIcon": {
+        "backgroundColor": "#0c1220"
+      }
+    },
+    "splash": {
+      "backgroundColor": "#0c1220",
+      "resizeMode": "contain"
+    }
+  }
+}

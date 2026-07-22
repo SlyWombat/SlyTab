@@ -1,0 +1,29 @@
+{
+  "name": "slysplit",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "apps/web",
+    "apps/mobile"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c yellow,blue \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "npm run dev -w @slysplit/web",
+    "dev:api": "php -S 127.0.0.1:8100 -t api/public",
+    "dev:mobile": "npm run start -w @slysplit/mobile",
+    "build": "npm run build -w @slysplit/web",
+    "test": "npm run test -w @slysplit/core",
+    "test:php": "cd api && ./vendor/bin/phpunit",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "deploy": "node scripts/deploy-cpanel.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

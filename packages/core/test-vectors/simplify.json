@@ -1,0 +1,38 @@
+{
+  "_comment": "Cross-language fixtures for debt simplification. Asserted by BOTH packages/core (Vitest) and api/tests (PHPUnit). Positive net = is owed. Transfer order matters (deterministic greedy).",
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "cottage trip (4 members, 3 transfers)",
+      "net": { "dave": 8510, "priya": 2060, "alice": -4260, "marc": -6310 },
+      "expected": [
+        { "from": "marc", "to": "dave", "amountMinor": 6310 },
+        { "from": "alice", "to": "dave", "amountMinor": 2200 },
+        { "from": "alice", "to": "priya", "amountMinor": 2060 }
+      ]
+    },
+    {
+      "name": "two-person direct group",
+      "net": { "a": 500, "b": -500 },
+      "expected": [{ "from": "b", "to": "a", "amountMinor": 500 }]
+    },
+    {
+      "name": "all settled",
+      "net": { "a": 0, "b": 0 },
+      "expected": []
+    },
+    {
+      "name": "tied debtors break by id ascending",
+      "net": { "c": 100, "a": -50, "b": -50 },
+      "expected": [
+        { "from": "a", "to": "c", "amountMinor": 50 },
+        { "from": "b", "to": "c", "amountMinor": 50 }
+      ]
+    },
+    {
+      "name": "zero-net member is not involved",
+      "net": { "a": 100, "b": 0, "c": -100 },
+      "expected": [{ "from": "c", "to": "a", "amountMinor": 100 }]
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+/* Ledger design tokens — generated from docs/design/DESIGN.md (source of
+ * truth). Mobile consumes the same values via @slysplit/core tokens.ts. */
+
+:root {
+  /* Surfaces (dark — the default) */
+  --ss-bg: #0c1220;
+  --ss-surface: #141c2e;
+  --ss-surface-2: #1c2740;
+  --ss-surface-3: #253352;
+  --ss-outline: #2e3d5e;
+
+  /* Text */
+  --ss-text: #eef2fa;
+  --ss-text-2: #a9b4cc;
+  --ss-text-3: #6b7794;
+
+  /* Brand & accents */
+  --ss-brand: #4f8ef7;
+  --ss-brand-strong: #79aaff;
+  --ss-owed: #34c98e;
+  --ss-owe: #f5a623;
+  --ss-danger: #ef5d6b;
+  --ss-success: #34c98e;
+
+  /* Category chips (fixed in both themes) */
+  --ss-cat-food: #f5a05e;
+  --ss-cat-home: #6fc2ff;
+  --ss-cat-travel: #b78cff;
+  --ss-cat-fun: #ff8fb2;
+  --ss-cat-utilities: #6ee0d2;
+  --ss-cat-other: #a9b4cc;
+
+  /* Type */
+  --ss-font-display: 'Space Grotesk', system-ui, sans-serif;
+  --ss-font-body: 'Inter', system-ui, sans-serif;
+  --ss-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Space (4px base) */
+  --ss-space-1: 4px;  --ss-space-2: 8px;  --ss-space-3: 12px;
+  --ss-space-4: 16px; --ss-space-5: 20px; --ss-space-6: 24px;
+  --ss-space-7: 32px; --ss-space-8: 48px;
+
+  /* Radii */
+  --ss-radius-sm: 8px;
+  --ss-radius-md: 12px;
+  --ss-radius-lg: 20px;
+  --ss-radius-full: 9999px;
+
+  /* Motion */
+  --ss-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ss-dur-tap: 120ms;
+  --ss-dur-sheet: 200ms;
+  --ss-dur-countup: 320ms;
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --ss-bg: #f6f7fb;
+  --ss-surface: #ffffff;
+  --ss-surface-2: #eef1f7;
+  --ss-surface-3: #e2e8f3;
+  --ss-outline: #d4dbe8;
+  --ss-text: #16203a;
+  --ss-text-2: #4a5878;
+  --ss-text-3: #8592ad;
+  --ss-brand: #2f6fe0;
+  --ss-brand-strong: #1d5ccb;
+  --ss-owed: #148f63;
+  --ss-owe: #b57408;
+  --ss-danger: #cf3545;
+  --ss-success: #148f63;
+  color-scheme: light;
+}

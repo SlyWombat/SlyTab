@@ -1,0 +1,104 @@
+{
+  "_comment": "Cross-language fixtures for split math. Asserted by BOTH packages/core (Vitest) and api/tests (PHPUnit). Amounts are integer minor units. Never edit expectations without updating both implementations.",
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "equal 3-way with 1 remainder cent -> lowest id",
+      "method": "equal",
+      "totalMinor": 10000,
+      "members": [{ "id": "u1" }, { "id": "u2" }, { "id": "u3" }],
+      "expected": { "u1": 3334, "u2": 3333, "u3": 3333 }
+    },
+    {
+      "name": "equal 4-way of 82.10 (mockup groceries case)",
+      "method": "equal",
+      "totalMinor": 8210,
+      "members": [{ "id": "u1" }, { "id": "u2" }, { "id": "u3" }, { "id": "u4" }],
+      "expected": { "u1": 2053, "u2": 2053, "u3": 2052, "u4": 2052 }
+    },
+    {
+      "name": "equal single member",
+      "method": "equal",
+      "totalMinor": 777,
+      "members": [{ "id": "solo" }],
+      "expected": { "solo": 777 }
+    },
+    {
+      "name": "shares 2:1:1 exact division",
+      "method": "shares",
+      "totalMinor": 10000,
+      "members": [
+        { "id": "u1", "shares": 2 },
+        { "id": "u2", "shares": 1 },
+        { "id": "u3", "shares": 1 }
+      ],
+      "expected": { "u1": 5000, "u2": 2500, "u3": 2500 }
+    },
+    {
+      "name": "shares 1:1:1 of 100 -> remainder to lowest id",
+      "method": "shares",
+      "totalMinor": 100,
+      "members": [
+        { "id": "u1", "shares": 1 },
+        { "id": "u2", "shares": 1 },
+        { "id": "u3", "shares": 1 }
+      ],
+      "expected": { "u1": 34, "u2": 33, "u3": 33 }
+    },
+    {
+      "name": "percent 33.33/33.33/33.34 of 99.99",
+      "method": "percent",
+      "totalMinor": 9999,
+      "members": [
+        { "id": "u1", "percent": 33.33 },
+        { "id": "u2", "percent": 33.33 },
+        { "id": "u3", "percent": 33.34 }
+      ],
+      "expected": { "u1": 3333, "u2": 3333, "u3": 3333 }
+    },
+    {
+      "name": "percent 50/25/25 of 9.99 -> largest remainders win",
+      "method": "percent",
+      "totalMinor": 999,
+      "members": [
+        { "id": "u1", "percent": 50 },
+        { "id": "u2", "percent": 25 },
+        { "id": "u3", "percent": 25 }
+      ],
+      "expected": { "u1": 499, "u2": 250, "u3": 250 }
+    },
+    {
+      "name": "exact amounts pass through",
+      "method": "exact",
+      "totalMinor": 5000,
+      "members": [
+        { "id": "u1", "exactMinor": 2000 },
+        { "id": "u2", "exactMinor": 3000 }
+      ],
+      "expected": { "u1": 2000, "u2": 3000 }
+    },
+    {
+      "name": "adjustment: +10.00 because u1 got the steak",
+      "method": "adjustment",
+      "totalMinor": 8200,
+      "members": [
+        { "id": "u1", "adjustMinor": 1000 },
+        { "id": "u2" },
+        { "id": "u3" },
+        { "id": "u4" }
+      ],
+      "expected": { "u1": 2800, "u2": 1800, "u3": 1800, "u4": 1800 }
+    },
+    {
+      "name": "adjustment: negative offset (u1 has a coupon)",
+      "method": "adjustment",
+      "totalMinor": 6000,
+      "members": [
+        { "id": "u1", "adjustMinor": -300 },
+        { "id": "u2" },
+        { "id": "u3" }
+      ],
+      "expected": { "u1": 1800, "u2": 2100, "u3": 2100 }
+    }
+  ]
+}
