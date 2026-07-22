@@ -4,14 +4,19 @@
 # secrets. The SPA deploys separately via `npm run deploy`. Status only.
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+ENVFILE="$REPO/.env"
+set -a; source "$ENVFILE"; set +a
 BASE="https://$CPANEL_HOST:${CPANEL_PORT:-2083}"
 AUTH="Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN"
 PUB=$(dirname "$WEB_ROOT"); HOMEDIR=$(dirname "$PUB"); APPDIR="$HOMEDIR/slytab"
-set -a; . "$REPO/.env"; set +a
 
 st() { python3 -c "import json,sys
-o=json.load(sys.stdin)
-print('  status:', o.get('status'), (o.get('errors') or ''))"; }
+raw = sys.stdin.read()
+try:
+    o = json.loads(raw)
+    print('  status:', o.get('status'), (o.get('errors') or ''))
+except Exception:
+    print('  non-json response:', raw[:120].replace(chr(10), ' '))"; }
 api2() { curl -sS -m 120 "$BASE/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=fileop&$1" -H "$AUTH" >/dev/null; }
 enc() { python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$1"; }
 

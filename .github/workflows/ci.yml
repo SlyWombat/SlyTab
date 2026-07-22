@@ -23,6 +23,59 @@ jobs:
       - name: Typecheck + build web
         run: npm run build -w @slytab/web
 
+  e2e:
+    name: E2E golden path (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: slytab_e2e
+          MYSQL_USER: slytab
+          MYSQL_PASSWORD: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: slytab_e2e
+      DB_USER: slytab
+      DB_PASS: ci
+      SESSION_PEPPER: ci-only-pepper
+      INVITE_HMAC_KEY: ci-only-invite-key
+      MIGRATE_TOKEN: ci-only-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql
+      - name: Install PHP deps + migrate
+        run: |
+          composer install --no-interaction --no-progress
+          php bin/migrate.php
+        working-directory: api
+      - name: Start API server
+        run: nohup php -S 127.0.0.1:8100 -t api/public > /tmp/php-server.log 2>&1 &
+      - name: Install JS deps
+        run: npm install --no-audit --no-fund -w @slytab/core -w @slytab/web
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E
+        run: npx playwright test
+      - name: Server log on failure
+        if: failure()
+        run: tail -50 /tmp/php-server.log
+
   php:
     name: PHP (api + parity gate + MySQL integration)
     runs-on: ubuntu-latest

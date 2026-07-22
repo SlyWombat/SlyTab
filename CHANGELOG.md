@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Production launch** (2026-07-22): live at electricrv.ca/slytab. Web +
+  PHP API on cPanel; the database runs at home on kdocker2 through the
+  SlyTesla rathole tunnel (VM :3307, TLS with pinned CA, IP-restricted at
+  the OCI and iptables layers). Nightly backups + daily ECB refresh run
+  from kdocker2 cron. `scripts/deploy-api.sh` + `npm run deploy` redeploy
+  everything; docs/deployment.md has the full runbook.
+- Playwright E2E golden path (sign up → group → expense → balances →
+  profile → invite) running locally and as a CI job with MySQL + PHP; it
+  caught a real bug (receipts rate-limiter closure capture) now fixed and
+  redeployed.
+- Mobile app v0 (Expo): sign in/up, home balances with settlement
+  confirmation, group expenses/balances with suggested settlements,
+  equal-split add-expense, settle sheet with Interac/PayPal deep links,
+  invite links — talking to the production API, typechecked against
+  SDK 54.
+- Web: profile/payment-handles editor, password-reset flow, receipt
+  scan→review→assign UI; API: PATCH /me, password reset, rate limiting,
+  admin endpoints (earlier today, see entries below).
+
 - Full money API (2026-07-22): groups with signed invite links and
   zero-balance-guarded leave; expenses with server-revalidated splits, FX
   locking (ECB or manual), soft delete/restore; balances with simplified

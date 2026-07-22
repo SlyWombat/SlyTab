@@ -16,6 +16,7 @@
     "dev:mobile": "npm run start -w @slytab/mobile",
     "build": "npm run build -w @slytab/web",
     "test": "npm run test -w @slytab/core",
+    "test:e2e": "playwright test",
     "test:php": "docker run --rm --env-file ./.env -v \"$PWD\":/repo -w /repo/api slytab-php:dev vendor/bin/phpunit",
     "php:install": "docker run --rm -v \"$PWD/api\":/app -w /app composer:2 install --no-interaction",
     "php:image": "docker build -t slytab-php:dev -f api/Dockerfile.dev api",
@@ -24,6 +25,7 @@
     "deploy": "node scripts/deploy-cpanel.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "concurrently": "^9.1.0"
   },
   "engines": {

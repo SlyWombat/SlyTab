@@ -99,7 +99,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
