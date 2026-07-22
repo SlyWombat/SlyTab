@@ -29,3 +29,6 @@ test-results/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# PHP tooling
+api/.phpunit.result.cache

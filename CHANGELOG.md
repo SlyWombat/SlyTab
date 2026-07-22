@@ -26,6 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Group balances, Add expense, Receipt assignment, and Settle up
   (2026-07-22).
 
+- Local dev environment (2026-07-22): MySQL 8.4 container (`slysplit-mysql`)
+  on kdocker2 with schema v1 applied and verified; PHP 8.2 + Composer run in
+  local Docker containers via `npm run dev:api` / `test:php` / `php:install`
+  (no native PHP install). Documented in `docs/dev-environment.md`.
+
 ### Changed
 
 - Architecture §3.1: verified via cPanel UAPI that the electricrv.ca host
