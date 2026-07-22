@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Splitwise import** (2026-07-22): upload a group's Splitwise CSV export
+  — dry-run detects the member names for a mapping step, then every row
+  imports balance-exactly (borrower shares verbatim, payer consumption
+  distributed proportionally with largest-remainder rounding). Payments
+  become confirmed settlements; personal expenses are skipped and
+  reported; foreign-currency rows lock on-demand historical ECB rates.
+  Two-step web UI with auto-suggested mapping. Deployed to production.
+- **Android APK** (2026-07-22): a manual CI workflow builds a sideloadable
+  APK, published at electricrv.ca/slytab/downloads/slytab.apk and linked
+  from the sign-in screen. (Monorepo fixes along the way: explicit expo
+  entry point, Metro resolver shim for the core package's NodeNext
+  imports.)
+
 - **Local receipt recognition** (2026-07-22): receipts are now itemized by
   a self-hosted vision model (qwen2.5vl:7b on kdocker2's Ollama, reached
   through the rathole tunnel at VM:3308) — photos never leave our
