@@ -66,8 +66,8 @@ jobs:
         working-directory: api
       - name: Start API server
         run: nohup php -S 127.0.0.1:8100 -t api/public > /tmp/php-server.log 2>&1 &
-      - name: Install JS deps
-        run: npm install --no-audit --no-fund -w @slytab/core -w @slytab/web
+      - name: Install JS deps (all workspaces — Playwright lives at the root)
+        run: npm install --no-audit --no-fund
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - name: Run E2E
