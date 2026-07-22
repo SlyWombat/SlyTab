@@ -6,11 +6,12 @@ export function Auth({ onSignedIn, joinPending }: {
   onSignedIn: (token: string, user: User) => void;
   joinPending: boolean;
 }) {
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
+  const [mode, setMode] = useState<'signin' | 'create' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -18,6 +19,12 @@ export function Auth({ onSignedIn, joinPending }: {
     setBusy(true);
     setError(null);
     try {
+      if (mode === 'forgot') {
+        await api.resetRequest(email);
+        setNotice('If that address has an account, a reset link is on its way. Check your inbox.');
+        setMode('signin');
+        return;
+      }
       const result = mode === 'create'
         ? await api.register(email, password, displayName)
         : await api.login(email, password);
@@ -42,6 +49,7 @@ export function Auth({ onSignedIn, joinPending }: {
 
       <form onSubmit={submit} style={{ width: 'min(340px, 100%)', textAlign: 'left' }}>
         {error && <div className="error" role="alert">{error}</div>}
+        {notice && <div className="hero" style={{ fontSize: 13, padding: 12 }}>{notice}</div>}
         {mode === 'create' && (
           <label className="field"><span>Your name</span>
             <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={80} />
@@ -50,17 +58,24 @@ export function Auth({ onSignedIn, joinPending }: {
         <label className="field"><span>Email</span>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
         </label>
-        <label className="field"><span>Password{mode === 'create' ? ' (10+ characters)' : ''}</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-            required minLength={mode === 'create' ? 10 : 1} autoComplete={mode === 'create' ? 'new-password' : 'current-password'} />
-        </label>
+        {mode !== 'forgot' && (
+          <label className="field"><span>Password{mode === 'create' ? ' (10+ characters)' : ''}</span>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              required minLength={mode === 'create' ? 10 : 1} autoComplete={mode === 'create' ? 'new-password' : 'current-password'} />
+          </label>
+        )}
         <button className="btn primary block" disabled={busy}>
-          {busy ? '…' : mode === 'create' ? 'Create account' : 'Sign in'}
+          {busy ? '…' : mode === 'create' ? 'Create account' : mode === 'forgot' ? 'Email me a reset link' : 'Sign in'}
         </button>
       </form>
       <button className="link-btn" onClick={() => { setMode(mode === 'create' ? 'signin' : 'create'); setError(null); }}>
         {mode === 'create' ? 'Already have an account? Sign in' : 'New here? Create an account'}
       </button>
+      {mode === 'signin' && (
+        <button className="link-btn" onClick={() => { setMode('forgot'); setError(null); }}>
+          Forgot password?
+        </button>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { computeSplit } from '@slytab/core';
 import {
   api, ApiFailure,
-  type Balances, type Expense, type Group, type Member, type User,
+  type Balances, type Expense, type Group, type Member, type ParsedReceipt, type User,
 } from '../api';
 import { Amount, Badge, Sheet } from '../ui';
 
@@ -164,8 +164,45 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
   const [fxOverride, setFxOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [needsRate, setNeedsRate] = useState(false);
+  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
+
+  async function onScanFile(file: File) {
+    setScanBusy(true);
+    setError(null);
+    try {
+      const r = await api.uploadReceipt(group.id, file);
+      setReceiptId(r.id);
+      if (r.parsed === null) {
+        setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
+      } else {
+        setAssigning(r.parsed);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  function applyAssignment(result: {
+    totalMinor: number; currency: string | null; merchant: string | null;
+    date: string | null; shares: Record<string, number>;
+  }) {
+    setAssigning(null);
+    setAmountStr((result.totalMinor / 100).toFixed(2));
+    if (result.currency && /^[A-Z]{3}$/.test(result.currency)) setCurrency(result.currency);
+    if (result.merchant) setDescription(result.merchant);
+    if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) setDate(result.date);
+    setMode('unequal');
+    const next: Record<string, string> = {};
+    for (const [uid, v] of Object.entries(result.shares)) next[uid] = (v / 100).toFixed(2);
+    setExact(next);
+  }
 
   const shares = useMemo(() => {
     try {
@@ -205,6 +242,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
         payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(fxOverride !== '' ? { fxRateOverride: parseFloat(fxOverride) } : {}),
+        ...(receiptId !== null ? { receiptId } : {}),
       });
       onSaved();
     } catch (err) {
@@ -286,8 +324,140 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
             remaining: {(remaining / 100).toFixed(2)}
           </p>
         )}
-        <button className="btn primary block" disabled={!valid} style={{ marginTop: 8 }}>Save expense</button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy}
+            onClick={() => fileInput.current?.click()}>
+            {scanBusy ? 'Reading your receipt…' : receiptId ? 'Receipt attached ✓ — rescan' : '📷 Scan receipt'}
+          </button>
+          <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>Save expense</button>
+        </div>
+        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp"
+          style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void onScanFile(f); e.target.value = ''; }} />
       </form>
+      {assigning !== null && (
+        <AssignItemsSheet parsed={assigning} members={group.members} user={user}
+          onCancel={() => setAssigning(null)} onDone={applyAssignment} />
+      )}
+    </Sheet>
+  );
+}
+
+// ---- Receipt item assignment (ui_requirements §2.6 step 4) ----
+
+function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
+  parsed: ParsedReceipt;
+  members: Member[];
+  user: User;
+  onCancel: () => void;
+  onDone: (r: {
+    totalMinor: number; currency: string | null; merchant: string | null;
+    date: string | null; shares: Record<string, number>;
+  }) => void;
+}) {
+  const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+
+  const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
+  const totalMinor = parsed.totalMinor
+    ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
+  const extra = totalMinor - itemsSum; // tax + tip + any unparsed delta
+  const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
+
+  function toggle(itemIndex: number, memberId: string) {
+    setAssign((prev) => {
+      const next = { ...prev };
+      const set = new Set(next[itemIndex] ?? []);
+      set.has(memberId) ? set.delete(memberId) : set.add(memberId);
+      next[itemIndex] = set;
+      return next;
+    });
+  }
+
+  function splitRestEqually() {
+    setAssign((prev) => {
+      const next = { ...prev };
+      parsed.items.forEach((_, i) => {
+        if ((next[i]?.size ?? 0) === 0) next[i] = new Set(members.map((m) => m.id));
+      });
+      return next;
+    });
+  }
+
+  /** Per-member totals: assigned items split equally per item, then the
+   *  tax/tip remainder prorated by item subtotal (largest-remainder). */
+  const perMember = useMemo(() => {
+    const out: Record<string, number> = {};
+    parsed.items.forEach((item, i) => {
+      const who = [...(assign[i] ?? [])].sort();
+      if (who.length === 0) return;
+      const split = computeSplit('equal', item.totalMinor, who.map((id) => ({ id })));
+      for (const [id, v] of Object.entries(split)) out[id] = (out[id] ?? 0) + v;
+    });
+    if (extra !== 0 && Object.keys(out).length > 0) {
+      const weights = Object.entries(out)
+        .filter(([, v]) => v > 0)
+        .map(([id, v]) => ({ id, shares: v }));
+      if (weights.length > 0) {
+        const prorated = computeSplit('shares', Math.abs(extra), weights);
+        for (const [id, v] of Object.entries(prorated)) {
+          out[id] = (out[id] ?? 0) + (extra > 0 ? v : -v);
+        }
+      }
+    }
+    return out;
+  }, [assign, parsed.items, extra]);
+
+  return (
+    <Sheet title="Assign items" onClose={onCancel}>
+      {parsed.confidence === 'low' && (
+        <div className="error" style={{ borderColor: 'var(--ss-owe)' }}>
+          The numbers on this receipt don't quite add up — double-check before saving.
+        </div>
+      )}
+      <p className="muted" style={{ paddingBottom: 8 }}>
+        {parsed.merchant ?? 'Receipt'}{parsed.date ? ` · ${parsed.date}` : ''} ·
+        total {(totalMinor / 100).toFixed(2)}{parsed.currency ? ` ${parsed.currency}` : ''}
+        {extra !== 0 && ` (incl. ${(extra / 100).toFixed(2)} tax/tip, prorated)`}
+      </p>
+      {parsed.items.map((item, i) => (
+        <div className="row" key={i} style={{ flexWrap: 'wrap' }}>
+          <div className="grow">
+            <div className="name">{item.name}</div>
+            <div className="meta">{item.quantity !== 1 ? `${item.quantity} × ` : ''}{(item.totalMinor / 100).toFixed(2)}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {members.map((m) => {
+              const on = assign[i]?.has(m.id) ?? false;
+              return (
+                <button key={m.id} type="button" onClick={() => toggle(i, m.id)}
+                  aria-pressed={on}
+                  style={{ background: 'none', border: 'none', padding: 2, opacity: on ? 1 : 0.35,
+                    outline: on ? '2px solid var(--ss-brand)' : 'none', borderRadius: '50%' }}>
+                  <Badge id={m.id} name={m.displayName} sm />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {!allAssigned && (
+        <button type="button" className="btn block" onClick={splitRestEqually}>
+          Split the rest equally
+        </button>
+      )}
+      <p className="muted" style={{ padding: '10px 2px' }}>
+        {members
+          .filter((m) => (perMember[m.id] ?? 0) !== 0)
+          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${((perMember[m.id] ?? 0) / 100).toFixed(2)}`)
+          .join(' · ') || 'Tap items, then people.'}
+      </p>
+      <button type="button" className="btn primary block" disabled={!allAssigned}
+        onClick={() => onDone({
+          totalMinor, currency: parsed.currency, merchant: parsed.merchant,
+          date: parsed.date, shares: perMember,
+        })}>
+        Continue
+      </button>
     </Sheet>
   );
 }

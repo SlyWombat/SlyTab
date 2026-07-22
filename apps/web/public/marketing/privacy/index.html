@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — Privacy Policy</title>
+<style>
+  :root { --bg:#0c1220; --surface:#141c2e; --outline:#2e3d5e; --text:#eef2fa;
+    --text2:#a9b4cc; --brand:#4f8ef7; color-scheme: dark; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --surface:#fff; --outline:#d4dbe8; --text:#16203a;
+      --text2:#4a5878; --brand:#2f6fe0; color-scheme: light; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 400 15.5px/1.6 Inter, "Segoe UI", system-ui, sans-serif;
+    padding: 48px 20px 80px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font: 600 26px/1.25 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.02em; margin-bottom: 4px; }
+  h2 { font: 600 17px/1.3 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    margin: 28px 0 8px; }
+  p, li { color: var(--text2); }
+  strong { color: var(--text); }
+  ul { padding-left: 20px; margin: 8px 0; }
+  a { color: var(--brand); }
+  .updated { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SlyTab Privacy Policy</h1>
+  <p class="updated">Last updated: July 22, 2026 · Data controller: Electric RV, Ontario, Canada</p>
+
+  <p>SlyTab is a private expense-sharing app made for families and friends.
+  Our privacy position is simple: <strong>your data is yours, it stays on our
+  server in Canada, and we never sell it, share it for advertising, or run
+  analytics on it.</strong></p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Account:</strong> your email address, display name, and a hash of your password (we can never see the password itself).</li>
+    <li><strong>Expense data:</strong> the groups you're in, expenses, splits, settlements, and any notes you enter — visible only to members of the same group.</li>
+    <li><strong>Payment handles (optional):</strong> an Interac e-Transfer email, PayPal.Me, or Venmo username you choose to save so group members can pay you. SlyTab never processes, holds, or has access to money or banking credentials.</li>
+    <li><strong>Receipt photos (optional):</strong> stored with the expense, visible only to the group.</li>
+  </ul>
+
+  <h2>What we don't collect</h2>
+  <p>No analytics, no telemetry, no advertising or tracking SDKs, no location
+  data, no contact-list access, no third-party sign-in.</p>
+
+  <h2>Third parties we use</h2>
+  <ul>
+    <li><strong>Anthropic (Claude API):</strong> when you scan a receipt, the photo is sent server-side to Anthropic to be itemized, subject to Anthropic's commercial data terms. Skip scanning and enter items manually if you prefer.</li>
+    <li><strong>Frankfurter/ECB:</strong> currency codes only, to fetch daily exchange rates. No user data is sent.</li>
+  </ul>
+
+  <h2>Where your data lives</h2>
+  <p>On our server hosted for electricrv.ca, with encrypted transport (HTTPS),
+  hashed credentials, and nightly backups retained for 30 days.</p>
+
+  <h2>Your rights</h2>
+  <p>Under PIPEDA you may access, export, correct, or delete your personal
+  information at any time. Export is built in (Profile → Export). Deleting
+  your account removes your personal data; your share of historical group
+  expenses is anonymized so other members' balances stay correct.</p>
+
+  <h2>Contact</h2>
+  <p>Privacy questions: <a href="mailto:dave@drscapital.com">dave@drscapital.com</a>.</p>
+</main>
+</body>
+</html>

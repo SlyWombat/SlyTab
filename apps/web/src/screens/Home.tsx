@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, type HomeBalances, type User } from '../api';
 import { Amount, Badge, Mark, Sheet } from '../ui';
 
-export function Home({ user, onOpenGroup, onSignOut }: {
+export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   user: User;
   onOpenGroup: (groupId: string) => void;
   onSignOut: () => void;
+  onUserUpdated: (u: User) => void;
 }) {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
@@ -27,7 +29,10 @@ export function Home({ user, onOpenGroup, onSignOut }: {
         <Mark size={26} />
         <h1>Sly<span style={{ color: 'var(--ss-text-2)' }}>Tab</span></h1>
         <div className="spacer" />
-        <button className="btn sm" onClick={onSignOut}>Sign out</button>
+        <button className="btn sm" onClick={() => setProfileOpen(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Badge id={user.id} name={user.displayName} sm /> Profile
+        </button>
       </div>
 
       {error && <div className="error" role="alert">{error}</div>}
@@ -90,6 +95,10 @@ export function Home({ user, onOpenGroup, onSignOut }: {
       ))}
 
       <button className="fab" aria-label="New group" onClick={() => setCreating(true)}>+</button>
+      {profileOpen && (
+        <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
+          onSaved={(u) => { onUserUpdated(u); setProfileOpen(false); }} />
+      )}
       {creating && (
         <CreateGroupSheet
           defaultCurrency={user.defaultCurrency}
@@ -98,6 +107,68 @@ export function Home({ user, onOpenGroup, onSignOut }: {
         />
       )}
     </div>
+  );
+}
+
+function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
+  user: User;
+  onClose: () => void;
+  onSaved: (u: User) => void;
+  onSignOut: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [currency, setCurrency] = useState(user.defaultCurrency);
+  const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
+  const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
+  const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      const updated = await api.patchMe({
+        displayName,
+        defaultCurrency: currency.toUpperCase(),
+        paymentHandles: {
+          ...(interac ? { interacEmail: interac } : {}),
+          ...(paypal ? { paypalMe: paypal } : {}),
+          ...(venmo ? { venmo } : {}),
+        },
+      });
+      onSaved(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <Sheet title="Profile" onClose={onClose}>
+      <form onSubmit={submit}>
+        {error && <div className="error" role="alert">{error}</div>}
+        <label className="field"><span>Display name</span>
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={80} />
+        </label>
+        <label className="field"><span>Default currency</span>
+          <input value={currency} onChange={(e) => setCurrency(e.target.value)} maxLength={3} pattern="[A-Za-z]{3}" />
+        </label>
+        <div className="sect" style={{ paddingLeft: 0 }}>How people pay you</div>
+        <label className="field"><span>Interac e-Transfer email</span>
+          <input type="email" value={interac} onChange={(e) => setInterac(e.target.value)} placeholder="you@example.com" />
+        </label>
+        <label className="field"><span>PayPal.Me username</span>
+          <input value={paypal} onChange={(e) => setPaypal(e.target.value)} placeholder="yourname" />
+        </label>
+        <label className="field"><span>Venmo username</span>
+          <input value={venmo} onChange={(e) => setVenmo(e.target.value)} placeholder="yourname" />
+        </label>
+        <button className="btn primary block">Save profile</button>
+      </form>
+      <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
+      <p className="muted" style={{ textAlign: 'center', paddingTop: 10 }}>
+        {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>
+      </p>
+    </Sheet>
   );
 }
 

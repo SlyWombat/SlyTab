@@ -120,6 +120,48 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return json as T;
 }
 
+export interface ReceiptItem {
+  name: string;
+  quantity: number;
+  totalMinor: number;
+}
+
+export interface ParsedReceipt {
+  merchant: string | null;
+  date: string | null;
+  currency: string | null;
+  items: ReceiptItem[];
+  subtotalMinor: number | null;
+  taxMinor: number | null;
+  tipMinor: number | null;
+  totalMinor: number | null;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface ReceiptResult {
+  id: string;
+  groupId: string;
+  parsed: ParsedReceipt | null;
+  parseError?: string;
+}
+
+async function upload<T>(path: string, field: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append(field, file);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: fd });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiFailure(
+      (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'upload failed' },
+      res.status,
+    );
+  }
+  return json as T;
+}
+
 export const api = {
   register: (email: string, password: string, displayName: string) =>
     req<{ token: string; user: User }>('POST', '/auth/register', {
@@ -128,7 +170,14 @@ export const api = {
   login: (email: string, password: string) =>
     req<{ token: string; user: User }>('POST', '/auth/login', { email, password, deviceLabel: 'web' }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
+  resetRequest: (email: string) => req<{ ok: true }>('POST', '/auth/reset-request', { email }),
+  resetPassword: (token: string, password: string) =>
+    req<{ ok: true }>('POST', '/auth/reset', { token, password }),
   me: () => req<User>('GET', '/me'),
+  patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles'>>) =>
+    req<User>('PATCH', '/me', data),
+  uploadReceipt: (groupId: string, file: File) =>
+    upload<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', file),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
 
   groups: () => req<{ items: Group[] }>('GET', '/groups'),
