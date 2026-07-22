@@ -26,6 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Group balances, Add expense, Receipt assignment, and Settle up
   (2026-07-22).
 
+- Auth slice (2026-07-22): register/login/logout with argon2id password
+  hashing, opaque peppered session tokens with 180-day rolling expiry,
+  `GET/DELETE /me/sessions` device management, `GET /me`, consistent
+  `{error:{code,message}}` envelope, and a forward-only migration runner
+  (`api/bin/migrate.php`, `npm run db:migrate`). Covered by MySQL-backed
+  integration tests (PHPUnit, 21 tests) run locally against kdocker2 and in
+  CI against a MySQL 8.4 service container.
 - Local dev environment (2026-07-22): MySQL 8.4 container (`slysplit-mysql`)
   on kdocker2 with schema v1 applied and verified; PHP 8.2 + Composer run in
   local Docker containers via `npm run dev:api` / `test:php` / `php:install`

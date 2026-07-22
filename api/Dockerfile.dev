@@ -1,0 +1,4 @@
+# Local dev/test image — php:8.2-cli plus the extensions the API needs.
+# Built once via `npm run php:image`; used by dev:api, test:php, db:migrate.
+FROM php:8.2-cli
+RUN docker-php-ext-install pdo_mysql

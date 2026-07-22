@@ -12,12 +12,14 @@
   "scripts": {
     "dev": "concurrently -n api,web -c yellow,blue \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "npm run dev -w @slysplit/web",
-    "dev:api": "docker run --rm --name slysplit-api -p 8100:8100 -v \"$PWD/api\":/app -w /app php:8.2-cli php -S 0.0.0.0:8100 -t public",
+    "dev:api": "docker run --rm --name slysplit-api -p 8100:8100 --env-file ./.env -v \"$PWD/api\":/app -w /app slysplit-php:dev php -S 0.0.0.0:8100 -t public",
     "dev:mobile": "npm run start -w @slysplit/mobile",
     "build": "npm run build -w @slysplit/web",
     "test": "npm run test -w @slysplit/core",
-    "test:php": "docker run --rm -v \"$PWD\":/repo -w /repo/api php:8.2-cli vendor/bin/phpunit",
+    "test:php": "docker run --rm --env-file ./.env -v \"$PWD\":/repo -w /repo/api slysplit-php:dev vendor/bin/phpunit",
     "php:install": "docker run --rm -v \"$PWD/api\":/app -w /app composer:2 install --no-interaction",
+    "php:image": "docker build -t slysplit-php:dev -f api/Dockerfile.dev api",
+    "db:migrate": "docker run --rm --env-file ./.env -v \"$PWD\":/repo -w /repo/api slysplit-php:dev php bin/migrate.php",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "deploy": "node scripts/deploy-cpanel.mjs"
   },

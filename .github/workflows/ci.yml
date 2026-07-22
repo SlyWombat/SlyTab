@@ -24,16 +24,40 @@ jobs:
         run: npm run build -w @slysplit/web
 
   php:
-    name: PHP (api + parity gate)
+    name: PHP (api + parity gate + MySQL integration)
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: slysplit_test
+          MYSQL_USER: slysplit
+          MYSQL_PASSWORD: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: slysplit_test
+      DB_TEST_NAME: slysplit_test
+      DB_USER: slysplit
+      DB_PASS: ci
+      SESSION_PEPPER: ci-only-pepper
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
+          extensions: pdo_mysql
       - name: Install
         run: composer install --no-interaction --no-progress
         working-directory: api
-      - name: PHPUnit (shared vectors — TS/PHP parity gate)
+      - name: PHPUnit (shared vectors + MySQL-backed auth flow)
         run: ./vendor/bin/phpunit
         working-directory: api
