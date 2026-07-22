@@ -19,11 +19,20 @@ final class Db
             $port = Env::get('DB_PORT', '3306');
             $name = Env::require('DB_NAME');
             $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
-            self::$pdo = new PDO($dsn, Env::require('DB_USER'), Env::require('DB_PASS'), [
+            $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
-            ]);
+            ];
+            // Production reaches MySQL over a public tunnel: encrypt with the
+            // server's own CA (self-signed, so hostname verification is off —
+            // the CA pin is the trust anchor).
+            $sslCa = Env::get('DB_SSL_CA');
+            if ($sslCa !== '') {
+                $options[PDO::MYSQL_ATTR_SSL_CA] = $sslCa;
+                $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+            }
+            self::$pdo = new PDO($dsn, Env::require('DB_USER'), Env::require('DB_PASS'), $options);
         }
         return self::$pdo;
     }
