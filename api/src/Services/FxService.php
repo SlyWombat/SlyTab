@@ -19,6 +19,30 @@ final class FxService
 
     public function __construct(private readonly PDO $pdo) {}
 
+    /**
+     * Pull the latest EUR-base ECB reference rates from frankfurter and
+     * upsert them. Only currency codes leave the server (NFR-1).
+     *
+     * @return array{date:string, count:int}
+     */
+    public function refresh(): array
+    {
+        $json = @file_get_contents('https://api.frankfurter.dev/v1/latest?base=EUR');
+        if ($json === false) {
+            throw new ApiException('FX_FETCH_FAILED', 'could not reach the exchange-rate service', 502);
+        }
+        $data = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
+        $rates = $data['rates'] + ['EUR' => 1.0];
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO fx_rates (rate_date, base, quote, rate) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE rate = VALUES(rate)',
+        );
+        foreach ($rates as $quote => $rate) {
+            $stmt->execute([$data['date'], 'EUR', $quote, (string) $rate]);
+        }
+        return ['date' => $data['date'], 'count' => count($rates)];
+    }
+
     public function rateFor(string $date, string $from, string $to): float
     {
         if ($from === $to) {

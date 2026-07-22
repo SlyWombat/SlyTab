@@ -9,6 +9,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App as SlimApp;
 use Slim\Routing\RouteCollectorProxy;
 use SlyTab\Db\Db;
+use SlyTab\Db\Migrator;
 use SlyTab\Middleware\RequireAuth;
 use SlyTab\Services\ActivityService;
 use SlyTab\Services\AuthService;
@@ -16,9 +17,13 @@ use SlyTab\Services\BalanceService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
 use SlyTab\Services\GroupService;
+use SlyTab\Services\Mailer;
+use SlyTab\Services\PasswordResetService;
+use SlyTab\Services\RateLimiter;
 use SlyTab\Services\ReceiptService;
 use SlyTab\Services\SettlementService;
 use SlyTab\Support\ApiException;
+use SlyTab\Support\Env;
 use SlyTab\Support\Http;
 
 /** The full /api/v1 route map (architecture §5). */
@@ -35,26 +40,61 @@ final class Api
         $balances = new BalanceService($pdo);
         $settlements = new SettlementService($pdo, $groups, $activity);
         $receipts = new ReceiptService($pdo);
+        $limiter = new RateLimiter($pdo);
+        $resets = new PasswordResetService($pdo, new Mailer());
+
+        $ip = static fn(Request $rq): string =>
+            (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+
+        // ---- admin (cron + deploy hooks, guarded by MIGRATE_TOKEN) ----
+        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx): void {
+            $g->post('/migrate', function (Request $rq, Response $rs) use ($pdo): Response {
+                $ran = (new Migrator($pdo))->migrate();
+                return Http::json($rs, ['applied' => $ran]);
+            });
+            $g->post('/fetch-rates', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, $fx->refresh()));
+        })->add(function (Request $rq, $handler) {
+            $expected = Env::require('MIGRATE_TOKEN');
+            if (!hash_equals($expected, $rq->getHeaderLine('X-Admin-Token'))) {
+                throw new ApiException('FORBIDDEN', 'admin token required', 403);
+            }
+            return $handler->handle($rq);
+        });
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
+            $limiter, $resets, $ip,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
 
-            // ---- auth (public) ----
-            $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth): Response {
+            // ---- auth (public, rate-limited per client IP) ----
+            $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
                 $b = Http::body($rq);
                 return Http::json($rs->withStatus(201), $auth->register(
                     Http::str($b, 'email'), Http::str($b, 'password'),
                     Http::str($b, 'displayName'), Http::str($b, 'deviceLabel', ''),
                 ));
             });
-            $g->post('/auth/login', function (Request $rq, Response $rs) use ($auth): Response {
+            $g->post('/auth/login', function (Request $rq, Response $rs) use ($auth, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
                 $b = Http::body($rq);
                 return Http::json($rs, $auth->login(
                     Http::str($b, 'email'), Http::str($b, 'password'), Http::str($b, 'deviceLabel', ''),
                 ));
+            });
+            $g->post('/auth/reset-request', function (Request $rq, Response $rs) use ($resets, $limiter, $ip): Response {
+                $limiter->guard('reset', $ip($rq), 5, 3600);
+                $resets->request(Http::str(Http::body($rq), 'email'));
+                return Http::json($rs, ['ok' => true]); // identical whether or not the account exists
+            });
+            $g->post('/auth/reset', function (Request $rq, Response $rs) use ($resets, $limiter, $ip): Response {
+                $limiter->guard('reset', $ip($rq), 10, 3600);
+                $b = Http::body($rq);
+                $resets->reset(Http::str($b, 'token'), Http::str($b, 'password'));
+                return Http::json($rs, ['ok' => true]);
             });
 
             // ---- authenticated ----
@@ -71,6 +111,8 @@ final class Api
                     unset($user['sessionId']);
                     return Http::json($rs, $user);
                 });
+                $p->patch('/me', fn(Request $rq, Response $rs): Response =>
+                    Http::json($rs, $auth->updateProfile(Http::user($rq)['id'], Http::body($rq))));
                 $p->get('/me/sessions', fn(Request $rq, Response $rs): Response =>
                     Http::json($rs, ['items' => $auth->listSessions(Http::user($rq)['id'])]));
                 $p->delete('/me/sessions/{id}', function (Request $rq, Response $rs, array $a) use ($auth): Response {
@@ -173,8 +215,9 @@ final class Api
                 });
 
                 // receipts
-                $p->post('/groups/{id}/receipts', function (Request $rq, Response $rs, array $a) use ($groups, $receipts): Response {
+                $p->post('/groups/{id}/receipts', function (Request $rq, Response $rs, array $a) use ($groups, $receipts, $limiter): Response {
                     $userId = Http::user($rq)['id'];
+                    $limiter->guard('receipts', $userId, 20, 86400); // FR-4.5 cost guard
                     $groups->assertMember($a['id'], $userId);
                     $groups->assertWritable($a['id']);
                     $file = $rq->getUploadedFiles()['image'] ?? null;

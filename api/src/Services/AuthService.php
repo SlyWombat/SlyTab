@@ -145,6 +145,66 @@ final class AuthService
         return self::publicUser($row);
     }
 
+    /** PATCH /me — FR-1.4. @param array<string,mixed> $data @return array<string,mixed> */
+    public function updateProfile(string $userId, array $data): array
+    {
+        $sets = [];
+        $args = [];
+        if (array_key_exists('displayName', $data)) {
+            $name = trim((string) $data['displayName']);
+            if ($name === '' || mb_strlen($name) > 80) {
+                throw new ApiException('VALIDATION', 'display name must be 1-80 characters');
+            }
+            $sets[] = 'display_name = ?';
+            $args[] = $name;
+        }
+        if (array_key_exists('avatar', $data)) {
+            $sets[] = 'avatar = ?';
+            $args[] = mb_substr((string) $data['avatar'], 0, 16);
+        }
+        if (array_key_exists('defaultCurrency', $data)) {
+            $cur = strtoupper((string) $data['defaultCurrency']);
+            if (!preg_match('/^[A-Z]{3}$/', $cur)) {
+                throw new ApiException('VALIDATION', 'defaultCurrency must be a 3-letter code');
+            }
+            $sets[] = 'default_currency = ?';
+            $args[] = $cur;
+        }
+        if (array_key_exists('paymentHandles', $data)) {
+            $sets[] = 'payment_handles = ?';
+            $args[] = json_encode(self::validateHandles($data['paymentHandles']), JSON_THROW_ON_ERROR);
+        }
+        if ($sets !== []) {
+            $args[] = $userId;
+            $this->pdo->prepare('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+        }
+        return $this->userById($userId);
+    }
+
+    /** @return array<string,string> */
+    private static function validateHandles(mixed $handles): array
+    {
+        if (!is_array($handles)) {
+            throw new ApiException('VALIDATION', 'paymentHandles must be an object');
+        }
+        $out = [];
+        if (isset($handles['interacEmail']) && $handles['interacEmail'] !== '') {
+            if (!filter_var($handles['interacEmail'], FILTER_VALIDATE_EMAIL)) {
+                throw new ApiException('VALIDATION', 'interacEmail must be a valid email address');
+            }
+            $out['interacEmail'] = strtolower((string) $handles['interacEmail']);
+        }
+        foreach (['paypalMe', 'venmo'] as $key) {
+            if (isset($handles[$key]) && $handles[$key] !== '') {
+                if (!preg_match('/^[A-Za-z0-9._-]{1,50}$/', (string) $handles[$key])) {
+                    throw new ApiException('VALIDATION', "{$key} may only contain letters, numbers, dots, dashes");
+                }
+                $out[$key] = (string) $handles[$key];
+            }
+        }
+        return $out;
+    }
+
     private function createSession(string $userId, string $deviceLabel): string
     {
         $token = bin2hex(random_bytes(32));

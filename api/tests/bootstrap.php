@@ -15,8 +15,9 @@ putenv("DB_NAME={$testDb}");
 
 // Peppers/keys are required by the services; provide throwaways for test
 // runs that don't configure them.
-foreach (['SESSION_PEPPER', 'INVITE_HMAC_KEY'] as $key) {
+foreach (['SESSION_PEPPER', 'INVITE_HMAC_KEY', 'MIGRATE_TOKEN'] as $key) {
     if (getenv($key) === false || getenv($key) === '') {
         putenv("{$key}=test-only-{$key}-not-a-secret");
     }
 }
+putenv('MAIL_DISABLE=1'); // never attempt real mail from a test run
