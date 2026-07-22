@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Full money API (2026-07-22): groups with signed invite links and
+  zero-balance-guarded leave; expenses with server-revalidated splits, FX
+  locking (ECB or manual), soft delete/restore; balances with simplified
+  settlement plans; pending→confirmed settlements; receipt upload +
+  Claude itemization (Anthropic PHP SDK); activity feed; CSV export;
+  /me/balances rollup; ECB rate cron. 22 PHP integration tests green.
+- Web app MVP (2026-07-22): sign in/up, Home (net position, group list,
+  pending-settlement confirmations), group screen (expenses + balances +
+  suggested settlements), add-expense sheet with equal/unequal splits
+  computed by @slytab/core, invite links with in-app join, settle-up sheet
+  with Interac/PayPal.Me deep links, CSV export — all on the Ledger tokens.
+
 - Monorepo scaffold (2026-07-22): npm workspaces with `packages/core`
   (money/split/balance/simplify/currency implemented + Zod schemas + design
   tokens, 28 Vitest tests green), `api/` (Slim 4 skeleton, health route,

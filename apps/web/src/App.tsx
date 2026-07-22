@@ -1,53 +1,77 @@
-import { formatMinor } from '@slytab/core';
+import { useEffect, useState } from 'react';
+import { api, getToken, setToken, type User } from './api';
+import { Auth } from './screens/Auth';
+import { Home } from './screens/Home';
+import { GroupScreen } from './screens/Group';
 
-/** Split-coin mark (assets/brand/slytab-mark.svg, inlined). */
-function Mark({ size = 56 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 96 96" width={size} height={size} role="img" aria-label="SlyTab">
-      <defs>
-        <mask id="seam">
-          <rect width="96" height="96" fill="#fff" />
-          <path
-            d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88"
-            fill="none" stroke="#000" strokeWidth="5" strokeLinecap="round"
-          />
-        </mask>
-      </defs>
-      <g mask="url(#seam)">
-        <path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="var(--ss-brand)" />
-        <path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="var(--ss-owed)" />
-      </g>
-    </svg>
-  );
+type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
+
+/** Pull a pending invite token from /join/<token> URLs (SPA fallback). */
+function pendingJoinToken(): string | null {
+  const m = location.pathname.match(/\/join\/([a-f0-9]{32})$/);
+  return m?.[1] ?? null;
 }
 
-/**
- * Placeholder Welcome screen (ui_requirements.md §2.1) proving the token
- * pipeline end to end: core formats the money, tokens.css styles it.
- */
 export function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [nav, setNav] = useState<Nav>({ screen: 'home' });
+  const [joinToken, setJoinToken] = useState<string | null>(pendingJoinToken);
+
+  // Restore the session on load.
+  useEffect(() => {
+    if (getToken() === null) {
+      setChecked(true);
+      return;
+    }
+    api.me()
+      .then(setUser)
+      .catch(() => setToken(null))
+      .finally(() => setChecked(true));
+  }, []);
+
+  // Accept a pending invite once signed in.
+  useEffect(() => {
+    if (user === null || joinToken === null) return;
+    api.join(joinToken)
+      .then((group) => setNav({ screen: 'group', groupId: group.id }))
+      .catch(() => { /* expired invite — land on Home */ })
+      .finally(() => {
+        setJoinToken(null);
+        history.replaceState(null, '', import.meta.env.BASE_URL);
+      });
+  }, [user, joinToken]);
+
+  if (!checked) return null;
+
+  if (user === null) {
+    return (
+      <Auth
+        joinPending={joinToken !== null}
+        onSignedIn={(token, u) => { setToken(token); setUser(u); }}
+      />
+    );
+  }
+
+  if (nav.screen === 'group') {
+    return (
+      <GroupScreen
+        groupId={nav.groupId}
+        user={user}
+        onBack={() => setNav({ screen: 'home' })}
+      />
+    );
+  }
+
   return (
-    <main
-      style={{
-        minHeight: '100vh', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        gap: 'var(--ss-space-4)', padding: 'var(--ss-space-6)',
-        textAlign: 'center',
+    <Home
+      user={user}
+      onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
+      onSignOut={() => {
+        api.logout().catch(() => {});
+        setToken(null);
+        setUser(null);
       }}
-    >
-      <Mark />
-      <h1 style={{ font: '600 34px/1.2 var(--ss-font-display)', letterSpacing: '-0.02em' }}>
-        Sly<span style={{ color: 'var(--ss-text-2)' }}>Tab</span>
-      </h1>
-      <p style={{ color: 'var(--ss-text-2)', maxWidth: '38ch' }}>
-        Split expenses with the people you actually share life with.
-      </p>
-      <p className="amount amount--owed" style={{ fontSize: 22 }}>
-        {'+' + formatMinor(14210, 'CAD')}
-      </p>
-      <p style={{ color: 'var(--ss-text-3)', fontSize: 13 }}>
-        Scaffold build — screens land per docs/design/ui_requirements.md
-      </p>
-    </main>
+    />
   );
 }
