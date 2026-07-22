@@ -49,6 +49,7 @@ jobs:
       DB_USER: slytab
       DB_PASS: ci
       SESSION_PEPPER: ci-only-pepper
+      INVITE_HMAC_KEY: ci-only-invite-key
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

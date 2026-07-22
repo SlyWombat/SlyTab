@@ -13,8 +13,10 @@ Env::bootstrap();
 $testDb = getenv('DB_TEST_NAME') ?: 'slytab_test';
 putenv("DB_NAME={$testDb}");
 
-// A pepper is required by AuthService; provide a throwaway for test runs
-// that don't configure one.
-if (getenv('SESSION_PEPPER') === false || getenv('SESSION_PEPPER') === '') {
-    putenv('SESSION_PEPPER=test-only-pepper-not-a-secret');
+// Peppers/keys are required by the services; provide throwaways for test
+// runs that don't configure them.
+foreach (['SESSION_PEPPER', 'INVITE_HMAC_KEY'] as $key) {
+    if (getenv($key) === false || getenv($key) === '') {
+        putenv("{$key}=test-only-{$key}-not-a-secret");
+    }
 }
