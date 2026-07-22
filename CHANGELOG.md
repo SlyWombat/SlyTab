@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Local receipt recognition** (2026-07-22): receipts are now itemized by
+  a self-hosted vision model (qwen2.5vl:7b on kdocker2's Ollama, reached
+  through the rathole tunnel at VM:3308) — photos never leave our
+  hardware, ~6s per scan, zero per-scan cost. `RECEIPT_ENGINE=auto`
+  prefers local and falls back to Claude only when a key is configured;
+  amounts are transcribed as printed and converted to minor units
+  server-side, with confidence recomputed deterministically (2%
+  reconciliation rule). Privacy policy updated accordingly. Verified end
+  to end in dev and production.
+
+### Fixed
+
+- Production Bearer auth: shared-hosting Apache strips the Authorization
+  header from FastCGI PHP, so every authenticated endpoint 401'd in
+  production. Fixed with `CGIPassAuth On` + `SetEnvIf` in the API
+  .htaccess (found by the production receipt end-to-end test).
+
 - **Production launch** (2026-07-22): live at electricrv.ca/slytab. Web +
   PHP API on cPanel; the database runs at home on kdocker2 through the
   SlyTesla rathole tunnel (VM :3307, TLS with pinned CA, IP-restricted at

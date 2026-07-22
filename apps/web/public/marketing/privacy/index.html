@@ -52,7 +52,7 @@
 
   <h2>Third parties we use</h2>
   <ul>
-    <li><strong>Anthropic (Claude API):</strong> when you scan a receipt, the photo is sent server-side to Anthropic to be itemized, subject to Anthropic's commercial data terms. Skip scanning and enter items manually if you prefer.</li>
+    <li><strong>Receipt scanning runs on our own hardware.</strong> Photos are itemized by a vision model we host ourselves — they are never sent to any third-party AI service. (A Claude API fallback exists in the code but is disabled unless we explicitly enable it; this policy will be updated first if that ever changes.)</li>
     <li><strong>Frankfurter/ECB:</strong> currency codes only, to fetch daily exchange rates. No user data is sent.</li>
   </ul>
 

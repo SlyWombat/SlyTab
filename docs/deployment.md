@@ -24,8 +24,10 @@ Browser ── https://electricrv.ca/slytab ────────────
                                                       │  rathole tunnel (:2333 control)
                                                       ▼
         kdocker2 (home)                      tesla-relay-client (host network)
-                                             → 127.0.0.1:3306 → slytab-mysql container
-                                               └ db slytab_prod, user slytab_prod REQUIRE SSL
+                                             ├ :3307 → 127.0.0.1:3306 → slytab-mysql
+                                             │   └ db slytab_prod, user slytab_prod REQUIRE SSL
+                                             └ :3308 → 127.0.0.1:11434 → Ollama (qwen2.5vl:7b)
+                                                 └ receipt itemization on our own GPU
 ```
 
 ## Key facts
@@ -36,7 +38,7 @@ Browser ── https://electricrv.ca/slytab ────────────
 | Admin endpoints | `POST /slytab/api/internal/{migrate,fetch-rates}` with `X-Admin-Token` |
 | Prod DB | `slytab_prod` on kdocker2's `slytab-mysql`, via VM `147.5.121.145:3307`, TLS required, CA pinned (`scripts/prod/mysql-ca.pem` — public cert) |
 | Secrets | Local repo `.env` holds `CPANEL_*`, `WEB_ROOT`, and all `PROD_*` values; the host's copy lives in `~/slytab/config.env` (0644, above web root) |
-| Receipt scanning | Disabled until `ANTHROPIC_API_KEY` is set in `~/slytab/config.env` (endpoint returns a clear 503 meanwhile) |
+| Receipt scanning | **Local vision model** (qwen2.5vl:7b on kdocker2's Ollama) via VM `:3308` — photos never leave home; ~6s/scan. `RECEIPT_ENGINE=auto` prefers local, uses Claude only if `ANTHROPIC_API_KEY` is set |
 | Rathole configs | VM `/etc/rathole/server.toml` (systemd `rathole-server`); kdocker2 `/data/stacks/tesla-log/relay/client.toml` (`tesla-relay-client`, watched by `relay-guard.sh`) — both have `.bak` copies from before the SlyTab service was added |
 | OCI | Port 3307 opened in the VM's security list ("SlyTab MySQL tunnel" rules); backup of prior rules at kdocker2 `/tmp/sl-ingress-backup.json` |
 
@@ -74,5 +76,9 @@ Both read the repo `.env`. New SQL migrations ship with the API deploy —
   scale; BalanceService batches per-group reads.
 - MySQL TLS uses the container's self-signed CA (pinned by the API); hostname
   verification is off because we connect by IP.
+- The Ollama endpoint behind VM:3308 is unauthenticated; the OCI + iptables
+  IP restriction is the only gate (the cPanel egress IP is shared with other
+  tenants of that host). Worst case is borrowed inference cycles, not data
+  exposure — revisit with an auth proxy if that ever matters.
 - If the home connection's IP changes, nothing breaks (kdocker2 dials *out*
   to the VM); only the extra "home IP" debug rules on 3307 go stale.

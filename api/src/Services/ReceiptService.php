@@ -85,14 +85,157 @@ final class ReceiptService
     }
 
     /**
-     * Send the image to the Claude API with a strict JSON schema so the
-     * result is guaranteed parseable (architecture §6).
+     * Itemize the receipt. Engine order (RECEIPT_ENGINE=auto): the local
+     * vision model on our own hardware first (photos never leave home),
+     * Claude only when explicitly configured. Both paths emit the same
+     * shape: integer minor units + a deterministic confidence.
      *
      * @return array<string,mixed>
      */
     private function parse(string $path, string $mime): array
     {
-        $apiKey = Env::get('ANTHROPIC_API_KEY');
+        $engine = Env::get('RECEIPT_ENGINE', 'auto');
+        $localUrl = Env::get('LOCAL_LLM_URL');
+        $claudeKey = Env::get('ANTHROPIC_API_KEY');
+
+        if ($engine === 'local' || ($engine === 'auto' && $localUrl !== '')) {
+            return $this->parseLocal($path, $mime, $localUrl);
+        }
+        if ($engine === 'claude' || ($engine === 'auto' && $claudeKey !== '')) {
+            return $this->parseClaude($path, $mime, $claudeKey);
+        }
+        throw new ApiException('RECEIPT_PARSING_UNAVAILABLE', 'receipt scanning is not configured on this server', 503);
+    }
+
+    /**
+     * Local vision model via Ollama (default qwen2.5vl:7b). The model
+     * transcribes decimal amounts exactly as printed; we convert to minor
+     * units and recompute confidence server-side — no model arithmetic.
+     *
+     * @return array<string,mixed>
+     */
+    private function parseLocal(string $path, string $mime, string $baseUrl): array
+    {
+        $body = json_encode([
+            'model' => Env::get('LOCAL_LLM_MODEL', 'qwen2.5vl:7b'),
+            'stream' => false,
+            'format' => self::localSchema(),
+            'options' => ['temperature' => 0],
+            'messages' => [[
+                'role' => 'user',
+                'content' => 'Transcribe this receipt into JSON. Copy every amount as the '
+                    . 'decimal number printed on the receipt (e.g. 12.99); do not convert '
+                    . 'units. quantity is the item count (default 1; may be fractional for '
+                    . 'weighed goods). date is YYYY-MM-DD; currency is the 3-letter code. '
+                    . 'Use null for anything unreadable.',
+                'images' => [base64_encode(file_get_contents($path))],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+
+        $ch = curl_init(rtrim($baseUrl, '/') . '/api/chat');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_TIMEOUT => (int) Env::get('LOCAL_LLM_TIMEOUT', '90'),
+            CURLOPT_CONNECTTIMEOUT => 10,
+        ]);
+        $raw = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($raw === false) {
+            throw new \RuntimeException("local model unreachable: {$err}");
+        }
+        $resp = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
+        if (isset($resp['error'])) {
+            throw new \RuntimeException('local model error: ' . $resp['error']);
+        }
+        $doc = json_decode($resp['message']['content'], true, 16, JSON_THROW_ON_ERROR);
+
+        $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * 100) : null;
+        $items = [];
+        foreach (($doc['items'] ?? []) as $item) {
+            $minor = $toMinor($item['total'] ?? null);
+            if (!is_string($item['name'] ?? null) || $minor === null) {
+                continue;
+            }
+            $items[] = [
+                'name' => mb_substr($item['name'], 0, 120),
+                'quantity' => is_numeric($item['quantity'] ?? null) ? (float) $item['quantity'] : 1.0,
+                'totalMinor' => $minor,
+            ];
+        }
+
+        $parsed = [
+            'merchant' => is_string($doc['merchant'] ?? null) ? mb_substr($doc['merchant'], 0, 120) : null,
+            'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($doc['date'] ?? '')) ? $doc['date'] : null,
+            'currency' => preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null,
+            'items' => $items,
+            'subtotalMinor' => $toMinor($doc['subtotal'] ?? null),
+            'taxMinor' => $toMinor($doc['tax'] ?? null),
+            'tipMinor' => $toMinor($doc['tip'] ?? null),
+            'totalMinor' => $toMinor($doc['total'] ?? null),
+        ];
+        $parsed['confidence'] = self::deriveConfidence($parsed);
+        return $parsed;
+    }
+
+    /**
+     * Deterministic confidence: FR-4.1's 2% reconciliation check computed
+     * here rather than trusting model self-assessment.
+     *
+     * @param array<string,mixed> $p
+     */
+    private static function deriveConfidence(array $p): string
+    {
+        if ($p['items'] === [] || $p['totalMinor'] === null || $p['totalMinor'] <= 0) {
+            return 'low';
+        }
+        $sum = array_sum(array_column($p['items'], 'totalMinor'))
+            + ($p['taxMinor'] ?? 0) + ($p['tipMinor'] ?? 0);
+        $delta = abs($sum - $p['totalMinor']) / $p['totalMinor'];
+        return $delta <= 0.0001 ? 'high' : ($delta <= 0.02 ? 'medium' : 'low');
+    }
+
+    /** @return array<string,mixed> decimal-dollars schema for the local model */
+    private static function localSchema(): array
+    {
+        $nullableNumber = ['type' => ['number', 'null']];
+        return [
+            'type' => 'object',
+            'properties' => [
+                'merchant' => ['type' => ['string', 'null']],
+                'date' => ['type' => ['string', 'null']],
+                'currency' => ['type' => ['string', 'null']],
+                'items' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'name' => ['type' => 'string'],
+                            'quantity' => ['type' => 'number'],
+                            'total' => ['type' => 'number'],
+                        ],
+                        'required' => ['name', 'quantity', 'total'],
+                    ],
+                ],
+                'subtotal' => $nullableNumber,
+                'tax' => $nullableNumber,
+                'tip' => $nullableNumber,
+                'total' => $nullableNumber,
+            ],
+            'required' => ['merchant', 'date', 'currency', 'items', 'subtotal', 'tax', 'tip', 'total'],
+        ];
+    }
+
+    /**
+     * Claude API fallback engine — strict JSON schema, minor units native.
+     *
+     * @return array<string,mixed>
+     */
+    private function parseClaude(string $path, string $mime, string $apiKey): array
+    {
         if ($apiKey === '') {
             throw new ApiException('RECEIPT_PARSING_UNAVAILABLE', 'receipt scanning is not configured on this server', 503);
         }

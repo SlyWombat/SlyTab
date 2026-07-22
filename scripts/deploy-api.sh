@@ -60,6 +60,10 @@ DATA_DIR=$APPDIR/data
 APP_URL=https://electricrv.ca/slytab
 MAIL_FROM=SlyTab <noreply@electricrv.ca>
 ANTHROPIC_API_KEY=
+RECEIPT_ENGINE=auto
+LOCAL_LLM_URL=http://147.5.121.145:3308
+LOCAL_LLM_MODEL=qwen2.5vl:7b
+LOCAL_LLM_TIMEOUT=90
 EOF
 cp "$REPO/scripts/prod/mysql-ca.pem" "$CONFDIR/mysql-ca.pem"
 

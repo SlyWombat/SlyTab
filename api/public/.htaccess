@@ -1,4 +1,10 @@
 # SlyTab API — route everything through the Slim front controller.
+
+# Shared-hosting Apache strips the Authorization header from CGI/FastCGI
+# PHP by default; without these, every Bearer-token request 401s.
+CGIPassAuth On
+SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteCond %{REQUEST_FILENAME} !-f
