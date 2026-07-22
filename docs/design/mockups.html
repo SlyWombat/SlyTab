@@ -1,0 +1,479 @@
+<title>SlySplit — Brand & UI</title>
+<!-- Self-contained brand board + high-fidelity screen mockups for SlySplit.
+     Implements docs/design/DESIGN.md ("Ledger") exactly: --ss-* tokens,
+     dark-default with full light theme. Fonts fall back to system faces
+     when Space Grotesk / Inter / JetBrains Mono aren't installed. -->
+<style>
+  :root{
+    --pg-bg:#0c1220; --pg-surface:#141c2e; --pg-surface2:#1c2740;
+    --pg-outline:#2e3d5e; --pg-text:#eef2fa; --pg-text2:#a9b4cc;
+    --pg-text3:#6b7794; --pg-brand:#4f8ef7; --pg-owed:#34c98e; --pg-owe:#f5a623;
+    --font-display:"Space Grotesk","Segoe UI",system-ui,sans-serif;
+    --font-body:"Inter","Segoe UI",system-ui,sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,"Cascadia Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --pg-bg:#f6f7fb; --pg-surface:#ffffff; --pg-surface2:#eef1f7;
+      --pg-outline:#d4dbe8; --pg-text:#16203a; --pg-text2:#4a5878;
+      --pg-text3:#8592ad; --pg-brand:#2f6fe0; --pg-owed:#148f63; --pg-owe:#b57408; }
+  }
+  :root[data-theme="dark"]{ --pg-bg:#0c1220; --pg-surface:#141c2e;
+    --pg-surface2:#1c2740; --pg-outline:#2e3d5e; --pg-text:#eef2fa;
+    --pg-text2:#a9b4cc; --pg-text3:#6b7794; --pg-brand:#4f8ef7;
+    --pg-owed:#34c98e; --pg-owe:#f5a623; }
+  :root[data-theme="light"]{ --pg-bg:#f6f7fb; --pg-surface:#ffffff;
+    --pg-surface2:#eef1f7; --pg-outline:#d4dbe8; --pg-text:#16203a;
+    --pg-text2:#4a5878; --pg-text3:#8592ad; --pg-brand:#2f6fe0;
+    --pg-owed:#148f63; --pg-owe:#b57408; }
+
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--pg-bg); color:var(--pg-text);
+    font:400 15px/1.55 var(--font-body); padding:48px 24px 80px;}
+  main{max-width:1120px; margin:0 auto; display:flex; flex-direction:column; gap:56px}
+  h1,h2,h3{font-family:var(--font-display); text-wrap:balance}
+  h1{font-size:30px; font-weight:600; letter-spacing:-.02em}
+  h2{font-size:21px; font-weight:600; margin-bottom:4px}
+  .eyebrow{font:600 11.5px/1 var(--font-body); letter-spacing:.14em;
+    text-transform:uppercase; color:var(--pg-text3); margin-bottom:10px}
+  .lede{color:var(--pg-text2); max-width:62ch}
+  section>header{margin-bottom:22px}
+
+  /* ---- brand board ---- */
+  .board{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px}
+  .tile{border:1px solid var(--pg-outline); border-radius:14px; padding:22px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; min-height:170px; background:var(--pg-surface)}
+  .tile.dark{background:#0c1220} .tile.light{background:#f6f7fb; border-color:#d4dbe8}
+  .tile figcaption{font-size:12px; color:var(--pg-text3); text-align:center}
+  .tile.dark figcaption{color:#6b7794} .tile.light figcaption{color:#8592ad}
+
+  .swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:10px}
+  .sw{border:1px solid var(--pg-outline); border-radius:10px; overflow:hidden; background:var(--pg-surface)}
+  .sw i{display:block; height:52px}
+  .sw div{padding:8px 10px; font-size:12px}
+  .sw code{font:500 11px var(--font-mono); color:var(--pg-text3)}
+
+  .typerow{display:flex; align-items:baseline; gap:18px; padding:12px 0;
+    border-bottom:1px solid var(--pg-outline)}
+  .typerow:last-child{border-bottom:none}
+  .typerow small{flex:0 0 150px; font-size:12px; color:var(--pg-text3)}
+
+  /* ---- phones ---- */
+  .phones{display:flex; gap:26px; overflow-x:auto; padding:6px 2px 22px}
+  .phonewrap{flex:0 0 auto; display:flex; flex-direction:column; gap:10px}
+  .phonewrap>p{font-size:13px; color:var(--pg-text2); text-align:center}
+  .bezel{background:#05070d; border-radius:42px; padding:9px;
+    box-shadow:0 18px 44px rgb(0 0 0 / .45), 0 0 0 1px rgb(255 255 255 / .06)}
+  .screen{width:302px; height:642px; border-radius:34px; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+    font:400 13px/1.45 var(--font-body);
+    /* per-screen Ledger tokens — dark theme */
+    --bg:#0c1220; --surface:#141c2e; --surface2:#1c2740; --surface3:#253352;
+    --outline:#2e3d5e; --text:#eef2fa; --text2:#a9b4cc; --text3:#6b7794;
+    --brand:#4f8ef7; --owed:#34c98e; --owe:#f5a623; --danger:#ef5d6b;
+    background:var(--bg); color:var(--text)}
+  .screen.lightui{ --bg:#f6f7fb; --surface:#ffffff; --surface2:#eef1f7;
+    --surface3:#e2e8f3; --outline:#d4dbe8; --text:#16203a; --text2:#4a5878;
+    --text3:#8592ad; --brand:#2f6fe0; --owed:#148f63; --owe:#b57408; --danger:#cf3545}
+
+  .statusbar{display:flex; justify-content:space-between; align-items:center;
+    padding:12px 22px 6px; font:600 12px var(--font-body); color:var(--text2)}
+  .content{flex:1; overflow:hidden; display:flex; flex-direction:column; padding:0 14px}
+  .apphead{display:flex; align-items:center; gap:9px; padding:8px 4px 12px}
+  .apphead .grow{flex:1}
+  .apphead h4{font:600 17px var(--font-display); letter-spacing:-.01em}
+  .apphead .sub{font-size:11.5px; color:var(--text3)}
+  .back{color:var(--text2); font-size:17px; padding:0 2px}
+
+  .amt{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:500}
+  .pos{color:var(--owed)} .neg{color:var(--owe)} .mut{color:var(--text3)}
+
+  .hero{background:var(--surface); border:1px solid var(--outline);
+    border-radius:16px; padding:16px 16px 14px; margin-bottom:12px}
+  .hero .cap{font:600 10.5px/1 var(--font-body); letter-spacing:.13em;
+    text-transform:uppercase; color:var(--text3)}
+  .hero .big{font:600 30px/1.2 var(--font-mono); font-variant-numeric:tabular-nums; margin:6px 0 2px}
+  .hero .sub{font-size:12px; color:var(--text2)}
+
+  .banner{display:flex; align-items:center; gap:10px; background:var(--surface2);
+    border:1px solid var(--outline); border-radius:12px; padding:10px 12px; margin-bottom:14px}
+  .banner b{font-weight:600}
+  .banner .amt{font-size:13px}
+
+  .sect{font:600 10.5px/1 var(--font-body); letter-spacing:.13em;
+    text-transform:uppercase; color:var(--text3); padding:8px 4px 8px}
+  .row{display:flex; align-items:center; gap:11px; background:var(--surface);
+    border:1px solid var(--outline); border-radius:12px; padding:10px 12px; margin-bottom:8px}
+  .row .grow{flex:1; min-width:0}
+  .row .name{font-weight:600; font-size:13.5px}
+  .row .meta{font-size:11.5px; color:var(--text3)}
+  .row .right{text-align:right}
+  .row .right .amt{font-size:14px; display:block}
+  .row .right .dir{font-size:10.5px; color:var(--text3)}
+  .row.ghost{background:transparent; border-style:dashed; color:var(--text3);
+    justify-content:center; font-size:12px}
+
+  .badge{width:30px; height:30px; border-radius:50%; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    font:600 12.5px var(--font-display); color:#0c1220}
+  .b-d{background:#79aaff} .b-a{background:#6ee0d2} .b-m{background:#f5a05e} .b-p{background:#ff8fb2}
+  .badge.sm{width:22px;height:22px;font-size:10px}
+  .badgerow{display:flex; gap:6px}
+  .badge.pick{outline:2.5px solid var(--brand); outline-offset:2px}
+  .badge.dim{opacity:.38}
+
+  .fab{position:absolute; right:16px; bottom:74px; width:50px; height:50px;
+    border-radius:50%; background:var(--brand); color:#fff; font:300 28px/48px var(--font-body);
+    text-align:center; box-shadow:0 8px 20px rgb(0 0 0 / .35)}
+  .tabbar{display:flex; border-top:1px solid var(--outline); background:var(--surface);
+    padding:8px 6px 16px}
+  .tab{flex:1; text-align:center; font-size:10px; color:var(--text3)}
+  .tab svg{display:block; margin:0 auto 3px}
+  .tab.on{color:var(--brand)}
+
+  .tabs{display:flex; background:var(--surface2); border-radius:10px; padding:3px; margin-bottom:12px}
+  .tabs span{flex:1; text-align:center; font:600 12px/26px var(--font-body);
+    border-radius:8px; color:var(--text2)}
+  .tabs .on{background:var(--surface); color:var(--text);
+    box-shadow:0 1px 3px rgb(0 0 0 / .25)}
+
+  .settle-row .amt{font-size:13.5px}
+  .btn{display:block; width:100%; text-align:center; border:none; cursor:pointer;
+    font:600 13.5px/44px var(--font-body); border-radius:12px;
+    background:var(--surface2); color:var(--text); margin-bottom:8px}
+  .btn.primary{background:var(--brand); color:#fff}
+  .btn.sm{display:inline-block; width:auto; line-height:30px; padding:0 13px;
+    font-size:11.5px; border-radius:9px; margin:0}
+  .btn:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .link{color:var(--brand); font-size:12px; text-align:center; padding:4px}
+
+  .sheetback{position:absolute; inset:0; background:rgb(4 7 14 / .62)}
+  .sheet{position:absolute; left:0; right:0; bottom:0; background:var(--surface);
+    border-radius:22px 22px 0 0; padding:8px 16px 20px;
+    box-shadow:0 -12px 34px rgb(0 0 0 / .5)}
+  .screen.lightui .sheet{box-shadow:0 -12px 34px rgb(22 32 58 / .28)}
+  .grab{width:36px; height:4px; border-radius:2px; background:var(--outline); margin:0 auto 12px}
+  .sheet h5{font:600 15px var(--font-display); margin-bottom:12px}
+  .bigamt{display:flex; align-items:baseline; gap:8px; justify-content:center;
+    padding:6px 0 14px}
+  .bigamt .amt{font-size:34px; font-weight:600}
+  .chip{display:inline-block; font:600 11px/22px var(--font-body); padding:0 10px;
+    border-radius:11px; background:var(--surface2); color:var(--text2);
+    border:1px solid var(--outline)}
+  .chip.on{background:var(--brand); border-color:var(--brand); color:#fff}
+  .field{background:var(--surface2); border:1px solid var(--outline); border-radius:10px;
+    padding:9px 12px; font-size:13px; margin-bottom:10px; display:flex; gap:8px; align-items:center}
+  .field .lab{color:var(--text3); font-size:11px; flex:0 0 58px}
+  .checkrow{display:flex; align-items:center; gap:9px; padding:7px 2px; font-size:13px}
+  .check{width:17px; height:17px; border-radius:5px; background:var(--brand);
+    color:#fff; font-size:11px; line-height:17px; text-align:center; flex:0 0 auto}
+
+  .item{display:flex; align-items:center; gap:9px; background:var(--surface);
+    border:1px solid var(--outline); border-radius:11px; padding:9px 11px; margin-bottom:7px}
+  .item .grow{flex:1; min-width:0}
+  .item .nm{font-size:13px; font-weight:500}
+  .item .qty{font-size:11px; color:var(--text3)}
+  .item.warn{border-color:var(--owe)}
+  .assignees{display:flex; gap:4px}
+  .footerbar{margin-top:auto; border-top:1px solid var(--outline);
+    padding:10px 2px 14px; font-size:11.5px; color:var(--text2)}
+
+  .note{font-size:11.5px; color:var(--text3); text-align:center; padding:6px 10px 0}
+
+  @media (prefers-reduced-motion: no-preference){
+    .tile{transition:transform .18s cubic-bezier(.2,0,0,1)}
+    .tile:hover{transform:translateY(-2px)}
+  }
+  footer{color:var(--pg-text3); font-size:12.5px; border-top:1px solid var(--pg-outline);
+    padding-top:18px}
+</style>
+
+<main>
+<header>
+  <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px">
+    <svg viewBox="0 0 96 96" width="44" height="44" role="img" aria-label="SlySplit mark">
+      <defs><mask id="m0"><rect width="96" height="96" fill="#fff"/>
+        <path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/></mask></defs>
+      <g mask="url(#m0)">
+        <path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="var(--pg-brand)"/>
+        <path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="var(--pg-owed)"/>
+      </g>
+    </svg>
+    <h1>SlySplit — Brand &amp; UI</h1>
+  </div>
+  <p class="lede">The "Ledger" design language applied: the split-coin identity, the
+  token palette, and five high-fidelity screens from the v1.0 flow. Everything below
+  is built from the tokens in <code style="font-family:var(--font-mono); font-size:13px">docs/design/DESIGN.md</code> —
+  what ships is what you see.</p>
+</header>
+
+<section>
+  <header>
+    <p class="eyebrow">Identity</p>
+    <h2>The split coin</h2>
+    <p class="lede">A coin divided by an S-shaped seam — the S of SlySplit. One half
+    brand blue, one half owed-green: money, split fairly, between two parties.</p>
+  </header>
+  <div class="board">
+    <figure class="tile dark">
+      <svg viewBox="0 0 96 96" width="72" height="72"><defs><mask id="m1"><rect width="96" height="96" fill="#fff"/><path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/></mask></defs><g mask="url(#m1)"><path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#4f8ef7"/><path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#34c98e"/></g></svg>
+      <figcaption>Mark · dark ground</figcaption>
+    </figure>
+    <figure class="tile light">
+      <svg viewBox="0 0 96 96" width="72" height="72"><defs><mask id="m2"><rect width="96" height="96" fill="#fff"/><path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/></mask></defs><g mask="url(#m2)"><path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#2f6fe0"/><path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#148f63"/></g></svg>
+      <figcaption>Mark · light ground</figcaption>
+    </figure>
+    <figure class="tile">
+      <svg viewBox="0 0 1024 1024" width="84" height="84" style="border-radius:19px">
+        <rect width="1024" height="1024" rx="224" fill="#0c1220"/>
+        <g transform="translate(512 512) scale(8.6) translate(-48 -48)">
+          <path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#4f8ef7"/>
+          <path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#34c98e"/>
+          <path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#0c1220" stroke-width="5" stroke-linecap="round"/>
+        </g>
+      </svg>
+      <figcaption>App icon · 1024 master</figcaption>
+    </figure>
+    <figure class="tile dark" style="grid-column:span 1">
+      <div style="display:flex; align-items:center; gap:10px">
+        <svg viewBox="0 0 96 96" width="34" height="34"><defs><mask id="m3"><rect width="96" height="96" fill="#fff"/><path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/></mask></defs><g mask="url(#m3)"><path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#4f8ef7"/><path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#34c98e"/></g></svg>
+        <span style="font:600 24px var(--font-display); letter-spacing:-.02em; color:#eef2fa">Sly<span style="color:#a9b4cc">Split</span></span>
+      </div>
+      <figcaption>Wordmark — "Sly" primary, "Split" secondary, echoing the two-tone coin</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <header>
+    <p class="eyebrow">Palette</p>
+    <h2>Ledger tokens</h2>
+    <p class="lede">Direction has exactly two colours — green means owed to you,
+    amber means you owe. Red is reserved for errors, so money-direction and danger
+    never blur.</p>
+  </header>
+  <div class="swatches">
+    <div class="sw"><i style="background:#0c1220"></i><div>Background<br><code>--ss-bg · #0c1220</code></div></div>
+    <div class="sw"><i style="background:#141c2e"></i><div>Surface<br><code>--ss-surface · #141c2e</code></div></div>
+    <div class="sw"><i style="background:#1c2740"></i><div>Surface 2<br><code>--ss-surface-2 · #1c2740</code></div></div>
+    <div class="sw"><i style="background:#4f8ef7"></i><div>Brand<br><code>--ss-brand · #4f8ef7</code></div></div>
+    <div class="sw"><i style="background:#34c98e"></i><div>Owed / incoming<br><code>--ss-owed · #34c98e</code></div></div>
+    <div class="sw"><i style="background:#f5a623"></i><div>Owe / outgoing<br><code>--ss-owe · #f5a623</code></div></div>
+    <div class="sw"><i style="background:#ef5d6b"></i><div>Danger only<br><code>--ss-danger · #ef5d6b</code></div></div>
+    <div class="sw"><i style="background:#eef2fa"></i><div>Text<br><code>--ss-text · #eef2fa</code></div></div>
+  </div>
+</section>
+
+<section>
+  <header>
+    <p class="eyebrow">Type</p>
+    <h2>Scale</h2>
+    <p class="lede">Space Grotesk for display, Inter for body, JetBrains Mono with
+    tabular figures for every amount. (This preview falls back to system faces if
+    they aren't installed.)</p>
+  </header>
+  <div>
+    <div class="typerow"><small>hero · 34/40 · 600</small><span style="font:600 34px/1.2 var(--font-mono); font-variant-numeric:tabular-nums; color:var(--pg-owed)">+C$142.10</span></div>
+    <div class="typerow"><small>title · 24/30 · 600</small><span style="font:600 24px/1.25 var(--font-display)">Cottage Trip</span></div>
+    <div class="typerow"><small>heading · 18/24 · 600</small><span style="font:600 18px/1.33 var(--font-display)">Suggested settlements</span></div>
+    <div class="typerow"><small>body · 15/22 · 400</small><span>Alice added "Groceries" and split it four ways.</span></div>
+    <div class="typerow"><small>amount · mono · tabular</small><span class="amt" style="font-size:15px">C$1,204.60&nbsp;&nbsp;·&nbsp;&nbsp;US$&nbsp;42.10 ≈ C$57.80</span></div>
+    <div class="typerow"><small>caption · 13/18 · 400</small><span style="font-size:13px; color:var(--pg-text3)">Paid by Dave · Jul 20 · ECB rate 1.3729</span></div>
+  </div>
+</section>
+
+<section>
+  <header>
+    <p class="eyebrow">Screens</p>
+    <h2>The v1.0 flow, at fidelity</h2>
+    <p class="lede">Home → group balances → adding an expense → assigning a scanned
+    receipt → settling up. Four screens in the default dark theme; Settle is shown
+    in light to demonstrate both themes ship from the same tokens. Scroll sideways →</p>
+  </header>
+
+  <div class="phones">
+
+    <!-- ═══ 1 · HOME (dark) ═══ -->
+    <div class="phonewrap">
+      <div class="bezel"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span>●●●&nbsp;⏻</span></div>
+        <div class="content">
+          <div class="apphead">
+            <svg viewBox="0 0 96 96" width="22" height="22"><defs><mask id="m4"><rect width="96" height="96" fill="#fff"/><path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88" fill="none" stroke="#000" stroke-width="6" stroke-linecap="round"/></mask></defs><g mask="url(#m4)"><path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#4f8ef7"/><path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="#34c98e"/></g></svg>
+            <h4>Sly<span style="color:var(--text2)">Split</span></h4>
+            <div class="grow"></div>
+            <span class="badge b-d">D</span>
+          </div>
+          <div class="hero">
+            <div class="cap">Your balance</div>
+            <div class="big pos">+C$142.10</div>
+            <div class="sub">You're owed across 3 groups</div>
+          </div>
+          <div class="banner">
+            <span class="badge sm b-a">A</span>
+            <span class="grow">Alice sent you <b class="amt">C$25.00</b></span>
+            <button class="btn primary sm">Confirm</button>
+          </div>
+          <div class="sect">People</div>
+          <div class="row"><span class="badge b-p">P</span>
+            <div class="grow"><div class="name">Priya</div><div class="meta">Cottage Trip · Household</div></div>
+            <div class="right"><span class="amt pos">+C$110.60</span><span class="dir">owes you</span></div></div>
+          <div class="row"><span class="badge b-a">A</span>
+            <div class="grow"><div class="name">Alice</div><div class="meta">Cottage Trip</div></div>
+            <div class="right"><span class="amt pos">+C$67.50</span><span class="dir">owes you</span></div></div>
+          <div class="row"><span class="badge b-m">M</span>
+            <div class="grow"><div class="name">Marc</div><div class="meta">Hockey pool</div></div>
+            <div class="right"><span class="amt neg">−C$36.00</span><span class="dir">you owe</span></div></div>
+          <div class="row ghost">Settled up (2) ▾</div>
+        </div>
+        <div class="fab" aria-hidden="true">+</div>
+        <div class="tabbar">
+          <div class="tab on"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Home</div>
+          <div class="tab"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="8" cy="9" r="3.2"/><circle cx="16.5" cy="10.5" r="2.6"/><path d="M3 20c.6-3.2 2.7-5 5-5s4.4 1.8 5 5"/><path d="M14.5 20c.4-2.2 1.6-3.6 3.4-3.9"/></svg>Groups</div>
+          <div class="tab"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg>Activity</div>
+          <div class="tab"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/></svg>Profile</div>
+        </div>
+      </div></div>
+      <p>Home — where do I stand?</p>
+    </div>
+
+    <!-- ═══ 2 · GROUP BALANCES (dark) ═══ -->
+    <div class="phonewrap">
+      <div class="bezel"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span>●●●&nbsp;⏻</span></div>
+        <div class="content">
+          <div class="apphead">
+            <span class="back">‹</span>
+            <div>
+              <h4>🏕️ Cottage Trip</h4>
+              <div class="sub">4 members · CAD</div>
+            </div>
+            <div class="grow"></div>
+            <div class="right" style="text-align:right">
+              <span class="amt pos" style="font-size:15px">+C$85.10</span>
+              <div class="sub">your net</div>
+            </div>
+          </div>
+          <div class="tabs"><span>Expenses</span><span class="on">Balances</span><span>Totals</span></div>
+          <div class="row"><span class="badge b-d">D</span><div class="grow"><div class="name">You</div></div>
+            <div class="right"><span class="amt pos">+C$85.10</span></div></div>
+          <div class="row"><span class="badge b-p">P</span><div class="grow"><div class="name">Priya</div></div>
+            <div class="right"><span class="amt pos">+C$20.60</span></div></div>
+          <div class="row"><span class="badge b-a">A</span><div class="grow"><div class="name">Alice</div></div>
+            <div class="right"><span class="amt neg">−C$42.60</span></div></div>
+          <div class="row"><span class="badge b-m">M</span><div class="grow"><div class="name">Marc</div></div>
+            <div class="right"><span class="amt neg">−C$63.10</span></div></div>
+          <div class="sect">Suggested settlements · 3 transfers</div>
+          <div class="row settle-row"><span class="badge sm b-a">A</span>
+            <div class="grow" style="font-size:12.5px">Alice → <b>You</b>&nbsp;&nbsp;<span class="amt">C$42.60</span></div>
+            <button class="btn sm">Remind</button></div>
+          <div class="row settle-row"><span class="badge sm b-m">M</span>
+            <div class="grow" style="font-size:12.5px">Marc → <b>You</b>&nbsp;&nbsp;<span class="amt">C$42.50</span></div>
+            <button class="btn sm">Remind</button></div>
+          <div class="row settle-row"><span class="badge sm b-m">M</span>
+            <div class="grow" style="font-size:12.5px">Marc → Priya&nbsp;&nbsp;<span class="amt">C$20.60</span></div>
+          </div>
+          <div class="link">Show all debts</div>
+        </div>
+      </div></div>
+      <p>Group · Balances &amp; simplified plan</p>
+    </div>
+
+    <!-- ═══ 3 · ADD EXPENSE SHEET (dark) ═══ -->
+    <div class="phonewrap">
+      <div class="bezel"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span>●●●&nbsp;⏻</span></div>
+        <div class="content" style="opacity:.55">
+          <div class="apphead"><span class="back">‹</span><h4>🏕️ Cottage Trip</h4></div>
+          <div class="row"><div class="grow"><div class="name">Marina gas</div><div class="meta">Priya paid · Jul 19</div></div>
+            <div class="right"><span class="amt neg">−C$22.75</span><span class="dir">you borrowed</span></div></div>
+          <div class="row"><div class="grow"><div class="name">Beer run 🍺</div><div class="meta">You paid · Jul 19</div></div>
+            <div class="right"><span class="amt pos">+C$31.20</span><span class="dir">you lent</span></div></div>
+        </div>
+        <div class="sheetback"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h5>New expense</h5>
+          <div class="bigamt"><span class="amt">C$&thinsp;82.10</span><span class="chip on">CAD</span></div>
+          <div class="field"><span class="lab">What</span>Groceries&nbsp;&nbsp;<span class="chip on" style="margin-left:auto">Food</span></div>
+          <div class="field"><span class="lab">Paid by</span><span class="badge sm b-d">D</span>&nbsp;You</div>
+          <div class="tabs" style="margin-bottom:8px"><span class="on">Equal</span><span>Unequal</span></div>
+          <div class="checkrow"><span class="check">✓</span><span class="badge sm b-d">D</span>You<span style="margin-left:auto" class="amt mut">C$20.53</span></div>
+          <div class="checkrow"><span class="check">✓</span><span class="badge sm b-a">A</span>Alice<span style="margin-left:auto" class="amt mut">C$20.53</span></div>
+          <div class="checkrow"><span class="check">✓</span><span class="badge sm b-m">M</span>Marc<span style="margin-left:auto" class="amt mut">C$20.52</span></div>
+          <div class="checkrow" style="margin-bottom:10px"><span class="check">✓</span><span class="badge sm b-p">P</span>Priya<span style="margin-left:auto" class="amt mut">C$20.52</span></div>
+          <button class="btn primary">Save expense</button>
+        </div>
+      </div></div>
+      <p>Add expense — 10-second entry</p>
+    </div>
+
+    <!-- ═══ 4 · RECEIPT ASSIGN (dark) ═══ -->
+    <div class="phonewrap">
+      <div class="bezel"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span>●●●&nbsp;⏻</span></div>
+        <div class="content">
+          <div class="apphead">
+            <span class="back">‹</span>
+            <div><h4>Assign items</h4><div class="sub">Provigo · Jul 20 · <span class="amt">C$61.24</span></div></div>
+          </div>
+          <div class="badgerow" style="padding:2px 4px 12px">
+            <span class="badge pick b-d">D</span><span class="badge dim b-a">A</span>
+            <span class="badge dim b-m">M</span><span class="badge dim b-p">P</span>
+            <span style="margin-left:auto; font-size:11px; color:var(--text3); align-self:center">tap item, then people</span>
+          </div>
+          <div class="item"><div class="grow"><div class="nm">Chicken thighs</div><div class="qty">1 × C$12.99</div></div>
+            <div class="assignees"><span class="badge sm b-d">D</span></div><span class="amt">12.99</span></div>
+          <div class="item"><div class="grow"><div class="nm">Corn on the cob</div><div class="qty">6 × C$0.75</div></div>
+            <div class="assignees"><span class="badge sm b-a">A</span><span class="badge sm b-m">M</span></div><span class="amt">4.50</span></div>
+          <div class="item"><div class="grow"><div class="nm">Charcoal</div><div class="qty">1 × C$18.75</div></div>
+            <div class="assignees"><span class="badge sm b-d">D</span><span class="badge sm b-m">M</span></div><span class="amt">18.75</span></div>
+          <div class="item warn"><div class="grow"><div class="nm">Cabernet Sauvignon</div><div class="qty">1 × C$21.00 · nobody yet</div></div>
+            <span class="amt neg">21.00</span></div>
+          <button class="btn" style="margin-top:4px">Split the rest equally</button>
+          <div class="footerbar">
+            Tax C$4.00 prorates automatically<br>
+            <span class="amt" style="color:var(--text)">Dave C$23.93 · Alice C$2.41 · Marc C$12.44</span>
+          </div>
+          <button class="btn primary">Continue</button>
+        </div>
+      </div></div>
+      <p>Receipt scan — assign items</p>
+    </div>
+
+    <!-- ═══ 5 · SETTLE UP (light theme) ═══ -->
+    <div class="phonewrap">
+      <div class="bezel"><div class="screen lightui">
+        <div class="statusbar"><span>9:41</span><span>●●●&nbsp;⏻</span></div>
+        <div class="content" style="opacity:.55">
+          <div class="apphead"><h4>Hockey pool 🏒</h4></div>
+          <div class="row"><span class="badge b-m">M</span><div class="grow"><div class="name">Marc</div></div>
+            <div class="right"><span class="amt neg">−C$36.00</span><span class="dir">you owe</span></div></div>
+        </div>
+        <div class="sheetback" style="background:rgb(22 32 58 / .32)"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h5>Settle up</h5>
+          <div style="display:flex; align-items:center; gap:9px; padding-bottom:6px">
+            <span class="badge sm b-d">D</span><span style="font-size:12.5px">You pay</span>
+            <span class="badge sm b-m">M</span><span style="font-size:12.5px; font-weight:600">Marc</span>
+          </div>
+          <div class="bigamt"><span class="amt">C$&thinsp;36.00</span><span style="font-size:11px; color:var(--text3)">edit</span></div>
+          <button class="btn primary">Interac e-Transfer</button>
+          <button class="btn">PayPal.Me</button>
+          <button class="btn">Record cash or other</button>
+          <p class="note">SlySplit never holds your money — payments happen in
+          your own apps. Marc confirms when it arrives.</p>
+        </div>
+      </div></div>
+      <p>Settle up — light theme</p>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  SlySplit · Ledger design language · tokens from docs/design/DESIGN.md ·
+  screens map 1:1 to docs/design/ui_requirements.md §2 · Electric RV, 2026
+</footer>
+</main>

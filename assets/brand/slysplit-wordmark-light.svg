@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" width="300" height="64">
+  <!-- Wordmark for light backgrounds. -->
+  <defs>
+    <mask id="seam-wm-l">
+      <rect width="300" height="64" fill="#fff"/>
+      <path d="M32 5.3 A13.3 13.3 0 0 0 32 32 A13.3 13.3 0 0 1 32 58.7"
+            fill="none" stroke="#000" stroke-width="3.3" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#seam-wm-l)">
+    <path d="M32 5.3 A26.7 26.7 0 0 0 32 58.7 A13.3 13.3 0 0 0 32 32 A13.3 13.3 0 0 1 32 5.3 Z"
+          fill="#2f6fe0"/>
+    <path d="M32 5.3 A26.7 26.7 0 0 1 32 58.7 A13.3 13.3 0 0 0 32 32 A13.3 13.3 0 0 1 32 5.3 Z"
+          fill="#148f63"/>
+  </g>
+  <text x="76" y="43" font-family="'Space Grotesk', 'Segoe UI', system-ui, sans-serif"
+        font-size="34" font-weight="600" letter-spacing="-0.5" fill="#16203a">Sly<tspan fill="#4a5878">Split</tspan></text>
+</svg>

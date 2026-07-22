@@ -1,0 +1,31 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+api/vendor/
+
+# Build output
+dist/
+apps/web/dist/
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
+
+# Runtime data (server)
+slysplit-data/
+*.sql.gz
+
+# Tooling
+.claude/
+local-docs/
+coverage/
+playwright-report/
+test-results/
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

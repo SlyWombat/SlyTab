@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- SlySplit mark: a coin split into two halves by an S-shaped seam.
+       Left half: brand blue. Right half: owed-green. Seam is transparent
+       (masked) so the mark sits on any background. -->
+  <defs>
+    <mask id="seam">
+      <rect width="96" height="96" fill="#fff"/>
+      <path d="M48 8 A20 20 0 0 0 48 48 A20 20 0 0 1 48 88"
+            fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#seam)">
+    <path d="M48 8 A40 40 0 0 0 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z"
+          fill="#4f8ef7"/>
+    <path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z"
+          fill="#34c98e"/>
+  </g>
+</svg>
