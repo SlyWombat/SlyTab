@@ -14,7 +14,7 @@ export const MinorAmount = z.number().int().safe();
 export const PositiveMinorAmount = MinorAmount.positive();
 export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-export const Category = z.enum(['food', 'home', 'travel', 'fun', 'utilities', 'other']);
+export const CategorySchema = z.enum(['drinks', 'dining', 'travel', 'adulting', 'other']);
 
 export const PaymentHandles = z
   .object({
@@ -42,7 +42,7 @@ export const ExpenseCreate = z
     amountMinor: PositiveMinorAmount,
     currency: CurrencyCode,
     expenseDate: IsoDate,
-    category: Category,
+    category: CategorySchema,
     notes: z.string().max(2000).optional(),
     receiptId: Id.optional(),
     fxRateOverride: z.number().positive().optional(),

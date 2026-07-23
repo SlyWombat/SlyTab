@@ -296,17 +296,18 @@ final class ImportService
     {
         $sw = strtolower($splitwise);
         return match (true) {
-            str_contains($sw, 'grocer'), str_contains($sw, 'dining'), str_contains($sw, 'food') => 'food',
-            str_contains($sw, 'rent'), str_contains($sw, 'household'), str_contains($sw, 'home'),
-            str_contains($sw, 'furniture'), str_contains($sw, 'maintenance') => 'home',
+            str_contains($sw, 'liquor'), str_contains($sw, 'alcohol'), str_contains($sw, 'bar'),
+            str_contains($sw, 'drink'), str_contains($sw, 'wine'), str_contains($sw, 'beer') => 'drinks',
+            str_contains($sw, 'grocer'), str_contains($sw, 'dining'), str_contains($sw, 'food'),
+            str_contains($sw, 'restaurant') => 'dining',
             str_contains($sw, 'transport'), str_contains($sw, 'travel'), str_contains($sw, 'car'),
             str_contains($sw, 'gas'), str_contains($sw, 'hotel'), str_contains($sw, 'plane'),
             str_contains($sw, 'taxi'), str_contains($sw, 'parking') => 'travel',
-            str_contains($sw, 'entertain'), str_contains($sw, 'movie'), str_contains($sw, 'music'),
-            str_contains($sw, 'sport'), str_contains($sw, 'game') => 'fun',
-            str_contains($sw, 'utilit'), str_contains($sw, 'electric'), str_contains($sw, 'water'),
-            str_contains($sw, 'heat'), str_contains($sw, 'tv'), str_contains($sw, 'phone'),
-            str_contains($sw, 'internet') => 'utilities',
+            str_contains($sw, 'rent'), str_contains($sw, 'household'), str_contains($sw, 'home'),
+            str_contains($sw, 'furniture'), str_contains($sw, 'maintenance'), str_contains($sw, 'utilit'),
+            str_contains($sw, 'electric'), str_contains($sw, 'water'), str_contains($sw, 'heat'),
+            str_contains($sw, 'tv'), str_contains($sw, 'phone'), str_contains($sw, 'insurance'),
+            str_contains($sw, 'internet') => 'adulting',
             default => 'other',
         };
     }

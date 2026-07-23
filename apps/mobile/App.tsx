@@ -7,7 +7,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { computeSplit, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, tokens, type Currency } from '@slytab/core';
+import { CATEGORIES, CATEGORY_LABELS, computeSplit, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, tokens, type Category, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -623,7 +623,7 @@ function GroupScreen({ groupId, user, onBack }: {
               <Text style={s.cap}>BY CATEGORY</Text>
               {totals.byCategory.map((cat) => (
                 <View style={s.row} key={cat.category}>
-                  <Text style={[s.body, { flex: 1 }]}>{cat.category}</Text>
+                  <Text style={[s.body, { flex: 1 }]}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</Text>
                   <Amount minor={cat.minor} currency={group.homeCurrency} />
                 </View>
               ))}
@@ -1058,6 +1058,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // New expenses start in whatever currency the group used last (mid-trip
   // you keep paying in the local currency).
   const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
+  const [category, setCategory] = useState(editing?.category ?? 'dining');
   const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
@@ -1114,7 +1115,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         amountMinor,
         currency,
         expenseDate: date,
-        category: editing?.category ?? 'other',
+        category,
         splitMethod: exactShares !== null ? 'exact' : 'equal',
         payers: [{ userId: editing?.payers[0]?.userId ?? user.id, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
@@ -1153,6 +1154,18 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           onPick={(cur) => { setCurrency(cur); setAllCurrencies(false); }} />
       )}
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
+      <Text style={s.fieldLabel}>Category</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {CATEGORIES.map((cat) => (
+          <Pressable key={cat} onPress={() => setCategory(cat)}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: category === cat ? c.brand : c.surface2 }}>
+            <Text style={{ color: category === cat ? '#fff' : c.text2, fontSize: 12.5 }}>
+              {CATEGORY_LABELS[cat]}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
           <Btn label={scanBusy ? 'Reading…' : receiptId ? 'Rescan receipt' : '📷 Scan receipt'}

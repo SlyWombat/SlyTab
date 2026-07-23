@@ -17,7 +17,7 @@ use SlyTab\Support\Ulid;
  */
 final class ExpenseService
 {
-    private const CATEGORIES = ['food', 'home', 'travel', 'fun', 'utilities', 'other'];
+    private const CATEGORIES = ['drinks', 'dining', 'travel', 'adulting', 'other'];
     private const SPLIT_METHODS = ['equal', 'exact', 'shares', 'percent', 'adjustment'];
 
     public function __construct(

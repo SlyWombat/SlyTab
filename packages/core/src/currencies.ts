@@ -43,3 +43,18 @@ export const GROUP_EMOJI = [
   '🏠', '🏕️', '✈️', '🚗', '⛷️', '🏖️', '🍽️', '🍺', '🎉', '💑',
   '👨‍👩‍👧‍👦', '🐶', '⚽', '🏒', '🎣', '⛵', '🎿', '🧗', '🛒', '💡',
 ] as const;
+
+/**
+ * Expense categories — five, with attitude (owner request). Slugs are
+ * stable API identifiers; labels are what humans see.
+ */
+export const CATEGORIES = ['drinks', 'dining', 'travel', 'adulting', 'other'] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  drinks: 'Liquid assets',
+  dining: 'Overpriced calories',
+  travel: 'Getting there',
+  adulting: 'Adulting',
+  other: 'Questionable choices',
+};

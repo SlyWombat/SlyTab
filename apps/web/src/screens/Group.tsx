@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { computeSplit, CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI } from '@slytab/core';
+import { CATEGORIES, CATEGORY_LABELS, computeSplit, CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI, type Category } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
-
-const CATEGORIES = ['food', 'home', 'travel', 'fun', 'utilities', 'other'] as const;
 
 export type ScanStage =
   | { stage: 'upload'; fraction: number }
@@ -134,7 +132,7 @@ export function GroupScreen({ groupId, user, onBack }: {
                 <div className="grow">
                   <div className="name">{e.description}</div>
                   <div className="meta">
-                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate} · {e.category}
+                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate} · {CATEGORY_LABELS[e.category as Category] ?? e.category}
                     {e.fxRate !== null && ` · ${e.currency}@${e.fxRate.toFixed(4)}`}
                   </div>
                 </div>
@@ -173,7 +171,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           <div className="sect">By category</div>
           {totals.byCategory.map((cat) => (
             <div className="row" key={cat.category}>
-              <div className="grow" style={{ fontSize: 13.5 }}>{cat.category}</div>
+              <div className="grow" style={{ fontSize: 13.5 }}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</div>
               <Amount minor={cat.minor} currency={group.homeCurrency} />
             </div>
           ))}
@@ -280,7 +278,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // you keep paying in the local currency (user feedback).
   const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
-  const [category, setCategory] = useState<string>(editing?.category ?? 'food');
+  const [category, setCategory] = useState<string>(editing?.category ?? 'dining');
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
   const [mode, setMode] = useState<'equal' | 'unequal'>(editing ? 'unequal' : 'equal');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
@@ -433,7 +431,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           </label>
           <label className="field" style={{ flex: 1 }}><span>Category</span>
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
             </select>
           </label>
         </div>

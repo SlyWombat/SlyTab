@@ -204,6 +204,6 @@ final class SplitwiseApiImportTest extends TestCase
 
         // Category mapped from "Groceries" → food.
         $list = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/expenses", null, $ann['token']));
-        self::assertSame('food', $list['items'][0]['category']);
+        self::assertSame('dining', $list['items'][0]['category']);
     }
 }

@@ -106,7 +106,7 @@ final class GroupMoneyFlowTest extends TestCase
         // 1) Groceries C$82.10, Dave pays, equal 4-way (client-computed split).
         $this->ok($this->request('POST', '/api/v1/groups/' . self::$groupId . '/expenses', [
             'description' => 'Groceries', 'amountMinor' => 8210, 'currency' => 'CAD',
-            'expenseDate' => '2026-07-20', 'category' => 'food', 'splitMethod' => 'equal',
+            'expenseDate' => '2026-07-20', 'category' => 'dining', 'splitMethod' => 'equal',
             'payers' => [['userId' => $u('dave'), 'amountMinor' => 8210]],
             'shares' => [
                 ['userId' => $u('dave'), 'amountMinor' => 2053],
@@ -135,7 +135,7 @@ final class GroupMoneyFlowTest extends TestCase
         // 3) US$100 duty-free, Priya pays, ECB rate (1.48/1.09), equal 4-way.
         $dutyFree = $this->ok($this->request('POST', '/api/v1/groups/' . self::$groupId . '/expenses', [
             'description' => 'Duty free', 'amountMinor' => 10000, 'currency' => 'USD',
-            'expenseDate' => '2026-07-20', 'category' => 'fun', 'splitMethod' => 'equal',
+            'expenseDate' => '2026-07-20', 'category' => 'other', 'splitMethod' => 'equal',
             'payers' => [['userId' => $u('priya'), 'amountMinor' => 10000]],
             'shares' => [
                 ['userId' => $u('dave'), 'amountMinor' => 2500],
@@ -291,7 +291,7 @@ final class GroupMoneyFlowTest extends TestCase
             $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $wanda['token']), 200);
             $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
                 'description' => 'Dinner', 'amountMinor' => 1000, 'currency' => $cur,
-                'expenseDate' => $today, 'category' => 'food', 'splitMethod' => 'equal',
+                'expenseDate' => $today, 'category' => 'dining', 'splitMethod' => 'equal',
                 'payers' => [['userId' => $harry['id'], 'amountMinor' => 1000]],
                 'shares' => [
                     ['userId' => $harry['id'], 'amountMinor' => 500],
@@ -333,9 +333,9 @@ final class GroupMoneyFlowTest extends TestCase
         ], $t), 201);
 
         foreach ([
-            ['Lunch', 1000, 'food', '2026-06-05'],
+            ['Lunch', 1000, 'dining', '2026-06-05'],
             ['Taxi', 500, 'travel', '2026-07-01'],
-            ['Snacks', 250, 'food', '2026-07-02'],
+            ['Snacks', 250, 'drinks', '2026-07-02'],
         ] as [$desc, $minor, $cat, $date]) {
             $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
                 'description' => $desc, 'amountMinor' => $minor, 'currency' => 'CAD',
@@ -347,7 +347,7 @@ final class GroupMoneyFlowTest extends TestCase
 
         $totals = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/totals", null, $t), 200);
         self::assertSame(1750, $totals['totalMinor']);
-        self::assertSame(['category' => 'food', 'minor' => 1250], $totals['byCategory'][0]);
+        self::assertSame(['category' => 'dining', 'minor' => 1000], $totals['byCategory'][0]);
         self::assertSame(['userId' => $uid, 'minor' => 1750], $totals['byPayer'][0]);
         self::assertSame(['userId' => $uid, 'minor' => 1750], $totals['byShare'][0]);
         self::assertSame(['month' => '2026-07', 'minor' => 750], $totals['byMonth'][0]);
@@ -402,7 +402,7 @@ final class GroupMoneyFlowTest extends TestCase
 
         $e = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
             'description' => 'Dinner with tip slip', 'amountMinor' => 5750, 'currency' => 'CAD',
-            'expenseDate' => '2026-07-22', 'category' => 'food', 'splitMethod' => 'equal',
+            'expenseDate' => '2026-07-22', 'category' => 'dining', 'splitMethod' => 'equal',
             'payers' => [['userId' => $r['user']['id'], 'amountMinor' => 5750]],
             'shares' => [['userId' => $r['user']['id'], 'amountMinor' => 5750]],
             'receiptIds' => ['01TESTRECEIPTBILL000000000', '01TESTRECEIPTSLIP000000000'],
@@ -419,7 +419,7 @@ final class GroupMoneyFlowTest extends TestCase
         // A receipt from another group cannot be attached.
         $bad = $this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
             'description' => 'Bad link', 'amountMinor' => 100, 'currency' => 'CAD',
-            'expenseDate' => '2026-07-22', 'category' => 'food', 'splitMethod' => 'equal',
+            'expenseDate' => '2026-07-22', 'category' => 'dining', 'splitMethod' => 'equal',
             'payers' => [['userId' => $r['user']['id'], 'amountMinor' => 100]],
             'shares' => [['userId' => $r['user']['id'], 'amountMinor' => 100]],
             'receiptIds' => ['01DOESNOTEXIST000000000000'],
@@ -446,7 +446,7 @@ final class GroupMoneyFlowTest extends TestCase
         $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $stay['token']), 200);
         $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
             'description' => 'Last supper', 'amountMinor' => 2000, 'currency' => 'CAD',
-            'expenseDate' => '2026-07-20', 'category' => 'food', 'splitMethod' => 'equal',
+            'expenseDate' => '2026-07-20', 'category' => 'dining', 'splitMethod' => 'equal',
             'payers' => [['userId' => $gone['id'], 'amountMinor' => 2000]],
             'shares' => [
                 ['userId' => $gone['id'], 'amountMinor' => 1000],
