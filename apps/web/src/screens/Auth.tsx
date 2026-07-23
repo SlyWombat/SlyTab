@@ -105,20 +105,24 @@ function AppleButton({ onSignedIn, onError }: {
     if (clientId === null) return;
     const init = () => {
       if (!window.AppleID) return;
-      window.AppleID.auth.init({
-        clientId,
-        scope: 'name email',
-        redirectURI: `${location.origin}/slytab/`,
-        usePopup: true,
-      });
-      setReady(true);
+      try {
+        window.AppleID.auth.init({
+          clientId,
+          scope: 'name email',
+          redirectURI: `${location.origin}/slytab/`,
+          usePopup: true,
+        });
+        setReady(true);
+      } catch (e) {
+        onError('Apple sign-in could not start — try again later');
+      }
     };
     if (window.AppleID) {
       init();
       return;
     }
     const script = document.createElement('script');
-    script.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en-US/appleid.auth.js';
+    script.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js';
     script.async = true;
     script.onload = init;
     document.head.appendChild(script);
