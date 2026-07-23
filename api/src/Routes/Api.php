@@ -150,18 +150,45 @@ final class Api
                     return Http::json($rs, ['ok' => true]);
                 });
 
-                // home: net per group + pending settlements
-                $p->get('/me/balances', function (Request $rq, Response $rs) use ($groups, $balances, $settlements): Response {
-                    $userId = Http::user($rq)['id'];
+                // home: net per group + pending settlements + overall total
+                // converted into the user's default currency (FR-6.4).
+                $p->get('/me/balances', function (Request $rq, Response $rs) use ($groups, $balances, $settlements, $fx): Response {
+                    $user = Http::user($rq);
+                    $userId = $user['id'];
+                    $home = $user['defaultCurrency'];
                     $items = [];
+                    $totalMinor = 0;
+                    $converted = false;
+                    $excluded = [];
                     foreach ($groups->listForUser($userId) as $group) {
+                        $net = $balances->netFor($group['id'], $userId);
                         $items[] = [
                             'group' => $group,
-                            'netMinor' => $balances->netFor($group['id'], $userId),
+                            'netMinor' => $net,
                             'currency' => $group['homeCurrency'],
                         ];
+                        if ($group['homeCurrency'] === $home) {
+                            $totalMinor += $net;
+                        } elseif ($net !== 0) {
+                            try {
+                                $rate = $fx->rateFor(gmdate('Y-m-d'), $group['homeCurrency'], $home);
+                                $totalMinor += (int) round($net * $rate);
+                                $converted = true;
+                            } catch (ApiException) {
+                                $excluded[] = $group['homeCurrency']; // no rate — leave out rather than lie
+                            }
+                        }
                     }
-                    return Http::json($rs, ['items' => $items, 'pendingSettlements' => $settlements->pendingFor($userId)]);
+                    return Http::json($rs, [
+                        'items' => $items,
+                        'pendingSettlements' => $settlements->pendingFor($userId),
+                        'total' => [
+                            'minor' => $totalMinor,
+                            'currency' => $home,
+                            'approximate' => $converted,
+                            'excluded' => array_values(array_unique($excluded)),
+                        ],
+                    ]);
                 });
 
                 // groups

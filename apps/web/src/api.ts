@@ -91,6 +91,7 @@ export interface Settlement {
 export interface HomeBalances {
   items: { group: Group; netMinor: number; currency: string }[];
   pendingSettlements: Settlement[];
+  total: { minor: number; currency: string; approximate: boolean; excluded: string[] };
 }
 
 export function getToken(): string | null {

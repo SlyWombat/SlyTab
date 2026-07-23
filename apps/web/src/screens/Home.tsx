@@ -19,9 +19,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   }, []);
   useEffect(reload, [reload]);
 
-  const total = (data?.items ?? [])
-    .filter((i) => i.currency === user.defaultCurrency)
-    .reduce((a, i) => a + i.netMinor, 0);
+  const total = data?.total ?? null;
   const incoming = (data?.pendingSettlements ?? []).filter((s) => s.toUserId === user.id);
 
   return (
@@ -52,14 +50,20 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       <div className="hero">
         <div className="cap">Your balance</div>
         <div className="big">
-          {data === null ? '…' : (
-            total === 0
+          {total === null ? '…' : (
+            total.minor === 0
               ? <span style={{ color: 'var(--ss-text-2)' }}>All settled up ✓</span>
-              : <Amount minor={total} currency={user.defaultCurrency} signed size={32} />
+              : <>
+                  {total.approximate && <span style={{ color: 'var(--ss-text-2)', fontWeight: 400 }}>≈ </span>}
+                  <Amount minor={total.minor} currency={total.currency} signed size={32} />
+                </>
           )}
         </div>
         <div className="sub">
-          {data === null ? 'Loading' : `Across ${data.items.length} group${data.items.length === 1 ? '' : 's'}`}
+          {total === null ? 'Loading'
+            : `Across ${data!.items.length} group${data!.items.length === 1 ? '' : 's'}`
+              + (total.approximate ? ` · converted to ${total.currency} at today's rate` : '')
+              + (total.excluded.length > 0 ? ` · no rate for ${total.excluded.join(', ')}` : '')}
         </div>
       </div>
 

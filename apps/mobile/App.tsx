@@ -5,6 +5,7 @@ import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@slytab/core';
 import {
   api, setToken, uploadReceipt,
@@ -93,21 +94,57 @@ function SheetModal({ title, onClose, children }: {
 
 type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
 
+const TOKEN_KEY = 'slytab.session';
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [restoring, setRestoring] = useState(true);
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
+
+  // Stay signed in: the session token lives in the device keystore.
+  useEffect(() => {
+    SecureStore.getItemAsync(TOKEN_KEY)
+      .then(async (stored) => {
+        if (stored === null) return;
+        setToken(stored);
+        try {
+          setUser(await api.me());
+        } catch {
+          setToken(null);
+          await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRestoring(false));
+  }, []);
+
+  function signedIn(t: string, u: User) {
+    setToken(t);
+    setUser(u);
+    SecureStore.setItemAsync(TOKEN_KEY, t).catch(() => {});
+  }
 
   return (
     <View style={s.app}>
-      {user === null ? (
-        <AuthScreen onSignedIn={(t, u) => { setToken(t); setUser(u); }} />
+      {restoring ? (
+        <View style={[s.screen, { justifyContent: 'center' }]}>
+          <ActivityIndicator color={c.brand} />
+        </View>
+      ) : user === null ? (
+        <AuthScreen onSignedIn={signedIn} />
       ) : nav.screen === 'group' ? (
         <GroupScreen groupId={nav.groupId} user={user} onBack={() => setNav({ screen: 'home' })} />
       ) : (
         <HomeScreen
           user={user}
+          onUserUpdated={setUser}
           onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
-          onSignOut={() => { api.logout().catch(() => {}); setToken(null); setUser(null); }}
+          onSignOut={() => {
+            api.logout().catch(() => {});
+            setToken(null);
+            setUser(null);
+            SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+          }}
         />
       )}
       <StatusBar style="light" />
@@ -164,21 +201,21 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   );
 }
 
-function HomeScreen({ user, onOpenGroup, onSignOut }: {
+function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   user: User; onOpenGroup: (id: string) => void; onSignOut: () => void;
+  onUserUpdated: (u: User) => void;
 }) {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [creating, setCreating] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
   }, []);
-  useEffect(reload, [reload]);
+  useEffect(reload, [reload, user.defaultCurrency]);
 
-  const total = (data?.items ?? [])
-    .filter((i) => i.currency === user.defaultCurrency)
-    .reduce((a, i) => a + i.netMinor, 0);
+  const total = data?.total ?? null;
   const incoming = (data?.pendingSettlements ?? []).filter((p) => p.toUserId === user.id);
 
   return (
@@ -186,7 +223,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut }: {
       <View style={s.header}>
         <Text style={s.h1}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
         <View style={{ flex: 1 }} />
-        <Btn small label="Sign out" onPress={onSignOut} />
+        <Btn small label="Profile" onPress={() => setProfileOpen(true)} />
       </View>
       {error && <Text style={s.error}>{error}</Text>}
 
@@ -201,10 +238,20 @@ function HomeScreen({ user, onOpenGroup, onSignOut }: {
 
       <View style={s.hero}>
         <Text style={s.cap}>YOUR BALANCE</Text>
-        {data === null ? <ActivityIndicator color={c.brand} /> : total === 0
+        {total === null ? <ActivityIndicator color={c.brand} /> : total.minor === 0
           ? <Text style={{ color: c.text2, fontSize: 26, fontWeight: '600' }}>All settled up ✓</Text>
-          : <Amount minor={total} currency={user.defaultCurrency} signed size={30} />}
-        <Text style={s.meta}>{data ? `Across ${data.items.length} groups` : 'Loading'}</Text>
+          : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {total.approximate && <Text style={{ color: c.text2, fontSize: 22 }}>≈</Text>}
+              <Amount minor={total.minor} currency={total.currency} signed size={30} />
+            </View>
+          )}
+        <Text style={s.meta}>
+          {data === null ? 'Loading'
+            : `Across ${data.items.length} groups`
+              + (total?.approximate ? ` · in ${total.currency} at today's rate` : '')
+              + (total !== null && total.excluded.length > 0 ? ` · no rate for ${total.excluded.join(', ')}` : '')}
+        </Text>
       </View>
 
       {incoming.map((p) => (
@@ -244,7 +291,71 @@ function HomeScreen({ user, onOpenGroup, onSignOut }: {
           onClose={() => setCreating(false)}
           onCreated={(id) => { setCreating(false); onOpenGroup(id); }} />
       )}
+      {profileOpen && (
+        <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
+          onSaved={(u) => { onUserUpdated(u); setProfileOpen(false); }} />
+      )}
     </View>
+  );
+}
+
+function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
+  user: User; onClose: () => void; onSaved: (u: User) => void; onSignOut: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [currency, setCurrency] = useState(user.defaultCurrency);
+  const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
+  const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
+  const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patchMe({
+        displayName: displayName.trim(),
+        defaultCurrency: currency,
+        paymentHandles: {
+          ...(interac ? { interacEmail: interac } : {}),
+          ...(paypal ? { paypalMe: paypal } : {}),
+          ...(venmo ? { venmo } : {}),
+        },
+      });
+      onSaved(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SheetModal title="Profile" onClose={onClose}>
+      {error && <Text style={s.error}>{error}</Text>}
+      <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
+      <Text style={s.fieldLabel}>Home currency — your overall balance shows in this</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+        {CURRENCIES.map((cur) => (
+          <Pressable key={cur} onPress={() => setCurrency(cur)}
+            style={{ paddingVertical: 6, paddingHorizontal: 12, marginRight: 6, borderRadius: 14,
+              backgroundColor: cur === currency ? c.brand : c.surface2 }}>
+            <Text style={{ color: cur === currency ? '#fff' : c.text2, fontWeight: '600', fontSize: 13 }}>{cur}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <Text style={s.fieldLabel}>How people pay you</Text>
+      <Field label="Interac e-Transfer email" value={interac} onChangeText={setInterac}
+        keyboardType="email-address" placeholder="you@example.com" />
+      <Field label="PayPal.Me username" value={paypal} onChangeText={setPaypal} placeholder="yourname" />
+      <Field label="Venmo username" value={venmo} onChangeText={setVenmo} placeholder="yourname" />
+      <Btn primary label={busy ? 'Saving…' : 'Save profile'} disabled={busy || displayName.trim() === ''}
+        onPress={() => void save()} />
+      <View style={{ height: 8 }} />
+      <Btn label="Sign out" onPress={onSignOut} />
+      <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>{user.email}</Text>
+    </SheetModal>
   );
 }
 

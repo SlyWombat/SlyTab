@@ -49,6 +49,7 @@ export interface Settlement {
 export interface HomeBalances {
   items: { group: Group; netMinor: number; currency: string }[];
   pendingSettlements: Settlement[];
+  total: { minor: number; currency: string; approximate: boolean; excluded: string[] };
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -109,6 +110,8 @@ export const api = {
       email, password, deviceLabel: 'mobile',
     }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
+  me: () => req<User>('GET', '/me'),
+  patchMe: (data: object) => req<User>('PATCH', '/me', data),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
   createGroup: (name: string, emoji: string, homeCurrency: string) =>

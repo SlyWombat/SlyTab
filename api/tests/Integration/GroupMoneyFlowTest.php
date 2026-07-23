@@ -257,4 +257,66 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertSame(409, $blocked->getStatusCode());
         self::assertSame('GROUP_ARCHIVED', self::json($blocked)['error']['code']);
     }
+
+    /**
+     * FR-6.4: the home screen total is converted into the user's default
+     * currency, and changing that currency re-denominates the total.
+     */
+    public function testHomeTotalConvertsIntoTheUsersDefaultCurrency(): void
+    {
+        // Rates dated today so the "latest rate" lookup finds them.
+        $seed = Db::pdo()->prepare(
+            'INSERT INTO fx_rates (rate_date, base, quote, rate) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE rate = VALUES(rate)',
+        );
+        $today = gmdate('Y-m-d');
+        $seed->execute([$today, 'EUR', 'CAD', '1.50']);
+        $seed->execute([$today, 'EUR', 'USD', '1.20']); // USD→CAD = 1.50/1.20 = 1.25
+
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $harry = $mk('harry');
+        $wanda = $mk('wanda');
+
+        foreach ([['Trip CAD', 'CAD'], ['Trip USD', 'USD']] as [$name, $cur]) {
+            $g = $this->ok($this->request('POST', '/api/v1/groups', [
+                'name' => $name, 'emoji' => '', 'homeCurrency' => $cur,
+            ], $harry['token']), 201);
+            $invite = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/invites", [], $harry['token']), 201);
+            $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $wanda['token']), 200);
+            $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+                'description' => 'Dinner', 'amountMinor' => 1000, 'currency' => $cur,
+                'expenseDate' => $today, 'category' => 'food', 'splitMethod' => 'equal',
+                'payers' => [['userId' => $harry['id'], 'amountMinor' => 1000]],
+                'shares' => [
+                    ['userId' => $harry['id'], 'amountMinor' => 500],
+                    ['userId' => $wanda['id'], 'amountMinor' => 500],
+                ],
+            ], $harry['token']), 201);
+        }
+
+        // Default currency CAD: 500 CAD + 500 USD × 1.25 = 1125 CAD.
+        $home = $this->ok($this->request('GET', '/api/v1/me/balances', null, $harry['token']), 200);
+        self::assertSame(1125, $home['total']['minor']);
+        self::assertSame('CAD', $home['total']['currency']);
+        self::assertTrue($home['total']['approximate']);
+        self::assertSame([], $home['total']['excluded']);
+
+        // Switching the profile currency re-denominates the same debts:
+        // 500 USD + 500 CAD × 0.8 = 900 USD.
+        $this->ok($this->request('PATCH', '/api/v1/me', ['defaultCurrency' => 'USD'], $harry['token']), 200);
+        $home = $this->ok($this->request('GET', '/api/v1/me/balances', null, $harry['token']), 200);
+        self::assertSame(900, $home['total']['minor']);
+        self::assertSame('USD', $home['total']['currency']);
+
+        // Wanda owes the mirror image in her own default currency.
+        $home = $this->ok($this->request('GET', '/api/v1/me/balances', null, $wanda['token']), 200);
+        self::assertSame(-1125, $home['total']['minor']);
+        self::assertSame('CAD', $home['total']['currency']);
+    }
 }
