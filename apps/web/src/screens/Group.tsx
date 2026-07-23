@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { CATEGORIES, CATEGORY_LABELS, computeSplit, CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI, type Category } from '@slytab/core';
+import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, parseAmount, type Category } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
@@ -133,7 +133,8 @@ export function GroupScreen({ groupId, user, onBack }: {
                   <div className="name">{e.description}</div>
                   <div className="meta">
                     {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate} · {CATEGORY_LABELS[e.category as Category] ?? e.category}
-                    {e.fxRate !== null && ` · ${e.currency}@${e.fxRate.toFixed(4)}`}
+                    {e.fxRate !== null &&
+                      ` · ≈ ${formatMinor(convertAcrossMinor(e.amountMinor, e.fxRate, e.currency, group.homeCurrency), group.homeCurrency)}`}
                   </div>
                 </div>
                 <div className="right">
@@ -273,7 +274,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
+  const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   // New expenses start in whatever currency the group used last — mid-trip
   // you keep paying in the local currency (user feedback).
   const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
@@ -285,7 +286,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [exact, setExact] = useState<Record<string, string>>(() => {
     if (!editing) return {};
     const out: Record<string, string> = {};
-    for (const sh of editing.shares) out[sh.userId] = (sh.amountMinor / 100).toFixed(2);
+    for (const sh of editing.shares) out[sh.userId] = minorToAmountString(sh.amountMinor, editing.currency);
     return out;
   });
   const [fxOverride, setFxOverride] = useState('');
@@ -299,7 +300,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const fileInput = useRef<HTMLInputElement>(null);
   const scanBusy = scan !== null;
 
-  const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
+  const amountMinor = parseAmount(amountStr, currency);
 
   async function onScanFile(file: File) {
     setScan({ stage: 'upload', fraction: 0 });
@@ -332,13 +333,14 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   }) {
     setAssigning(null);
     setExtraReceiptIds(result.receiptIds);
-    setAmountStr((result.totalMinor / 100).toFixed(2));
+    const cur = result.currency && /^[A-Z]{3}$/.test(result.currency) ? result.currency : currency;
+    setAmountStr(minorToAmountString(result.totalMinor, cur));
     if (result.currency && /^[A-Z]{3}$/.test(result.currency)) setCurrency(result.currency);
     if (result.merchant) setDescription(result.merchant);
     if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) setDate(result.date);
     setMode('unequal');
     const next: Record<string, string> = {};
-    for (const [uid, v] of Object.entries(result.shares)) next[uid] = (v / 100).toFixed(2);
+    for (const [uid, v] of Object.entries(result.shares)) next[uid] = minorToAmountString(v, cur);
     setExact(next);
   }
 
@@ -351,7 +353,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       }
       const out: Record<string, number> = {};
       for (const m of group.members) {
-        const v = Math.round((parseFloat(exact[m.id] ?? '') || 0) * 100);
+        const v = parseAmount(exact[m.id] ?? '', currency);
         if (v > 0) out[m.id] = v;
       }
       return out;
@@ -462,7 +464,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             {m.id === user.id ? 'You' : m.displayName}
             {mode === 'equal'
               ? <span className="amount muted" style={{ marginLeft: 'auto', fontSize: 13 }}>
-                  {shares?.[m.id] !== undefined ? (shares[m.id]! / 100).toFixed(2) : '—'}
+                  {shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}
                 </span>
               : <label className="field amt-in" style={{ margin: 0 }}>
                   <input className="amt" inputMode="decimal" placeholder="0.00"
@@ -472,7 +474,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         ))}
         {mode === 'unequal' && (
           <p className="muted" style={{ padding: '4px 2px', color: remaining === 0 ? 'var(--ss-owed)' : 'var(--ss-owe)' }}>
-            remaining: {(remaining / 100).toFixed(2)}
+            remaining: {minorToAmountString(remaining, currency)}
           </p>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -1049,9 +1051,9 @@ function ImportSheet({ group, onClose, onDone }: {
 function SettleSheet({ group, to, suggested, onClose, onDone }: {
   group: Group; to: Member; suggested: number; onClose: () => void; onDone: () => void;
 }) {
-  const [amountStr, setAmountStr] = useState((suggested / 100).toFixed(2));
+  const [amountStr, setAmountStr] = useState(minorToAmountString(suggested, group.homeCurrency));
   const [error, setError] = useState<string | null>(null);
-  const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
+  const amountMinor = parseAmount(amountStr, group.homeCurrency);
   const handles = to.paymentHandles;
 
   async function record(method: string) {
@@ -1064,7 +1066,7 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
     }
   }
 
-  const amountMajor = (amountMinor / 100).toFixed(2);
+  const amountMajor = minorToAmountString(amountMinor, group.homeCurrency);
   return (
     <Sheet title={`You pay ${to.displayName}`} onClose={onClose}>
       {error && <div className="error" role="alert">{error}</div>}

@@ -214,7 +214,7 @@ final class Api
                         } elseif ($net !== 0) {
                             try {
                                 $rate = $fx->rateFor(gmdate('Y-m-d'), $group['homeCurrency'], $home);
-                                $totalMinor += (int) round($net * $rate);
+                                $totalMinor += \SlyTab\Support\Money::convert($net, $rate, $group['homeCurrency'], $home);
                                 $converted = true;
                             } catch (ApiException) {
                                 $excluded[] = $group['homeCurrency']; // no rate — leave out rather than lie

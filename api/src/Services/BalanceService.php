@@ -6,6 +6,7 @@ namespace SlyTab\Services;
 
 use PDO;
 use SlyTab\Domain\Simplify;
+use SlyTab\Support\Money;
 
 /**
  * Balances — FR-6.x. Derived on demand, never stored. All results are in
@@ -42,24 +43,25 @@ final class BalanceService
      */
     public function totalsFor(string $groupId): array
     {
+        $home = $this->homeCurrency($groupId);
         $total = 0;
         $byCategory = [];
         $byMonth = [];
         $stmt = $this->pdo->prepare(
-            'SELECT amount, fx_rate, category, expense_date FROM expenses
+            'SELECT amount, currency, fx_rate, category, expense_date FROM expenses
              WHERE group_id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$groupId]);
         foreach ($stmt->fetchAll() as $e) {
-            $minor = self::toHome((int) $e['amount'], $e['fx_rate']);
+            $minor = self::toHome((int) $e['amount'], $e['fx_rate'], (string) $e['currency'], $home);
             $total += $minor;
             $byCategory[$e['category']] = ($byCategory[$e['category']] ?? 0) + $minor;
             $month = substr($e['expense_date'], 0, 7);
             $byMonth[$month] = ($byMonth[$month] ?? 0) + $minor;
         }
 
-        $byPayer = $this->participantTotals($groupId, 'expense_payers');
-        $byShare = $this->participantTotals($groupId, 'expense_shares');
+        $byPayer = $this->participantTotals($groupId, 'expense_payers', $home);
+        $byShare = $this->participantTotals($groupId, 'expense_shares', $home);
 
         arsort($byCategory);
         krsort($byMonth);
@@ -79,17 +81,18 @@ final class BalanceService
     }
 
     /** @return list<array{userId:string,minor:int}> converted, descending */
-    private function participantTotals(string $groupId, string $table): array
+    private function participantTotals(string $groupId, string $table, string $home): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT p.user_id, p.amount, e.fx_rate FROM {$table} p
+            "SELECT p.user_id, p.amount, e.currency, e.fx_rate FROM {$table} p
              JOIN expenses e ON e.id = p.expense_id
              WHERE e.group_id = ? AND e.deleted_at IS NULL",
         );
         $stmt->execute([$groupId]);
         $sums = [];
         foreach ($stmt->fetchAll() as $r) {
-            $sums[$r['user_id']] = ($sums[$r['user_id']] ?? 0) + self::toHome((int) $r['amount'], $r['fx_rate']);
+            $sums[$r['user_id']] = ($sums[$r['user_id']] ?? 0)
+                + self::toHome((int) $r['amount'], $r['fx_rate'], (string) $r['currency'], $home);
         }
         arsort($sums);
         return array_map(
@@ -98,13 +101,21 @@ final class BalanceService
         );
     }
 
-    private static function toHome(int $minor, mixed $fxRate): int
+    private static function toHome(int $minor, mixed $fxRate, string $from, string $home): int
     {
-        return $fxRate === null ? $minor : (int) round($minor * (float) $fxRate);
+        return $fxRate === null ? $minor : Money::convert($minor, (float) $fxRate, $from, $home);
+    }
+
+    private function homeCurrency(string $groupId): string
+    {
+        $stmt = $this->pdo->prepare('SELECT home_currency FROM `groups` WHERE id = ?');
+        $stmt->execute([$groupId]);
+        return (string) ($stmt->fetchColumn() ?: 'CAD');
     }
 
     public function forGroup(string $groupId): array
     {
+        $home = $this->homeCurrency($groupId);
         $net = [];
         $pair = []; // pair["a|b"] > 0 means a owes b
 
@@ -125,7 +136,7 @@ final class BalanceService
             foreach ($e['shares'] as $uid => $amt) {
                 $effects[$uid] = ($effects[$uid] ?? 0) - $amt;
             }
-            $converted = self::convertEffects($effects, $e['fx_rate']);
+            $converted = self::convertEffects($effects, $e['fx_rate'], $e['currency'], $home);
             foreach ($converted as $uid => $amt) {
                 $net[$uid] = ($net[$uid] ?? 0) + $amt;
             }
@@ -140,7 +151,7 @@ final class BalanceService
                     }
                     $owed = intdiv($shareAmt * $paidAmt, max($total, 1));
                     if ($e['fx_rate'] !== null) {
-                        $owed = (int) round($owed * $e['fx_rate']);
+                        $owed = Money::convert($owed, $e['fx_rate'], $e['currency'], $home);
                     }
                     self::addPair($pair, $sharer, $payer, $owed);
                 }
@@ -186,7 +197,7 @@ final class BalanceService
     private function expenses(string $groupId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, fx_rate FROM expenses WHERE group_id = ? AND deleted_at IS NULL',
+            'SELECT id, currency, fx_rate FROM expenses WHERE group_id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$groupId]);
         $out = [];
@@ -196,6 +207,7 @@ final class BalanceService
             $shares = $this->pdo->prepare('SELECT user_id, amount FROM expense_shares WHERE expense_id = ?');
             $shares->execute([$e['id']]);
             $out[] = [
+                'currency' => (string) $e['currency'],
                 'fx_rate' => $e['fx_rate'] === null ? null : (float) $e['fx_rate'],
                 'payers' => array_map('intval', $payers->fetchAll(PDO::FETCH_KEY_PAIR)),
                 'shares' => array_map('intval', $shares->fetchAll(PDO::FETCH_KEY_PAIR)),
@@ -208,14 +220,14 @@ final class BalanceService
      * @param array<string,int> $effects per-user net effect in expense currency
      * @return array<string,int> converted to home currency, summing to zero
      */
-    private static function convertEffects(array $effects, ?float $rate): array
+    private static function convertEffects(array $effects, ?float $rate, string $from, string $home): array
     {
         if ($rate === null) {
             return $effects;
         }
         $converted = [];
         foreach ($effects as $uid => $amt) {
-            $converted[$uid] = (int) round($amt * $rate, 0, PHP_ROUND_HALF_UP);
+            $converted[$uid] = Money::convert($amt, $rate, $from, $home);
         }
         $residual = -array_sum($converted);
         if ($residual !== 0) {

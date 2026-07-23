@@ -232,10 +232,14 @@ final class ReceiptService
             'messages' => [[
                 'role' => 'user',
                 'content' => 'Transcribe this receipt into JSON. Copy every amount as the '
-                    . 'decimal number printed on the receipt (e.g. 12.99); do not convert '
-                    . 'units. quantity is the item count (default 1; may be fractional for '
-                    . 'weighed goods). date is YYYY-MM-DD; currency is the 3-letter code. '
-                    . 'Use null for anything unreadable.',
+                    . 'number printed on the receipt (e.g. 12.99); do not convert units. '
+                    . 'CAREFUL with separators: in many countries "." or a space groups '
+                    . 'thousands and "," is the decimal mark — e.g. Chilean "$4.240" means '
+                    . 'four thousand two hundred forty pesos (output 4240), and "12,50" '
+                    . 'means twelve and a half (output 12.5). quantity is the item count '
+                    . '(default 1; may be fractional for weighed goods). date is '
+                    . 'YYYY-MM-DD; currency is the 3-letter code. Use null for anything '
+                    . 'unreadable.',
                 'images' => [base64_encode(file_get_contents($path))],
             ]],
         ], JSON_THROW_ON_ERROR);
@@ -261,7 +265,9 @@ final class ReceiptService
         }
         $doc = json_decode($resp['message']['content'], true, 16, JSON_THROW_ON_ERROR);
 
-        $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * 100) : null;
+        $currency = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
+        $scale = \SlyTab\Support\Money::scale($currency ?? 'XXX');
+        $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * $scale) : null;
         $items = [];
         foreach (($doc['items'] ?? []) as $item) {
             $minor = $toMinor($item['total'] ?? null);
@@ -278,7 +284,7 @@ final class ReceiptService
         $parsed = [
             'merchant' => is_string($doc['merchant'] ?? null) ? mb_substr($doc['merchant'], 0, 120) : null,
             'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($doc['date'] ?? '')) ? $doc['date'] : null,
-            'currency' => preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null,
+            'currency' => $currency,
             'items' => $items,
             'subtotalMinor' => $toMinor($doc['subtotal'] ?? null),
             'taxMinor' => $toMinor($doc['tax'] ?? null),

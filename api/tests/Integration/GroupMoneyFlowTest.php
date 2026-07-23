@@ -354,6 +354,58 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertSame(['month' => '2026-06', 'minor' => 1000], $totals['byMonth'][1]);
     }
 
+    /** The Cabify bug: CLP minor units are whole pesos; USD minor units
+     *  are cents. Conversion must bridge the scales (4240 CLP ≈ US$4.52,
+     *  not US$0.05). */
+    public function testZeroDecimalCurrencyConvertsAcrossScales(): void
+    {
+        Db::pdo()->exec('DELETE FROM rate_limits');
+        $seed = Db::pdo()->prepare(
+            'INSERT INTO fx_rates (rate_date, base, quote, rate) VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE rate = VALUES(rate)',
+        );
+        $today = gmdate('Y-m-d');
+        $seed->execute([$today, 'EUR', 'USD', '1.1392']);
+        $seed->execute([$today, 'EUR', 'CLP', '1069.68911941']);
+
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $pia = $mk('pia');
+        $quinn = $mk('quinn');
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Chile', 'emoji' => '', 'homeCurrency' => 'USD',
+        ], $pia['token']), 201);
+        $invite = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/invites", [], $pia['token']), 201);
+        $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $quinn['token']), 200);
+
+        // 4240 pesos (CLP minor = whole pesos), split evenly.
+        $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Cabify', 'amountMinor' => 4240, 'currency' => 'CLP',
+            'expenseDate' => $today, 'category' => 'travel', 'splitMethod' => 'equal',
+            'payers' => [['userId' => $pia['id'], 'amountMinor' => 4240]],
+            'shares' => [
+                ['userId' => $pia['id'], 'amountMinor' => 2120],
+                ['userId' => $quinn['id'], 'amountMinor' => 2120],
+            ],
+        ], $pia['token']), 201);
+
+        // CLP→USD ≈ 0.00106498; 2120 pesos ≈ 226 US cents.
+        $bal = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/balances", null, $pia['token']), 200);
+        self::assertSame(0, $bal['net'][$pia['id']] + $bal['net'][$quinn['id']]);
+        self::assertGreaterThan(200, $bal['net'][$pia['id']]);
+        self::assertLessThan(250, $bal['net'][$pia['id']]);
+
+        // Totals: whole ride ≈ 452 US cents.
+        $totals = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/totals", null, $pia['token']), 200);
+        self::assertGreaterThan(400, $totals['totalMinor']);
+        self::assertLessThan(500, $totals['totalMinor']);
+    }
+
     public function testGroupFavoriteCurrencies(): void
     {
         Db::pdo()->exec('DELETE FROM rate_limits');

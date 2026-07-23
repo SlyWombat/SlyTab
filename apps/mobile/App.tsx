@@ -7,7 +7,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { CATEGORIES, CATEGORY_LABELS, computeSplit, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, tokens, type Category, type Currency } from '@slytab/core';
+import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, parseAmount, tokens, type Category, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -586,6 +586,9 @@ function GroupScreen({ groupId, user, onBack }: {
                   <Text style={s.meta}>
                     {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid{' '}
                     {formatMinor(e.amountMinor, e.currency)} · {e.expenseDate}
+                    {e.fxRate !== null
+                      ? ` · ≈ ${formatMinor(convertAcrossMinor(e.amountMinor, e.fxRate, e.currency, group.homeCurrency), group.homeCurrency)}`
+                      : ''}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -1040,7 +1043,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
+  const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
@@ -1061,7 +1064,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [category, setCategory] = useState(editing?.category ?? 'dining');
   const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
-  const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
+  const amountMinor = parseAmount(amountStr, currency);
 
   const shares = useMemo(() => {
     if (exactShares !== null) return exactShares;
@@ -1184,7 +1187,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               <View key={uid} style={s.checkRow}>
                 <Badge id={uid} name={m?.displayName ?? '?'} size={22} />
                 <Text style={[s.body, { flex: 1 }]}>{uid === user.id ? 'You' : m?.displayName ?? 'Member'}</Text>
-                <Text style={s.meta}>{(v / 100).toFixed(2)}</Text>
+                <Text style={s.meta}>{minorToAmountString(v, currency)}</Text>
               </View>
             );
           })}
@@ -1207,7 +1210,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
                 <Badge id={m.id} name={m.displayName} size={22} />
                 <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-                <Text style={s.meta}>{on && shares?.[m.id] !== undefined ? (shares[m.id]! / 100).toFixed(2) : '—'}</Text>
+                <Text style={s.meta}>{on && shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}</Text>
               </Pressable>
             );
           })}
@@ -1231,7 +1234,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           onDone={(r) => {
             setAssigning(null);
             setExtraReceiptIds(r.receiptIds);
-            setAmountStr((r.totalMinor / 100).toFixed(2));
+            setAmountStr(minorToAmountString(r.totalMinor,
+              r.currency && CURRENCIES.includes(r.currency as never) ? r.currency : currency));
             if (r.merchant) setDescription(r.merchant);
             if (r.currency && CURRENCIES.includes(r.currency as never)) setCurrency(r.currency);
             if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setDate(r.date);
@@ -1256,6 +1260,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   }) => void;
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+  const rcur = parsed.currency && /^[A-Z]{3}$/.test(parsed.currency) ? parsed.currency : group.homeCurrency;
   const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
   const [slipScan, setSlipScan] = useState<ScanStage | null>(null);
   const slipHandle = useRef<{ cancel: () => void } | null>(null);
@@ -1328,15 +1333,15 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   return (
     <SheetModal title="Assign items" onClose={onCancel}>
       <Text style={[s.meta, { marginBottom: 8 }]}>
-        {parsed.merchant ?? 'Receipt'} · total {(totalMinor / 100).toFixed(2)}
+        {parsed.merchant ?? 'Receipt'} · total {minorToAmountString(totalMinor, rcur)}
         {parsed.currency ? ` ${parsed.currency}` : ''}
-        {extra !== 0 ? ` (incl. ${(extra / 100).toFixed(2)} tax/tip, prorated)` : ''}
+        {extra !== 0 ? ` (incl. ${minorToAmountString(extra, rcur)} tax/tip, prorated)` : ''}
       </Text>
       {parsed.items.map((item, i) => (
         <View key={i} style={[s.row, { flexWrap: 'wrap' }]}>
           <View style={{ flex: 1, minWidth: 120 }}>
             <Text style={s.rowName}>{item.name}</Text>
-            <Text style={s.meta}>{item.quantity !== 1 ? `${item.quantity} × ` : ''}{(item.totalMinor / 100).toFixed(2)}</Text>
+            <Text style={s.meta}>{item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 4 }}>
             {members.map((m) => {
@@ -1371,12 +1376,12 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       )}
       {slipError !== null && <Text style={s.error}>{slipError}</Text>}
       <Btn label={slip !== null
-          ? `Tip from card slip: ${(slip.tipMinor / 100).toFixed(2)} ✓ — rescan`
+          ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`
           : 'Scan card slip (adds the tip)'}
         disabled={slipBusy} onPress={() => void scanSlip()} />
       <Text style={[s.meta, { marginVertical: 8 }]}>
         {members.filter((m) => (perMember[m.id] ?? 0) !== 0)
-          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${((perMember[m.id] ?? 0) / 100).toFixed(2)}`)
+          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${minorToAmountString(perMember[m.id] ?? 0, rcur)}`)
           .join(' · ') || 'Tap the badges to assign each item.'}
       </Text>
       <Btn primary label="Continue" disabled={!allAssigned}
@@ -1394,7 +1399,7 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
   group: Group; to: Member; suggested: number; onClose: () => void; onDone: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const amountMajor = (suggested / 100).toFixed(2);
+  const amountMajor = minorToAmountString(suggested, group.homeCurrency);
   const handles = to.paymentHandles;
 
   async function record(method: string, url?: string) {
