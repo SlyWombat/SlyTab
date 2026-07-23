@@ -33,6 +33,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Android APK startup crash: the monorepo carried two React copies (web
+  ^19.2 vs React Native's required 19.1), so hooks dispatched on null the
+  moment the app rendered. React/react-dom are now pinned tree-wide to
+  19.1.0 via a root npm override; diagnosed and the fix verified on a
+  headless Android emulator (zero fatal exceptions, sign-in screen
+  renders). Fixed APK republished (2026-07-22).
+
+
 - Production Bearer auth: shared-hosting Apache strips the Authorization
   header from FastCGI PHP, so every authenticated endpoint 401'd in
   production. Fixed with `CGIPassAuth On` + `SetEnvIf` in the API
