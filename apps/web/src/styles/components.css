@@ -1,6 +1,10 @@
 /* Ledger components (DESIGN.md §6) used by the web screens. */
 
-.shell { max-width: 640px; margin: 0 auto; padding: var(--ss-space-4); min-height: 100vh; }
+.shell { max-width: 640px; margin: 0 auto; min-height: 100vh;
+  padding: calc(var(--ss-space-4) + env(safe-area-inset-top, 0px))
+           calc(var(--ss-space-4) + env(safe-area-inset-right, 0px))
+           var(--ss-space-4)
+           calc(var(--ss-space-4) + env(safe-area-inset-left, 0px)); }
 .header { display: flex; align-items: center; gap: var(--ss-space-3); padding: var(--ss-space-3) 0 var(--ss-space-5); }
 .header h1 { font: 600 22px var(--ss-font-display); letter-spacing: -0.01em; }
 .header .spacer { flex: 1; }
@@ -55,7 +59,9 @@ button.row:hover { background: var(--ss-surface-2); }
 .sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 11;
   width: min(480px, 100vw); max-height: 88vh; overflow-y: auto;
   background: var(--ss-surface); border-radius: 20px 20px 0 0;
-  padding: var(--ss-space-4); box-shadow: 0 -12px 34px rgb(0 0 0 / 0.5); }
+  padding: var(--ss-space-4) var(--ss-space-4)
+           calc(var(--ss-space-4) + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 34px rgb(0 0 0 / 0.5); }
 .sheet h2 { font: 600 17px var(--ss-font-display); margin-bottom: var(--ss-space-4); }
 
 .tabs { display: flex; background: var(--ss-surface-2); border-radius: 10px;
@@ -71,7 +77,8 @@ button.row:hover { background: var(--ss-surface-2); }
 .checkrow .amt-in { width: 110px; margin-left: auto; }
 .checkrow .amt-in input { text-align: right; }
 
-.fab { position: fixed; right: max(16px, calc(50vw - 304px)); bottom: 24px; z-index: 5;
+.fab { position: fixed; right: max(16px, calc(50vw - 304px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 5;
   width: 56px; height: 56px; border-radius: 50%; border: none;
   background: var(--ss-brand); color: #fff; font: 300 30px/54px var(--ss-font-body);
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.35); }

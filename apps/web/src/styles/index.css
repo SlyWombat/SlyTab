@@ -6,6 +6,19 @@
   margin: 0;
 }
 
+html {
+  /* iOS Safari inflates text without this ("font boosting"), pushing the
+     whole layout wider than the screen — issue #11. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--ss-bg);
   color: var(--ss-text);
