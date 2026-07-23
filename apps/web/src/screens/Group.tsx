@@ -25,7 +25,7 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
     <div style={{
       position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 14,
-      background: 'color-mix(in srgb, var(--ss-bg) 78%, transparent)', backdropFilter: 'blur(2px)',
+      background: 'rgba(8, 12, 22, 0.82)', WebkitBackdropFilter: 'blur(2px)', backdropFilter: 'blur(2px)',
     }} role="status" aria-live="polite">
       <style>{'@keyframes ss-spin { to { transform: rotate(360deg); } }'}</style>
       <div style={{ animation: 'ss-spin 1.2s linear infinite', lineHeight: 0 }}><Mark size={44} /></div>

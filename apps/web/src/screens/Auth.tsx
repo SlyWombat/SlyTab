@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiFailure, type User } from '../api';
 import { Mark } from '../ui';
 
-/** Google Identity Services global, loaded on demand. */
+/** Google Identity Services + Apple JS globals, loaded on demand. */
 declare global {
   interface Window {
     google?: {
@@ -11,6 +11,17 @@ declare global {
           initialize: (config: { client_id: string; callback: (r: { credential: string }) => void }) => void;
           renderButton: (el: HTMLElement, opts: Record<string, string | number>) => void;
         };
+      };
+    };
+    AppleID?: {
+      auth: {
+        init: (config: {
+          clientId: string; scope: string; redirectURI: string; usePopup: boolean;
+        }) => void;
+        signIn: () => Promise<{
+          authorization: { id_token: string; code: string };
+          user?: { name?: { firstName?: string; lastName?: string }; email?: string };
+        }>;
       };
     };
   }
@@ -67,6 +78,88 @@ function GoogleButton({ onSignedIn, onError }: {
       <div className="muted" style={{ fontSize: 12, margin: '10px 0 6px' }}>or</div>
       <div ref={host} style={{ minHeight: 44 }} />
     </>
+  );
+}
+
+/**
+ * "Sign in with Apple" button. Renders nothing until the API reports a
+ * configured Services ID, then loads Apple's JS SDK and shows a
+ * self-styled button; the popup's identity token (plus the user's name,
+ * which Apple only supplies on first authorization) is exchanged for a
+ * SlyTab session.
+ */
+function AppleButton({ onSignedIn, onError }: {
+  onSignedIn: (token: string, user: User) => void;
+  onError: (message: string) => void;
+}) {
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    api.appleConfig()
+      .then((c) => { if (c.enabled) setClientId(c.clientId); })
+      .catch(() => { /* endpoint unreachable — hide the button */ });
+  }, []);
+
+  useEffect(() => {
+    if (clientId === null) return;
+    const init = () => {
+      if (!window.AppleID) return;
+      window.AppleID.auth.init({
+        clientId,
+        scope: 'name email',
+        redirectURI: `${location.origin}/slytab/`,
+        usePopup: true,
+      });
+      setReady(true);
+    };
+    if (window.AppleID) {
+      init();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en-US/appleid.auth.js';
+    script.async = true;
+    script.onload = init;
+    document.head.appendChild(script);
+  }, [clientId]);
+
+  async function click() {
+    if (!window.AppleID) return;
+    try {
+      const r = await window.AppleID.auth.signIn();
+      const name = r.user?.name;
+      const displayName = [name?.firstName, name?.lastName].filter(Boolean).join(' ').trim();
+      const res = await api.appleSignIn(r.authorization.id_token, displayName || undefined);
+      onSignedIn(res.token, res.user);
+    } catch (e) {
+      // Apple rejects with a plain object when the user closes the popup —
+      // stay silent for that; only surface real API failures.
+      if (e instanceof ApiFailure) onError(e.message);
+    }
+  }
+
+  if (clientId === null) return null;
+  return (
+    <button
+      type="button"
+      className="btn block"
+      disabled={!ready}
+      onClick={click}
+      style={{
+        background: '#000', color: '#fff', border: '1px solid #000',
+        width: 280, marginTop: 8, display: 'inline-flex',
+        alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ marginTop: -2 }}>
+        <path
+          fill="#fff"
+          d="M17.05 12.54c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.89 2.65 3.24 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.39.81 1.4-.02 2.28-1.27 3.14-2.53.99-1.45 1.39-2.85 1.42-2.92-.03-.02-2.72-1.05-2.74-4.13zM14.46 4.9c.72-.87 1.2-2.08 1.07-3.28-1.03.04-2.28.69-3.02 1.55-.66.77-1.24 2-1.09 3.18 1.15.09 2.33-.58 3.04-1.45z"
+        />
+      </svg>
+      Sign in with Apple
+    </button>
   );
 }
 
@@ -145,6 +238,7 @@ export function Auth({ onSignedIn, joinPending }: {
         </button>
       )}
       <GoogleButton onSignedIn={onSignedIn} onError={setError} />
+      <AppleButton onSignedIn={onSignedIn} onError={setError} />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--ss-space-1)', marginTop: 'var(--ss-space-5)' }}>
         <a
           className="btn"

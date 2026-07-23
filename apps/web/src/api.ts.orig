@@ -291,11 +291,6 @@ export const api = {
   googleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/google/config'),
   googleSignIn: (idToken: string) =>
     req<{ token: string; user: User }>('POST', '/auth/google', { idToken, deviceLabel: 'web' }),
-  appleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/apple/config'),
-  appleSignIn: (idToken: string, displayName?: string) =>
-    req<{ token: string; user: User }>('POST', '/auth/apple', {
-      idToken, deviceLabel: 'web', ...(displayName ? { displayName } : {}),
-    }),
   resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (token: string) => req<Group>('POST', `/join/${token}`),
 
