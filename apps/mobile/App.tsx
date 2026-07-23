@@ -692,6 +692,7 @@ function GroupScreen({ groupId, user, onBack }: {
       )}
       {adding && (
         <AddExpenseSheet group={group} user={user}
+          lastCurrency={expenses[0]?.currency}
           onClose={() => setAdding(false)}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
@@ -1034,9 +1035,9 @@ async function shrinkPhoto(uri: string): Promise<{ uri: string; mime: string }> 
   }
 }
 
-function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
+function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted, lastCurrency }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
-  editing?: Expense | null; onDeleted?: () => void;
+  editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
   const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
@@ -1054,7 +1055,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     for (const sh of editing.shares) out[sh.userId] = sh.amountMinor;
     return out;
   });
-  const [currency, setCurrency] = useState(editing?.currency ?? group.homeCurrency);
+  // New expenses start in whatever currency the group used last (mid-trip
+  // you keep paying in the local currency).
+  const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
   const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);

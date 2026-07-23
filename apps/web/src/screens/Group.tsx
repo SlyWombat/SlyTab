@@ -242,6 +242,7 @@ export function GroupScreen({ groupId, user, onBack }: {
       )}
       {adding && (
         <AddExpenseSheet group={group} user={user} onClose={() => setAdding(false)}
+          lastCurrency={expenses[0]?.currency}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
       {editing !== null && (
@@ -269,13 +270,15 @@ export function GroupScreen({ groupId, user, onBack }: {
 
 // ---- Add expense (ui_requirements §2.5, split math from @slytab/core) ----
 
-function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
+function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted, lastCurrency }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
-  editing?: Expense | null; onDeleted?: () => void;
+  editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
   const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
-  const [currency, setCurrency] = useState(editing?.currency ?? group.homeCurrency);
+  // New expenses start in whatever currency the group used last — mid-trip
+  // you keep paying in the local currency (user feedback).
+  const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>(editing?.category ?? 'food');
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
