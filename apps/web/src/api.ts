@@ -200,6 +200,9 @@ export const api = {
     req<{ token: string; expiresAt: string; path: string; emailed: boolean }>(
       'POST', `/groups/${groupId}/invites`, email ? { email } : {}),
   verifyEmail: (token: string) => req<{ ok: true }>('POST', `/auth/verify/${token}`),
+  googleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/google/config'),
+  googleSignIn: (idToken: string) =>
+    req<{ token: string; user: User }>('POST', '/auth/google', { idToken, deviceLabel: 'web' }),
   resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (token: string) => req<Group>('POST', `/join/${token}`),
 

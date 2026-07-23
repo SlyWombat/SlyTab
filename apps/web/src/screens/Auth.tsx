@@ -1,6 +1,74 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, ApiFailure, type User } from '../api';
 import { Mark } from '../ui';
+
+/** Google Identity Services global, loaded on demand. */
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: { client_id: string; callback: (r: { credential: string }) => void }) => void;
+          renderButton: (el: HTMLElement, opts: Record<string, string | number>) => void;
+        };
+      };
+    };
+  }
+}
+
+/**
+ * "Sign in with Google" button. Renders nothing until the API reports a
+ * configured client id, then loads the GIS script and mounts the official
+ * button; the returned ID token is exchanged for a SlyTab session.
+ */
+function GoogleButton({ onSignedIn, onError }: {
+  onSignedIn: (token: string, user: User) => void;
+  onError: (message: string) => void;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+  const [clientId, setClientId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.googleConfig()
+      .then((c) => { if (c.enabled) setClientId(c.clientId); })
+      .catch(() => { /* endpoint unreachable — hide the button */ });
+  }, []);
+
+  useEffect(() => {
+    if (clientId === null || host.current === null) return;
+    const mount = () => {
+      if (!window.google || host.current === null) return;
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: ({ credential }) => {
+          api.googleSignIn(credential)
+            .then((r) => onSignedIn(r.token, r.user))
+            .catch((e) => onError(e instanceof ApiFailure ? e.message : 'Google sign-in failed — try again'));
+        },
+      });
+      window.google.accounts.id.renderButton(host.current, {
+        theme: 'outline', size: 'large', width: 280, text: 'continue_with',
+      });
+    };
+    if (window.google) {
+      mount();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = mount;
+    document.head.appendChild(script);
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (clientId === null) return null;
+  return (
+    <>
+      <div className="muted" style={{ fontSize: 12, margin: '10px 0 6px' }}>or</div>
+      <div ref={host} style={{ minHeight: 44 }} />
+    </>
+  );
+}
 
 export function Auth({ onSignedIn, joinPending }: {
   onSignedIn: (token: string, user: User) => void;
@@ -76,6 +144,7 @@ export function Auth({ onSignedIn, joinPending }: {
           Forgot password?
         </button>
       )}
+      <GoogleButton onSignedIn={onSignedIn} onError={setError} />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--ss-space-1)', marginTop: 'var(--ss-space-5)' }}>
         <a
           className="btn"

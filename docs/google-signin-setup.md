@@ -1,78 +1,61 @@
-# Google sign-in — setup steps
+# Google sign-in — setup
 
-Status: **waiting on step A** (create the OAuth client). Once the two values
-from step A.7 are in `.env`, ask Claude to "wire up Google sign-in" and the
-server + UI work happens without further input.
+Status: **implemented server + web** (ID-token flow, no client secret used).
+Waiting on two user steps to go live:
 
-## A. One-time setup in Google Cloud Console (you)
-
-1. Go to <https://console.cloud.google.com/> and sign in with the Google
-   account that should own the integration.
-2. Create a project (top bar → project picker → **New project**). Name it
-   `SlyTab`. No billing account is needed for OAuth.
-3. In the left menu: **APIs & Services → OAuth consent screen** (now called
-   "Google Auth Platform" on some accounts):
-   - User type: **External**, then **Create**.
-   - App name: `SlyTab` · support email: your address.
-   - Authorized domain: `electricrv.ca`.
-   - Scopes: add only `openid`, `email`, `profile`.
-   - Test users: add your own Gmail address (while the app is in "Testing"
-     mode only listed users can sign in; you can push to "In production"
-     later — no verification review is required for these basic scopes).
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID**.
-5. Application type: **Web application** (this one client also serves the
-   mobile app because the flow goes through our server). Name: `SlyTab web`.
-6. Authorized redirect URI — exactly:
+1. Put the OAuth client ID in the repo `.env` (and it will be copied to prod
+   on the next API deploy):
 
    ```
-   https://electricrv.ca/slytab/api/v1/auth/google/callback
+   GOOGLE_CLIENT_ID=<client id ending in .apps.googleusercontent.com>
    ```
 
-   No authorized JavaScript origins are needed.
-7. **Create** → copy the **Client ID** (`…apps.googleusercontent.com`) and
-   **Client secret**.
+2. In Google Cloud Console → APIs & Services → Credentials → your Web
+   application client: add an **Authorized JavaScript origin** of exactly
+   `https://electricrv.ca`. The Google button will not render without it.
+   (The redirect URI entered earlier is unused by this flow — harmless to
+   keep or delete.)
 
-## A-alt. Doing it from an Android phone
+Then redeploy the API (`bash scripts/deploy-api.sh`) and SPA (`npm run
+deploy`). The "Continue with Google" button appears automatically once the
+API reports a configured client id.
 
-The **Google Cloud app** (Play Store: "Google Cloud", by Google LLC) is a
-monitoring app — it can switch between existing projects and view billing and
-logs, but it cannot create projects, edit the OAuth consent screen, or create
-OAuth credentials. So on a phone the working path is the mobile browser:
+## How it works (no secret anywhere)
 
-1. Open Chrome on the phone and go to <https://console.cloud.google.com/>,
-   signed in with the right Google account.
-2. Chrome menu (⋮) → check **Desktop site** — the console's credential pages
-   need the desktop layout to show every field.
-3. Follow steps A.2–A.7 above exactly as written. Landscape orientation makes
-   the consent-screen forms much easier to fill.
-4. To copy the Client ID/secret into `.env` on the dev machine, use anything
-   already synced (e.g. a note in OneDrive) rather than messaging them in
-   plain text — treat the secret like a password.
+- Web: the official Google Identity Services button returns a signed **ID
+  token** in the browser; the SPA posts it to `POST /api/v1/auth/google`.
+- Server: `GoogleAuthService` validates the token via Google's tokeninfo
+  endpoint (signature checked by Google) and enforces issuer, audience
+  (= `GOOGLE_CLIENT_ID`), expiry, and `email_verified`.
+- Account mapping: `oauth_identities` (migration 004) keys on Google's
+  stable `sub`. First sign-in with an email that already has a password
+  account links to it; brand-new emails create a user with a random
+  unguessable password hash. Either way the email counts as verified
+  (Google proved mailbox ownership), so no confirmation email is sent.
+- A normal SlyTab session token is issued — everything downstream is
+  unchanged.
 
-After creation you can install the Google Cloud app to keep an eye on the
-project, but it is not needed for anything in this setup.
+Because the client secret is never used, there is nothing sensitive to
+store: a client ID is public by design.
 
-## B. Hand the values to the app
+## Creating the OAuth client (done 2026-07-23; kept for reference)
 
-Add to the repo `.env` (never commit values; the file is gitignored):
+Google Cloud Console → new project `SlyTab` → OAuth consent screen
+(External, scopes `openid email profile`, authorized domain
+`electricrv.ca`, add yourself as a test user while in Testing mode) →
+Credentials → Create credentials → OAuth client ID → **Web application**.
+Since June 2025 Google shows the client secret only once at creation — this
+flow doesn't need it, so ignore it.
 
-```
-GOOGLE_CLIENT_ID=<client id>
-GOOGLE_CLIENT_SECRET=<client secret>
-```
+On a phone: the Google Cloud Android app is monitoring-only (cannot create
+projects or credentials) — use Chrome with **Desktop site** checked at
+console.cloud.google.com instead.
 
-The deploy script copies prod values from `PROD_`-prefixed variables, so also
-add `PROD_GOOGLE_CLIENT_ID` / `PROD_GOOGLE_CLIENT_SECRET` (same values are
-fine — one OAuth client covers dev and prod since only the redirect URI is
-registered).
+## Mobile app — follow-up (not yet implemented)
 
-## C. What gets implemented next (Claude, no input needed)
-
-- `oauth_identities` table (migration) linking `users` to Google `sub` IDs.
-- `GET /auth/google` → redirect to Google with `state` + PKCE;
-  `GET /auth/google/callback` → code exchange, ID-token verification
-  (issuer, audience, expiry), find-or-create user by verified email, issue a
-  normal SlyTab session token.
-- "Continue with Google" buttons on the web Auth screen and mobile app
-  (mobile opens the same server flow in a browser and catches the redirect).
-- Google-verified emails count as verified (no confirmation email needed).
+Native Google sign-in in the Android app needs an **Android-type** OAuth
+client registered with package `com.slywombat.slytab` plus the SHA-1 of the
+APK signing certificate. Our CI currently generates a debug keystore per
+build, so the fingerprint isn't stable — pin a keystore in CI first, then
+add the Android client and wire `expo-auth-session` to the same
+`POST /auth/google` endpoint. Until then, mobile uses email/password.

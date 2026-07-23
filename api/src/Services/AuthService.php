@@ -205,6 +205,15 @@ final class AuthService
         return $out;
     }
 
+    /**
+     * Issue a session for an already-authenticated user (OAuth flows).
+     * @return array{token:string, user:array<string,mixed>}
+     */
+    public function issueSession(string $userId, string $deviceLabel = ''): array
+    {
+        return ['token' => $this->createSession($userId, $deviceLabel), 'user' => $this->userById($userId)];
+    }
+
     private function createSession(string $userId, string $deviceLabel): string
     {
         $token = bin2hex(random_bytes(32));

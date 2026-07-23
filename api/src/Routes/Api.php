@@ -17,6 +17,7 @@ use SlyTab\Services\BalanceService;
 use SlyTab\Services\EmailVerificationService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
+use SlyTab\Services\GoogleAuthService;
 use SlyTab\Services\GroupService;
 use SlyTab\Services\ImportService;
 use SlyTab\Services\Mailer;
@@ -46,6 +47,7 @@ final class Api
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
         $verifier = new EmailVerificationService($pdo, new Mailer());
+        $google = new GoogleAuthService($pdo, $auth);
 
         $ip = static fn(Request $rq): string =>
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
@@ -68,7 +70,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier,
+            $limiter, $resets, $ip, $importer, $verifier, $google,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -109,6 +111,15 @@ final class Api
             $g->post('/auth/verify/{token}', function (Request $rq, Response $rs, array $a) use ($verifier): Response {
                 $verifier->verify($a['token']);
                 return Http::json($rs, ['ok' => true]);
+            });
+            $g->get('/auth/google/config', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, ['enabled' => $google->enabled(), 'clientId' => $google->clientId()]));
+            $g->post('/auth/google', function (Request $rq, Response $rs) use ($google, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
+                $b = Http::body($rq);
+                return Http::json($rs, $google->signIn(
+                    Http::str($b, 'idToken'), Http::str($b, 'deviceLabel', ''),
+                ));
             });
 
             // ---- authenticated ----
