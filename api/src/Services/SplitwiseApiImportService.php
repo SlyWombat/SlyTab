@@ -55,15 +55,33 @@ class SplitwiseApiImportService
     /**
      * Import every non-deleted expense of a Splitwise group.
      *
-     * @param array<string,string> $mapping Splitwise user id => SlyTab user id
-     * @return array{imported: array{expenses:int, settlements:int, skipped:int}, errors: list<string>}
+     * Mapping values are either an existing member's user id, or (issue
+     * #2) an object {email, name}: that person isn't on SlyTab yet, so a
+     * placeholder member is created to hold their history and an invite
+     * email goes out; registering with the email claims the account.
+     *
+     * @param array<string,mixed> $mapping Splitwise user id => user id | {email, name}
+     * @return array{imported: array{expenses:int, settlements:int, skipped:int}, invited: list<string>, errors: list<string>}
      */
     public function import(string $groupId, string $userId, string $apiKey, int $swGroupId, array $mapping): array
     {
         $this->groups->assertWritable($groupId);
-        foreach ($mapping as $mapped) {
-            $this->groups->assertMemberParticipant($groupId, $mapped);
+        $resolved = [];
+        $invited = [];
+        foreach ($mapping as $swId => $mapped) {
+            if (is_array($mapped) && isset($mapped['email'])) {
+                $resolved[(string) $swId] = $this->groups->addMemberByEmail(
+                    $groupId, $userId, (string) $mapped['email'], (string) ($mapped['name'] ?? ''),
+                );
+                $invited[] = strtolower(trim((string) $mapped['email']));
+            } elseif (is_string($mapped) && $mapped !== '') {
+                $this->groups->assertMemberParticipant($groupId, $mapped);
+                $resolved[(string) $swId] = $mapped;
+            } else {
+                throw new ApiException('VALIDATION', 'each Splitwise member needs a group member or an email', 422);
+            }
         }
+        $mapping = $resolved;
         if (count(array_unique(array_values($mapping))) !== count($mapping)) {
             throw new ApiException('VALIDATION', 'each Splitwise member must map to a different group member', 422);
         }
@@ -92,7 +110,7 @@ class SplitwiseApiImportService
         $this->activity->record($groupId, $userId, 'imported', 'group', $groupId, [
             'source' => 'splitwise-api',
         ] + $imported);
-        return ['imported' => $imported, 'errors' => $errors];
+        return ['imported' => $imported, 'invited' => $invited, 'errors' => $errors];
     }
 
     /**

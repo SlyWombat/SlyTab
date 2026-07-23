@@ -11,7 +11,7 @@ import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@sly
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
-  type SplitwiseGroup,
+  type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
 } from './src/api';
 
@@ -309,6 +309,22 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   );
 }
 
+function ago(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso + 'Z').getTime()) / 60000));
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function deviceName(label: string): string {
+  if (label === 'web') return 'Web browser';
+  if (label === 'mobile') return 'Android app';
+  return label || 'Unknown device';
+}
+
 function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   user: User; onClose: () => void; onSaved: (u: User) => void; onSignOut: () => void;
 }) {
@@ -316,11 +332,16 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   const [currency, setCurrency] = useState(user.defaultCurrency);
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [sessions, setSessions] = useState<Session[] | null>(null);
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
   const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
+  }, []);
 
   async function save() {
     setBusy(true);
@@ -364,6 +385,28 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
       <Field label="Venmo username" value={venmo} onChangeText={setVenmo} placeholder="yourname" />
       <Btn primary label={busy ? 'Saving…' : 'Save profile'} disabled={busy || displayName.trim() === ''}
         onPress={() => void save()} />
+      {sessions !== null && sessions.length > 0 && (
+        <>
+          <Text style={[s.cap, { marginTop: 14 }]}>WHERE YOU'RE SIGNED IN</Text>
+          {sessions.map((sess) => (
+            <View style={s.row} key={sess.id}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowName}>
+                  {deviceName(sess.deviceLabel)}{sess.current ? ' · this device' : ''}
+                </Text>
+                <Text style={s.meta}>last active {ago(sess.lastSeenAt)}</Text>
+              </View>
+              {!sess.current && (
+                <Btn small label="Sign out" onPress={() => {
+                  api.revokeSession(sess.id)
+                    .then(() => setSessions(sessions.filter((x) => x.id !== sess.id)))
+                    .catch(() => {});
+                }} />
+              )}
+            </View>
+          ))}
+        </>
+      )}
       <View style={{ height: 8 }} />
       <Btn label="Sign out" onPress={onSignOut} />
       <View style={{ height: 8 }} />
@@ -723,14 +766,24 @@ function ImportSheet({ group, onClose, onDone }: {
   const [swGroups, setSwGroups] = useState<SplitwiseGroup[] | null>(null);
   const [swGroupId, setSwGroupId] = useState<number | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ expenses: number; settlements: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{
+    imported: { expenses: number; settlements: number; skipped: number }; invited: string[];
+  } | null>(null);
 
   const swGroup = swGroups?.find((g) => g.id === swGroupId) ?? null;
   const complete = swGroup !== null
-    && swGroup.members.every((m) => (mapping[String(m.id)] ?? '') !== '')
-    && new Set(Object.values(mapping)).size === swGroup.members.length;
+    && swGroup.members.every((m) => {
+      const v = mapping[String(m.id)] ?? '';
+      if (v === '__invite') return /.+@.+\..+/.test((inviteEmails[String(m.id)] ?? '').trim());
+      return v !== '';
+    })
+    && new Set(swGroup.members.map((m) => {
+      const v = mapping[String(m.id)] ?? '';
+      return v === '__invite' ? `email:${(inviteEmails[String(m.id)] ?? '').trim().toLowerCase()}` : v;
+    })).size === swGroup.members.length;
 
   async function connect() {
     setBusy(true);
@@ -746,12 +799,19 @@ function ImportSheet({ group, onClose, onDone }: {
   }
 
   async function run() {
-    if (swGroupId === null) return;
+    if (swGroupId === null || swGroup === null) return;
     setBusy(true);
     setError(null);
     try {
-      const r = await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, mapping);
-      setResult(r.imported);
+      const payload: Record<string, string | { email: string; name: string }> = {};
+      for (const m of swGroup.members) {
+        const v = mapping[String(m.id)] ?? '';
+        payload[String(m.id)] = v === '__invite'
+          ? { email: (inviteEmails[String(m.id)] ?? '').trim(), name: m.name }
+          : v;
+      }
+      const r = await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, payload);
+      setResult({ imported: r.imported, invited: r.invited ?? [] });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -765,19 +825,27 @@ function ImportSheet({ group, onClose, onDone }: {
       {result !== null ? (
         <>
           <Text style={[s.body, { marginBottom: 10 }]}>
-            Imported {result.expenses} expenses and {result.settlements} settlements
-            {result.skipped > 0 ? ` · ${result.skipped} personal expenses skipped` : ''}.
+            Imported {result.imported.expenses} expenses and {result.imported.settlements} settlements
+            {result.imported.skipped > 0 ? ` · ${result.imported.skipped} personal expenses skipped` : ''}.
           </Text>
+          {result.invited.length > 0 && (
+            <Text style={[s.meta, { marginBottom: 10 }]}>
+              Invitations sent to {result.invited.join(', ')} — their share of the
+              history is saved and appears under their name the moment they join.
+            </Text>
+          )}
           <Btn primary label="Done" onPress={onDone} />
         </>
       ) : swGroups === null ? (
         <>
           <Text style={[s.meta, { marginBottom: 10 }]}>
-            Sign in at secure.splitwise.com/apps → "Register your application"
-            (any name) → copy the API key. The key is used for this import
-            only and never stored.
+            To connect your Splitwise account, get a one-time code:{'\n\n'}
+            1. In a browser, sign in at secure.splitwise.com/apps{'\n'}
+            2. Choose "Register your application" — the name can be anything (e.g. SlyTab){'\n'}
+            3. Copy the long code Splitwise shows (labelled "API key") and paste it below{'\n\n'}
+            SlyTab uses the code once to read your groups — it is never stored.
           </Text>
-          <Field label="Splitwise API key" value={apiKey} onChangeText={setApiKey}
+          <Field label="Splitwise code" value={apiKey} onChangeText={setApiKey}
             secureTextEntry autoCapitalize="none" />
           <Btn primary label={busy ? 'Connecting…' : 'Load my Splitwise groups'}
             disabled={busy || apiKey.trim() === ''} onPress={() => void connect()} />
@@ -797,21 +865,32 @@ function ImportSheet({ group, onClose, onDone }: {
           </View>
           {swGroup !== null && (
             <>
-              <Text style={s.fieldLabel}>Who is who? Tap to cycle through members</Text>
+              <Text style={s.fieldLabel}>Who is who? Tap a name to change</Text>
               {swGroup.members.map((m) => {
-                const mapped = group.members.find((gm) => gm.id === mapping[String(m.id)]);
+                const v = mapping[String(m.id)] ?? '';
+                const mapped = group.members.find((gm) => gm.id === v);
                 return (
-                  <Pressable key={m.id} style={s.row}
-                    onPress={() => {
-                      const idx = group.members.findIndex((gm) => gm.id === mapping[String(m.id)]);
-                      const next = group.members[(idx + 1) % group.members.length];
-                      setMapping({ ...mapping, [String(m.id)]: next?.id ?? '' });
-                    }}>
-                    <Text style={[s.body, { flex: 1 }]}>{m.name}</Text>
-                    <Text style={{ color: mapped ? c.brand : c.text3, fontSize: 13.5 }}>
-                      {mapped ? `→ ${mapped.displayName}` : 'tap to map'}
-                    </Text>
-                  </Pressable>
+                  <View key={m.id}>
+                    <Pressable style={s.row}
+                      onPress={() => {
+                        // Cycle: each member → "invite by email" → around again.
+                        const order = [...group.members.map((gm) => gm.id), '__invite'];
+                        const next = order[(order.indexOf(v) + 1) % order.length];
+                        setMapping({ ...mapping, [String(m.id)]: next ?? '' });
+                      }}>
+                      <Text style={[s.body, { flex: 1 }]}>{m.name}</Text>
+                      <Text style={{ color: v !== '' ? c.brand : c.text3, fontSize: 13.5 }}>
+                        {v === '__invite' ? '→ invite by email' : mapped ? `→ ${mapped.displayName}` : 'tap to choose'}
+                      </Text>
+                    </Pressable>
+                    {v === '__invite' && (
+                      <Field label={`${m.name}'s email — we'll invite them and keep their share ready`}
+                        value={inviteEmails[String(m.id)] ?? ''}
+                        onChangeText={(t) => setInviteEmails({ ...inviteEmails, [String(m.id)]: t })}
+                        keyboardType="email-address" autoCapitalize="none"
+                        placeholder="them@example.com" />
+                    )}
+                  </View>
                 );
               })}
               <Btn primary label={busy ? 'Importing…' : 'Import everything'}

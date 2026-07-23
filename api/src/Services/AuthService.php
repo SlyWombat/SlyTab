@@ -44,9 +44,23 @@ final class AuthService
             )->execute([$id, $email, self::hashPassword($password), $displayName, '{}']);
         } catch (\PDOException $e) {
             if (($e->errorInfo[1] ?? 0) === 1062) { // duplicate key
-                throw new ApiException('EMAIL_TAKEN', 'an account with this email already exists', 409);
+                // Issue #2: a placeholder created by an import/invite is
+                // claimed by registering with its email — history intact.
+                $claim = $this->pdo->prepare(
+                    'SELECT id FROM users WHERE email = ? AND placeholder_at IS NOT NULL AND deleted_at IS NULL',
+                );
+                $claim->execute([$email]);
+                $placeholderId = $claim->fetchColumn();
+                if ($placeholderId === false) {
+                    throw new ApiException('EMAIL_TAKEN', 'an account with this email already exists', 409);
+                }
+                $this->pdo->prepare(
+                    'UPDATE users SET password_hash = ?, display_name = ?, placeholder_at = NULL WHERE id = ?',
+                )->execute([self::hashPassword($password), $displayName, $placeholderId]);
+                $id = (string) $placeholderId;
+            } else {
+                throw $e;
             }
-            throw $e;
         }
 
         return ['token' => $this->createSession($id, $deviceLabel), 'user' => $this->userById($id)];

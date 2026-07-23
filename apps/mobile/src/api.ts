@@ -58,7 +58,11 @@ export interface SplitwiseGroup {
 }
 export interface ImportResult {
   imported: { expenses: number; settlements: number; skipped: number };
+  invited?: string[];
   errors: string[];
+}
+export interface Session {
+  id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean;
 }
 export interface HomeBalances {
   items: { group: Group; netMinor: number; currency: string }[];
@@ -193,8 +197,11 @@ export const api = {
   deleteAccount: (confirmEmail: string) => req<{ ok: true }>('DELETE', '/me', { confirmEmail }),
   splitwiseApiGroups: (groupId: string, apiKey: string) =>
     req<{ groups: SplitwiseGroup[] }>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey }),
-  splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number, mapping: Record<string, string>) =>
+  splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number,
+    mapping: Record<string, string | { email: string; name: string }>) =>
     req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
+  listSessions: () => req<{ items: Session[] }>('GET', '/me/sessions'),
+  revokeSession: (id: string) => req<{ ok: true }>('DELETE', `/me/sessions/${id}`),
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),
   settle: (groupId: string, toUserId: string, amountMinor: number, method: string) =>
     req<Settlement>('POST', `/groups/${groupId}/settlements`, { toUserId, amountMinor, method }),

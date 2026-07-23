@@ -3,7 +3,7 @@ import { computeSplit, CURRENCIES, GROUP_EMOJI } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
-  type ParsedReceipt, type SplitwiseGroup, type User,
+  type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { Amount, Badge, Mark, Sheet } from '../ui';
 
@@ -802,12 +802,13 @@ function ImportSheet({ group, onClose, onDone }: {
   const [swGroups, setSwGroups] = useState<SplitwiseGroup[] | null>(null);
   const [swGroupId, setSwGroupId] = useState<number | null>(null);
   const [apiMapping, setApiMapping] = useState<Record<string, string>>({});
+  const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [inspect, setInspect] = useState<Awaited<ReturnType<typeof api.inspectSplitwise>> | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Awaited<ReturnType<typeof api.importSplitwise>> | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function pick(f: File) {
@@ -862,11 +863,18 @@ function ImportSheet({ group, onClose, onDone }: {
   const swGroup = swGroups?.find((g) => g.id === swGroupId) ?? null;
 
   async function runApi() {
-    if (swGroupId === null) return;
+    if (swGroupId === null || swGroup === null) return;
     setBusy(true);
     setError(null);
     try {
-      setResult(await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, apiMapping));
+      const mapping: Record<string, string | { email: string; name: string }> = {};
+      for (const m of swGroup.members) {
+        const v = apiMapping[String(m.id)] ?? '';
+        mapping[String(m.id)] = v === '__invite'
+          ? { email: (inviteEmails[String(m.id)] ?? '').trim(), name: m.name }
+          : v;
+      }
+      setResult(await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, mapping));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -875,8 +883,15 @@ function ImportSheet({ group, onClose, onDone }: {
   }
 
   const apiComplete = swGroup !== null
-    && swGroup.members.every((m) => (apiMapping[String(m.id)] ?? '') !== '')
-    && new Set(Object.values(apiMapping)).size === swGroup.members.length;
+    && swGroup.members.every((m) => {
+      const v = apiMapping[String(m.id)] ?? '';
+      if (v === '__invite') return /.+@.+\..+/.test((inviteEmails[String(m.id)] ?? '').trim());
+      return v !== '';
+    })
+    && new Set(swGroup.members.map((m) => {
+      const v = apiMapping[String(m.id)] ?? '';
+      return v === '__invite' ? `email:${(inviteEmails[String(m.id)] ?? '').trim().toLowerCase()}` : v;
+    })).size === swGroup.members.length;
 
   const complete = inspect !== null
     && inspect.members.every((m) => (mapping[m] ?? '') !== '')
@@ -893,6 +908,12 @@ function ImportSheet({ group, onClose, onDone }: {
             <b>{result.imported.settlements}</b> settlements
             {result.imported.skipped > 0 && <> · {result.imported.skipped} personal expenses skipped</>}.
           </p>
+          {(result.invited ?? []).length > 0 && (
+            <p className="muted" style={{ fontSize: 13, paddingBottom: 8 }}>
+              Invitations sent to {result.invited!.join(', ')} — their share of the
+              history is saved and appears under their name the moment they join.
+            </p>
+          )}
           {result.errors.length > 0 && (
             <div className="error">
               {result.errors.length} rows could not be imported:
@@ -912,12 +933,17 @@ function ImportSheet({ group, onClose, onDone }: {
           {swGroups === null ? (
             <>
               <p className="muted" style={{ padding: '8px 0' }}>
-                Connect with a Splitwise API key: sign in at{' '}
-                <b>secure.splitwise.com/apps</b> → Register your application
-                (any name) → copy the <b>API key</b>. It is used for this
-                import only and never stored.
+                To connect your Splitwise account, get a one-time code:
               </p>
-              <label className="field"><span>Splitwise API key</span>
+              <ol className="muted" style={{ fontSize: 13, paddingLeft: 20, paddingBottom: 8, lineHeight: 1.7 }}>
+                <li>In a browser, sign in at <b>secure.splitwise.com/apps</b></li>
+                <li>Choose <b>Register your application</b> — the name can be anything (e.g. "SlyTab")</li>
+                <li>Copy the long code Splitwise shows (labelled "API key") and paste it below</li>
+              </ol>
+              <p className="muted" style={{ fontSize: 12, paddingBottom: 8 }}>
+                SlyTab uses the code once to read your groups — it is never stored.
+              </p>
+              <label className="field"><span>Splitwise code</span>
                 <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
                   autoComplete="off" />
               </label>
@@ -941,16 +967,27 @@ function ImportSheet({ group, onClose, onDone }: {
                 <>
                   <div className="sect" style={{ paddingLeft: 0 }}>Who is who?</div>
                   {swGroup.members.map((m) => (
-                    <label className="field" key={m.id}>
-                      <span>Splitwise: "{m.name}"</span>
-                      <select value={apiMapping[String(m.id)] ?? ''}
-                        onChange={(e) => setApiMapping({ ...apiMapping, [String(m.id)]: e.target.value })}>
-                        <option value="">— pick a member —</option>
-                        {group.members.map((gm) => (
-                          <option key={gm.id} value={gm.id}>{gm.displayName}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <div key={m.id}>
+                      <label className="field">
+                        <span>Splitwise: "{m.name}"</span>
+                        <select value={apiMapping[String(m.id)] ?? ''}
+                          onChange={(e) => setApiMapping({ ...apiMapping, [String(m.id)]: e.target.value })}>
+                          <option value="">— who is this? —</option>
+                          {group.members.map((gm) => (
+                            <option key={gm.id} value={gm.id}>{gm.displayName}</option>
+                          ))}
+                          <option value="__invite">Not here yet — invite by email…</option>
+                        </select>
+                      </label>
+                      {apiMapping[String(m.id)] === '__invite' && (
+                        <label className="field" style={{ marginTop: -6 }}>
+                          <span>{m.name}'s email — we'll invite them and keep their share ready</span>
+                          <input type="email" value={inviteEmails[String(m.id)] ?? ''}
+                            onChange={(e) => setInviteEmails({ ...inviteEmails, [String(m.id)]: e.target.value })}
+                            placeholder="them@example.com" />
+                        </label>
+                      )}
+                    </div>
                   ))}
                   <button className="btn primary block" disabled={!apiComplete || busy} onClick={() => void runApi()}>
                     {busy ? 'Importing…' : 'Import everything'}

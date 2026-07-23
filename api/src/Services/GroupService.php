@@ -193,7 +193,58 @@ final class GroupService
      *
      * @return array{token:string, expiresAt:string, emailed:bool}
      */
-    public function createInvite(string $groupId, string $userId, ?string $email = null): array
+    /**
+     * Issue #2: bring someone into the group before they have an account.
+     * If the email already belongs to a member, nothing to do; an existing
+     * non-member gets added directly (and emailed); an unknown email gets
+     * a placeholder account that holds their history until they register
+     * (or sign in with Google/Apple) using that email — which claims it.
+     *
+     * @return string the member's user id (real or placeholder)
+     */
+    public function addMemberByEmail(string $groupId, string $inviterId, string $email, string $displayName = ''): string
+    {
+        $this->assertWritable($groupId);
+        $email = strtolower(trim($email));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new ApiException('VALIDATION', 'a valid email address is required');
+        }
+        $stmt = $this->pdo->prepare('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL');
+        $stmt->execute([$email]);
+        $userId = $stmt->fetchColumn();
+
+        if ($userId === false) {
+            $userId = Ulid::generate();
+            $name = trim($displayName) !== '' ? mb_substr(trim($displayName), 0, 80) : explode('@', $email)[0];
+            $this->pdo->prepare(
+                'INSERT INTO users (id, email, password_hash, display_name, payment_handles, placeholder_at)
+                 VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+            )->execute([
+                $userId, $email,
+                password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+                $name, '{}',
+            ]);
+        }
+
+        $member = $this->pdo->prepare(
+            'SELECT 1 FROM memberships WHERE group_id = ? AND user_id = ? AND left_at IS NULL',
+        );
+        $member->execute([$groupId, $userId]);
+        if ($member->fetchColumn() === false) {
+            // Rejoin support: revive an old membership row if one exists.
+            $upd = $this->pdo->prepare('UPDATE memberships SET left_at = NULL WHERE group_id = ? AND user_id = ?');
+            $upd->execute([$groupId, $userId]);
+            if ($upd->rowCount() === 0) {
+                $this->pdo->prepare('INSERT INTO memberships (group_id, user_id) VALUES (?, ?)')
+                    ->execute([$groupId, $userId]);
+            }
+            $this->activity->record($groupId, $inviterId, 'added', 'member', (string) $userId);
+            $this->createInvite($groupId, $inviterId, $email, historyWaiting: true);
+        }
+        return (string) $userId;
+    }
+
+    public function createInvite(string $groupId, string $userId, ?string $email = null, bool $historyWaiting = false): array
     {
         $this->assertWritable($groupId);
         if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -218,6 +269,10 @@ final class GroupService
                 strtolower(trim($email)),
                 "{$inviter} invited you to \"{$group['name']}\" on SlyTab",
                 "{$inviter} wants to split expenses with you in \"{$group['name']}\".\n\n"
+                . ($historyWaiting
+                    ? "Your share of the group's expenses is already loaded - create your\n"
+                    . "account with this email address and it will all be there.\n\n"
+                    : '')
                 . "Join here (link works for 7 days):\n\n{$base}/join/{$token}\n\n"
                 . "SlyTab is the private expense splitter at {$base} - free, no ads,\n"
                 . "no tracking.\n",

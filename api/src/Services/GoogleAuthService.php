@@ -104,7 +104,8 @@ class GoogleAuthService
             ]);
         } else {
             $this->pdo->prepare(
-                'UPDATE users SET email_verified_at = COALESCE(email_verified_at, UTC_TIMESTAMP()) WHERE id = ?',
+                'UPDATE users SET email_verified_at = COALESCE(email_verified_at, UTC_TIMESTAMP()),
+                        placeholder_at = NULL WHERE id = ?',
             )->execute([$userId]);
         }
 

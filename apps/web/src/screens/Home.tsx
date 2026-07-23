@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CURRENCIES, GROUP_EMOJI } from '@slytab/core';
-import { api, type HomeBalances, type User } from '../api';
+import { api, type HomeBalances, type Session, type User } from '../api';
 import { Amount, Badge, Mark, Sheet } from '../ui';
 
 export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
@@ -131,6 +131,23 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   );
 }
 
+/** "2 hours ago" style timestamps for the devices list. */
+function ago(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso + 'Z').getTime()) / 60000));
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function deviceName(label: string): string {
+  if (label === 'web') return 'Web browser';
+  if (label === 'mobile') return 'Android app';
+  return label || 'Unknown device';
+}
+
 function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   user: User;
   onClose: () => void;
@@ -139,12 +156,17 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [sessions, setSessions] = useState<Session[] | null>(null);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
   const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -189,6 +211,28 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </label>
         <button className="btn primary block">Save profile</button>
       </form>
+      {sessions !== null && sessions.length > 0 && (
+        <>
+          <div className="sect" style={{ paddingLeft: 0 }}>Where you're signed in</div>
+          {sessions.map((sess) => (
+            <div className="row" key={sess.id}>
+              <div className="grow">
+                <div className="name" style={{ fontSize: 13.5 }}>
+                  {deviceName(sess.deviceLabel)}{sess.current && <span className="muted"> · this device</span>}
+                </div>
+                <div className="meta">last active {ago(sess.lastSeenAt)}</div>
+              </div>
+              {!sess.current && (
+                <button className="btn sm" onClick={() => {
+                  api.revokeSession(sess.id)
+                    .then(() => setSessions(sessions.filter((x) => x.id !== sess.id)))
+                    .catch((e) => setError(e.message));
+                }}>Sign out</button>
+              )}
+            </div>
+          ))}
+        </>
+      )}
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
       {!deleting ? (
         <button className="btn block" style={{ marginTop: 8, color: 'var(--ss-owe)' }}

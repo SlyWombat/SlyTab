@@ -80,6 +80,60 @@ final class SplitwiseApiImportTest extends TestCase
         return json_decode((string) $res->getBody(), true, 32, JSON_THROW_ON_ERROR);
     }
 
+    public function testUnmatchedMembersGetPlaceholdersAndRegistrationClaimsThem(): void
+    {
+        $reg = $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'importer@example.com', 'password' => 'password-123',
+            'displayName' => 'Importer', 'deviceLabel' => 'test',
+        ]), 201);
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Hold My History', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $reg['token']), 201);
+
+        self::$sw->responses = [
+            'get_expenses' => ['expenses' => [[
+                'description' => 'Lift tickets', 'cost' => '100.00', 'currency_code' => 'CAD',
+                'date' => '2026-07-10T12:00:00Z', 'payment' => false, 'deleted_at' => null,
+                'category' => ['name' => 'Entertainment'],
+                'users' => [
+                    ['user_id' => 1, 'paid_share' => '100.00', 'owed_share' => '50.00'],
+                    ['user_id' => 2, 'paid_share' => '0.00', 'owed_share' => '50.00'],
+                ],
+            ]]],
+        ];
+
+        $result = self::$sw->import($g['id'], $reg['user']['id'], 'key', 777, [
+            '1' => $reg['user']['id'],
+            '2' => ['email' => 'newbie@example.com', 'name' => 'New Person'],
+        ]);
+        self::assertSame(1, $result['imported']['expenses']);
+        self::assertSame(['newbie@example.com'], $result['invited']);
+
+        // The placeholder holds the debt already.
+        $bal = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/balances", null, $reg['token']));
+        self::assertSame(5000, $bal['net'][$reg['user']['id']]);
+        $group = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}", null, $reg['token']));
+        $names = array_column($group['members'], 'displayName');
+        self::assertContains('New Person', $names);
+
+        // Registering with that email claims the account — history intact.
+        $claim = $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'newbie@example.com', 'password' => 'password-456',
+            'displayName' => 'Newbie Real', 'deviceLabel' => 'test',
+        ]), 201);
+        self::assertSame(-5000, $this->ok(
+            $this->request('GET', "/api/v1/groups/{$g['id']}/balances", null, $claim['token']),
+        )['net'][$claim['user']['id']]);
+        self::assertSame('Newbie Real', $claim['user']['displayName']);
+
+        // A real (non-placeholder) duplicate email still 409s.
+        $dup = $this->request('POST', '/api/v1/auth/register', [
+            'email' => 'newbie@example.com', 'password' => 'password-789',
+            'displayName' => 'Imposter', 'deviceLabel' => 'test',
+        ]);
+        self::assertSame(409, $dup->getStatusCode());
+    }
+
     public function testApiImportIsBalanceExactAndHandlesPayments(): void
     {
         $mk = function (string $name): array {

@@ -179,8 +179,14 @@ final class Api
                     $verifier->request(Http::user($rq)['id']);
                     return Http::json($rs, ['ok' => true]);
                 });
-                $p->get('/me/sessions', fn(Request $rq, Response $rs): Response =>
-                    Http::json($rs, ['items' => $auth->listSessions(Http::user($rq)['id'])]));
+                $p->get('/me/sessions', function (Request $rq, Response $rs) use ($auth): Response {
+                    $me = Http::user($rq);
+                    $items = array_map(
+                        static fn(array $s2): array => $s2 + ['current' => $s2['id'] === $me['sessionId']],
+                        $auth->listSessions($me['id']),
+                    );
+                    return Http::json($rs, ['items' => $items]);
+                });
                 $p->delete('/me/sessions/{id}', function (Request $rq, Response $rs, array $a) use ($auth): Response {
                     $auth->revokeSession(Http::user($rq)['id'], $a['id']);
                     return Http::json($rs, ['ok' => true]);
