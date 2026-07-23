@@ -408,9 +408,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           </p>
         )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy}
+          <button type="button" className="btn" disabled={scanBusy}
+            style={{ flex: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             onClick={() => fileInput.current?.click()}>
-            {scanBusy ? 'Reading your receipt…' : receiptId ? 'Receipt attached ✓ — rescan' : '📷 Scan receipt'}
+            {scanBusy ? 'Reading…' : receiptId ? 'Rescan ✓' : '📷 Scan receipt'}
           </button>
           <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>
             {editing ? 'Save changes' : 'Save expense'}
