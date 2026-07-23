@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { computeSplit, CURRENCIES, GROUP_EMOJI } from '@slytab/core';
+import { computeSplit, CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
-import { Amount, Badge, Mark, Sheet } from '../ui';
+import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
 const CATEGORIES = ['food', 'home', 'travel', 'fun', 'utilities', 'other'] as const;
 
@@ -405,11 +405,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           <label className="field" style={{ flex: 1 }}><span>Currency</span>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
               <optgroup label="This group">
-                {[group.homeCurrency, ...group.currencies].map((c) => <option key={c} value={c}>{c}</option>)}
+                {[group.homeCurrency, ...group.currencies].map((c) => (
+                  <option key={c} value={c}>{c} — {CURRENCY_NAMES[c as keyof typeof CURRENCY_NAMES] ?? c}</option>
+                ))}
               </optgroup>
               <optgroup label="All currencies">
                 {CURRENCIES.filter((c) => c !== group.homeCurrency && !group.currencies.includes(c))
-                  .map((c) => <option key={c} value={c}>{c}</option>)}
+                  .map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
               </optgroup>
             </select>
           </label>
@@ -721,19 +723,8 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
         </div>
         <div className="field">
           <span>Often-used currencies (quick picks in expenses; home is always {group.homeCurrency})</span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 4 }}>
-            {CURRENCIES.filter((c) => c !== group.homeCurrency).map((c) => (
-              <button type="button" key={c} onClick={() => {
-                const next = new Set(favorites);
-                next.has(c) ? next.delete(c) : next.add(c);
-                setFavorites(next);
-              }}
-                className="btn sm"
-                style={favorites.has(c) ? { background: 'var(--ss-brand)', color: '#fff', borderColor: 'var(--ss-brand)' } : {}}>
-                {c}
-              </button>
-            ))}
-          </div>
+          <CurrencyMultiPicker selected={[...favorites]} exclude={group.homeCurrency}
+            onChange={(next) => setFavorites(new Set(next))} />
         </div>
         <button className="btn primary block" disabled={busy || name.trim() === ''}>Save</button>
       </form>

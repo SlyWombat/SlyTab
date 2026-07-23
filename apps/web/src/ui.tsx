@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { formatMinor } from '@slytab/core';
+import { useState, type ReactNode } from 'react';
+import { CURRENCIES, CURRENCY_NAMES, formatMinor, type Currency } from '@slytab/core';
 
 const BADGE_HUES = ['#79aaff', '#6ee0d2', '#f5a05e', '#ff8fb2', '#b78cff', '#6fc2ff'];
 
@@ -55,5 +55,67 @@ export function Mark({ size = 40 }: { size?: number }) {
         <path d="M48 8 A40 40 0 0 1 48 88 A20 20 0 0 0 48 48 A20 20 0 0 1 48 8 Z" fill="var(--ss-owed)" />
       </g>
     </svg>
+  );
+}
+
+/**
+ * Searchable currency multi-select with full names — a wall of 3-letter
+ * chips was unusable (user feedback). `exclude` hides the group's home
+ * currency, which is always available anyway.
+ */
+export function CurrencyMultiPicker({ selected, onChange, exclude }: {
+  selected: string[];
+  onChange: (next: string[]) => void;
+  exclude?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const options = CURRENCIES
+    .filter((c) => c !== exclude)
+    .filter((c) => q === ''
+      || c.toLowerCase().includes(q)
+      || CURRENCY_NAMES[c].toLowerCase().includes(q));
+
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 8 }}>
+          {selected.map((c) => (
+            <button type="button" key={c} className="btn sm"
+              style={{ background: 'var(--ss-brand)', color: '#fff' }}
+              title={`Remove ${CURRENCY_NAMES[c as Currency] ?? c}`}
+              onClick={() => onChange(selected.filter((x) => x !== c))}>
+              {c} ✕
+            </button>
+          ))}
+        </div>
+      )}
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search — e.g. peso, CLP, dollar…"
+        style={{ width: '100%', background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
+          border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '9px 12px',
+          font: '400 14px var(--ss-font-body)', marginBottom: 6 }} />
+      <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--ss-outline)',
+        borderRadius: 10 }}>
+        {options.map((c) => {
+          const on = selected.includes(c);
+          return (
+            <button type="button" key={c}
+              onClick={() => onChange(on ? selected.filter((x) => x !== c) : [...selected, c])}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                background: on ? 'var(--ss-surface-2)' : 'none', border: 'none',
+                padding: '9px 12px', color: 'var(--ss-text)', textAlign: 'left',
+                font: '400 13.5px var(--ss-font-body)', cursor: 'pointer' }}>
+              <span style={{ width: 16, color: 'var(--ss-brand)' }}>{on ? '✓' : ''}</span>
+              <b style={{ width: 42, fontFamily: 'var(--ss-font-mono)' }}>{c}</b>
+              <span style={{ color: 'var(--ss-text-2)' }}>{CURRENCY_NAMES[c]}</span>
+            </button>
+          );
+        })}
+        {options.length === 0 && (
+          <div style={{ padding: 12, color: 'var(--ss-text-3)', fontSize: 13 }}>No matches.</div>
+        )}
+      </div>
+    </div>
   );
 }

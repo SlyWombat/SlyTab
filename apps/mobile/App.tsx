@@ -7,7 +7,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@slytab/core';
+import { computeSplit, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, tokens, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -368,16 +368,8 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
     <SheetModal title="Profile" onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
-      <Text style={s.fieldLabel}>Home currency — your overall balance shows in this</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {CURRENCIES.map((cur) => (
-          <Pressable key={cur} onPress={() => setCurrency(cur)}
-            style={{ paddingVertical: 6, paddingHorizontal: 12, marginRight: 6, borderRadius: 14,
-              backgroundColor: cur === currency ? c.brand : c.surface2 }}>
-            <Text style={{ color: cur === currency ? '#fff' : c.text2, fontWeight: '600', fontSize: 13 }}>{cur}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <CurrencySingleField label="Home currency — your overall balance shows in this"
+        value={currency} onChange={setCurrency} />
       <Text style={s.fieldLabel}>How people pay you</Text>
       <Field label="Interac e-Transfer email" value={interac} onChangeText={setInterac}
         keyboardType="email-address" placeholder="you@example.com" />
@@ -465,31 +457,10 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
           </Pressable>
         ))}
       </View>
-      <Text style={s.fieldLabel}>Home currency</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        {CURRENCIES.map((cur) => (
-          <Pressable key={cur} onPress={() => setCurrency(cur)}
-            style={{ paddingVertical: 6, paddingHorizontal: 12, marginRight: 6, borderRadius: 14,
-              backgroundColor: cur === currency ? c.brand : c.surface2 }}>
-            <Text style={{ color: cur === currency ? '#fff' : c.text2, fontWeight: '600', fontSize: 13 }}>{cur}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <CurrencySingleField label="Home currency" value={currency} onChange={setCurrency} />
       <Text style={s.fieldLabel}>Also often used (quick picks in expenses — optional)</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {CURRENCIES.filter((cur) => cur !== currency).map((cur) => (
-          <Pressable key={cur}
-            onPress={() => setFavorites((prev) => {
-              const next = new Set(prev);
-              next.has(cur) ? next.delete(cur) : next.add(cur);
-              return next;
-            })}
-            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-              backgroundColor: favorites.has(cur) ? c.brand : c.surface2 }}>
-            <Text style={{ color: favorites.has(cur) ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <CurrencyMultiPicker selected={[...favorites]} exclude={currency}
+        onChange={(next) => setFavorites(new Set(next))} />
       <Btn primary label="Create group" disabled={name.trim() === ''}
         onPress={() => api.createGroup(name, emoji, currency.toUpperCase(), [...favorites])
           .then((g) => onCreated(g.id)).catch((e) => setError(e.message))} />
@@ -520,20 +491,8 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
         ))}
       </View>
       <Text style={s.fieldLabel}>Often-used currencies (home is always {group.homeCurrency})</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {CURRENCIES.filter((cur) => cur !== group.homeCurrency).map((cur) => (
-          <Pressable key={cur}
-            onPress={() => setFavorites((prev) => {
-              const next = new Set(prev);
-              next.has(cur) ? next.delete(cur) : next.add(cur);
-              return next;
-            })}
-            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-              backgroundColor: favorites.has(cur) ? c.brand : c.surface2 }}>
-            <Text style={{ color: favorites.has(cur) ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <CurrencyMultiPicker selected={[...favorites]} exclude={group.homeCurrency}
+        onChange={(next) => setFavorites(new Set(next))} />
       <Btn primary label={busy ? 'Saving…' : 'Save'} disabled={busy || name.trim() === ''}
         onPress={() => {
           setBusy(true);
@@ -931,6 +890,102 @@ type ScanStage =
   | { stage: 'read'; startedAt: number };
 
 /** Staged scan progress (issue #9): upload % → reading with elapsed time. */
+/**
+ * Searchable currency list with full names (user feedback: a wall of
+ * 3-letter chips was unusable). Shows the top matches; typing narrows.
+ */
+function CurrencySearchList({ onPick, exclude = [], selected = [] }: {
+  onPick: (c: string) => void; exclude?: string[]; selected?: string[];
+}) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const matches = CURRENCIES
+    .filter((cur) => !exclude.includes(cur))
+    .filter((cur) => q === ''
+      || cur.toLowerCase().includes(q)
+      || CURRENCY_NAMES[cur].toLowerCase().includes(q))
+    .slice(0, 8);
+  return (
+    <View>
+      <Field label="Search — e.g. peso, CLP, dollar" value={query} onChangeText={setQuery}
+        autoCapitalize="none" placeholder="Type a currency name or code" />
+      <View style={{ borderWidth: 1, borderColor: c.outline, borderRadius: 10, marginBottom: 12 }}>
+        {matches.map((cur) => {
+          const on = selected.includes(cur);
+          return (
+            <Pressable key={cur} onPress={() => onPick(cur)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                paddingVertical: 9, paddingHorizontal: 12,
+                backgroundColor: on ? c.surface2 : 'transparent' }}>
+              <Text style={{ color: c.brand, width: 14, fontSize: 13 }}>{on ? '✓' : ''}</Text>
+              <Text style={{ color: c.text, fontWeight: '700', width: 44, fontSize: 13.5 }}>{cur}</Text>
+              <Text style={{ color: c.text2, fontSize: 13.5 }}>{CURRENCY_NAMES[cur]}</Text>
+            </Pressable>
+          );
+        })}
+        {matches.length === 0 && (
+          <Text style={[s.meta, { padding: 12 }]}>No matches.</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/** Multi-select favorites: removable chips + the search list. */
+function CurrencyMultiPicker({ selected, onChange, exclude }: {
+  selected: string[]; onChange: (next: string[]) => void; exclude?: string;
+}) {
+  return (
+    <View>
+      {selected.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {selected.map((cur) => (
+            <Pressable key={cur} onPress={() => onChange(selected.filter((x) => x !== cur))}
+              style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.brand }}>
+              <Text style={{ color: '#fff', fontSize: 12.5 }}>{cur} ✕</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      <CurrencySearchList selected={selected} exclude={exclude ? [exclude] : []}
+        onPick={(cur) => onChange(selected.includes(cur)
+          ? selected.filter((x) => x !== cur) : [...selected, cur])} />
+    </View>
+  );
+}
+
+/** Single currency field: current pick shown; tap "change" to search. */
+function CurrencySingleField({ label, value, onChange, quick = [] }: {
+  label: string; value: string; onChange: (c: string) => void; quick?: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const chips = [...new Set([value, ...quick])];
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={s.fieldLabel}>{label}</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: open ? 8 : 0 }}>
+        {chips.map((cur) => (
+          <Pressable key={cur} onPress={() => { onChange(cur); setOpen(false); }}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: cur === value ? c.brand : c.surface2 }}>
+            <Text style={{ color: cur === value ? '#fff' : c.text2, fontSize: 12.5 }}>
+              {cur === value ? `${cur} — ${CURRENCY_NAMES[cur as Currency] ?? cur}` : cur}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable onPress={() => setOpen(!open)}
+          style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.surface2 }}>
+          <Text style={{ color: c.brand, fontSize: 12.5 }}>{open ? 'close' : 'change…'}</Text>
+        </Pressable>
+      </View>
+      {open && (
+        <CurrencySearchList selected={[value]}
+          onPick={(cur) => { onChange(cur); setOpen(false); }} />
+      )}
+    </View>
+  );
+}
+
 function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => void }) {
   const [, tick] = useState(0);
   useEffect(() => {
@@ -1077,24 +1132,23 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       <Field label={`Amount (${currency})`} value={amountStr}
         onChangeText={(v) => { setAmountStr(v); setExactShares(null); }}
         keyboardType="decimal-pad" placeholder="0.00" />
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {[group.homeCurrency, ...group.currencies,
-          ...(allCurrencies ? CURRENCIES.filter((cur) =>
-            cur !== group.homeCurrency && !group.currencies.includes(cur)) : []),
-        ].map((cur) => (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: allCurrencies ? 8 : 12 }}>
+        {[...new Set([group.homeCurrency, ...group.currencies, currency])].map((cur) => (
           <Pressable key={cur} onPress={() => setCurrency(cur)}
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
               backgroundColor: currency === cur ? c.brand : c.surface2 }}>
             <Text style={{ color: currency === cur ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
           </Pressable>
         ))}
-        {!allCurrencies && (
-          <Pressable onPress={() => setAllCurrencies(true)}
-            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.surface2 }}>
-            <Text style={{ color: c.brand, fontSize: 12.5 }}>more…</Text>
-          </Pressable>
-        )}
+        <Pressable onPress={() => setAllCurrencies(!allCurrencies)}
+          style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.surface2 }}>
+          <Text style={{ color: c.brand, fontSize: 12.5 }}>{allCurrencies ? 'close' : 'other…'}</Text>
+        </Pressable>
       </View>
+      {allCurrencies && (
+        <CurrencySearchList selected={[currency]}
+          onPick={(cur) => { setCurrency(cur); setAllCurrencies(false); }} />
+      )}
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>

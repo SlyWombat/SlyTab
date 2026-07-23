@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CURRENCIES, GROUP_EMOJI } from '@slytab/core';
+import { CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI } from '@slytab/core';
 import { api, type HomeBalances, type Session, type User } from '../api';
-import { Amount, Badge, Mark, Sheet } from '../ui';
+import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
 export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   user: User;
@@ -196,7 +196,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </label>
         <label className="field"><span>Default currency</span>
           <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
           </select>
         </label>
         <div className="sect" style={{ paddingLeft: 0 }}>How people pay you</div>
@@ -312,23 +312,12 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
         </div>
         <label className="field"><span>Home currency</span>
           <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
           </select>
         </label>
         <div className="field"><span>Also often used (quick picks in expenses — optional)</span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 4 }}>
-            {CURRENCIES.filter((c) => c !== currency).map((c) => (
-              <button type="button" key={c} onClick={() => {
-                const next = new Set(favorites);
-                next.has(c) ? next.delete(c) : next.add(c);
-                setFavorites(next);
-              }}
-                className="btn sm"
-                style={favorites.has(c) ? { background: 'var(--ss-brand)', color: '#fff', borderColor: 'var(--ss-brand)' } : {}}>
-                {c}
-              </button>
-            ))}
-          </div>
+          <CurrencyMultiPicker selected={[...favorites]} exclude={currency}
+            onChange={(next) => setFavorites(new Set(next))} />
         </div>
         <button className="btn primary block">Create group</button>
       </form>
