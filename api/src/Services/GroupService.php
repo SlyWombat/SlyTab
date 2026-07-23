@@ -23,7 +23,8 @@ final class GroupService
     ) {}
 
     /** @return array<string,mixed> */
-    public function create(string $userId, string $name, string $emoji, string $homeCurrency): array
+    /** @param list<string> $currencies favorite quick-pick currencies */
+    public function create(string $userId, string $name, string $emoji, string $homeCurrency, array $currencies = []): array
     {
         $name = trim($name);
         if ($name === '' || mb_strlen($name) > 80) {
@@ -34,12 +35,78 @@ final class GroupService
         }
         $id = Ulid::generate();
         $this->pdo->prepare(
-            'INSERT INTO `groups` (id, name, emoji, home_currency, created_by) VALUES (?, ?, ?, ?, ?)',
-        )->execute([$id, $name, mb_substr($emoji, 0, 8), $homeCurrency, $userId]);
+            'INSERT INTO `groups` (id, name, emoji, home_currency, currencies, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        )->execute([$id, $name, mb_substr($emoji, 0, 8), $homeCurrency,
+            json_encode(self::cleanCurrencies($currencies, $homeCurrency), JSON_THROW_ON_ERROR), $userId]);
         $this->pdo->prepare('INSERT INTO memberships (group_id, user_id) VALUES (?, ?)')
             ->execute([$id, $userId]);
         $this->activity->record($id, $userId, 'created', 'group', $id);
         return $this->get($id);
+    }
+
+    /**
+     * PATCH /groups/{id} — name, emoji, and favorite currencies. The home
+     * currency is fixed for life: changing it would re-denominate every
+     * balance.
+     *
+     * @param array<string,mixed> $data @return array<string,mixed>
+     */
+    public function update(string $groupId, string $userId, array $data): array
+    {
+        $this->assertMember($groupId, $userId);
+        $this->assertWritable($groupId);
+        $group = $this->get($groupId);
+        $sets = [];
+        $args = [];
+        if (array_key_exists('name', $data)) {
+            $name = trim((string) $data['name']);
+            if ($name === '' || mb_strlen($name) > 80) {
+                throw new ApiException('VALIDATION', 'group name must be 1-80 characters');
+            }
+            $sets[] = 'name = ?';
+            $args[] = $name;
+        }
+        if (array_key_exists('emoji', $data)) {
+            $sets[] = 'emoji = ?';
+            $args[] = mb_substr((string) $data['emoji'], 0, 8);
+        }
+        if (array_key_exists('currencies', $data)) {
+            if (!is_array($data['currencies'])) {
+                throw new ApiException('VALIDATION', 'currencies must be a list of 3-letter codes');
+            }
+            $sets[] = 'currencies = ?';
+            $args[] = json_encode(
+                self::cleanCurrencies($data['currencies'], $group['homeCurrency']),
+                JSON_THROW_ON_ERROR,
+            );
+        }
+        if ($sets !== []) {
+            $args[] = $groupId;
+            $this->pdo->prepare('UPDATE `groups` SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+            $this->activity->record($groupId, $userId, 'edited', 'group', $groupId);
+        }
+        return $this->get($groupId);
+    }
+
+    /**
+     * Favorites: valid ISO-shaped codes, deduped, home currency excluded
+     * (it is always offered first anyway), capped at 8.
+     *
+     * @param list<mixed> $currencies @return list<string>
+     */
+    private static function cleanCurrencies(array $currencies, string $homeCurrency): array
+    {
+        $out = [];
+        foreach ($currencies as $cur) {
+            $cur = strtoupper(trim((string) $cur));
+            if (!preg_match(self::CURRENCY_RE, $cur)) {
+                throw new ApiException('VALIDATION', 'currencies must be 3-letter codes');
+            }
+            if ($cur !== $homeCurrency && !in_array($cur, $out, true)) {
+                $out[] = $cur;
+            }
+        }
+        return array_slice($out, 0, 8);
     }
 
     /** @return array<string,mixed> group + active members */
@@ -62,6 +129,7 @@ final class GroupService
             'name' => $g['name'],
             'emoji' => $g['emoji'],
             'homeCurrency' => $g['home_currency'],
+            'currencies' => json_decode($g['currencies'] ?? '[]', true) ?: [],
             'isDirect' => (bool) $g['is_direct'],
             'archivedAt' => $g['archived_at'],
             'members' => array_map(static fn(array $u): array => [

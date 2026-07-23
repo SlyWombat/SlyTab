@@ -40,6 +40,7 @@ export interface Group {
   name: string;
   emoji: string;
   homeCurrency: string;
+  currencies: string[];
   isDirect: boolean;
   archivedAt: string | null;
   members: Member[];
@@ -282,8 +283,10 @@ export const api = {
 
   groups: () => req<{ items: Group[] }>('GET', '/groups'),
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
-  createGroup: (name: string, emoji: string, homeCurrency: string) =>
-    req<Group>('POST', '/groups', { name, emoji, homeCurrency }),
+  createGroup: (name: string, emoji: string, homeCurrency: string, currencies: string[] = []) =>
+    req<Group>('POST', '/groups', { name, emoji, homeCurrency, currencies }),
+  updateGroup: (id: string, data: { name?: string; emoji?: string; currencies?: string[] }) =>
+    req<Group>('PATCH', `/groups/${id}`, data),
   createInvite: (groupId: string, email?: string) =>
     req<{ token: string; expiresAt: string; path: string; emailed: boolean }>(
       'POST', `/groups/${groupId}/invites`, email ? { email } : {}),

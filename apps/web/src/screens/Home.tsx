@@ -235,12 +235,13 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     try {
-      const g = await api.createGroup(name, emoji, currency.toUpperCase());
+      const g = await api.createGroup(name, emoji, currency.toUpperCase(), [...favorites]);
       onCreated(g.id);
     } catch (err) {
       setError((err as Error).message);
@@ -270,6 +271,21 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
+        <div className="field"><span>Also often used (quick picks in expenses — optional)</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 4 }}>
+            {CURRENCIES.filter((c) => c !== currency).map((c) => (
+              <button type="button" key={c} onClick={() => {
+                const next = new Set(favorites);
+                next.has(c) ? next.delete(c) : next.add(c);
+                setFavorites(next);
+              }}
+                className="btn sm"
+                style={favorites.has(c) ? { background: 'var(--ss-brand)', color: '#fff', borderColor: 'var(--ss-brand)' } : {}}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
         <button className="btn primary block">Create group</button>
       </form>
     </Sheet>

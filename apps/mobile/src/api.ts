@@ -29,7 +29,7 @@ export interface Member {
   paymentHandles: User['paymentHandles'];
 }
 export interface Group {
-  id: string; name: string; emoji: string; homeCurrency: string;
+  id: string; name: string; emoji: string; homeCurrency: string; currencies: string[];
   isDirect: boolean; archivedAt: string | null; members: Member[];
 }
 export interface Participant { userId: string; amountMinor: number }
@@ -173,8 +173,10 @@ export const api = {
   patchMe: (data: object) => req<User>('PATCH', '/me', data),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
-  createGroup: (name: string, emoji: string, homeCurrency: string) =>
-    req<Group>('POST', '/groups', { name, emoji, homeCurrency }),
+  createGroup: (name: string, emoji: string, homeCurrency: string, currencies: string[] = []) =>
+    req<Group>('POST', '/groups', { name, emoji, homeCurrency, currencies }),
+  updateGroup: (id: string, data: { name?: string; emoji?: string; currencies?: string[] }) =>
+    req<Group>('PATCH', `/groups/${id}`, data),
   createInvite: (groupId: string, email?: string) =>
     req<{ token: string; path: string; emailed: boolean }>(
       'POST', `/groups/${groupId}/invites`, email ? { email } : {}),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { computeSplit, CURRENCIES } from '@slytab/core';
+import { computeSplit, CURRENCIES, GROUP_EMOJI } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
@@ -64,6 +64,7 @@ export function GroupScreen({ groupId, user, onBack }: {
   const [lastDeleted, setLastDeleted] = useState<Expense | null>(null);
   const [inviting, setInviting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,12 +92,13 @@ export function GroupScreen({ groupId, user, onBack }: {
       <div className="header">
         <button className="btn sm" onClick={onBack}>‹</button>
         <span style={{ fontSize: 24 }} aria-hidden>{group.emoji || '👥'}</span>
-        <div>
-          <h1 style={{ fontSize: 19 }}>{group.name}</h1>
+        <button onClick={() => setSettingsOpen(true)} title="Group settings"
+          style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer', minWidth: 0, flex: '0 1 auto' }}>
+          <h1 style={{ fontSize: 19 }}>{group.name} <span className="muted" style={{ fontSize: 12 }}>✎</span></h1>
           <div className="muted">{group.members.length} members · {group.homeCurrency}</div>
-        </div>
+        </button>
         <div className="spacer" />
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {myNet === 0 ? <span className="muted">settled ✓</span> : <Amount minor={myNet} currency={group.homeCurrency} signed size={16} />}
           <div className="muted" style={{ fontSize: 10.5 }}>your net</div>
         </div>
@@ -226,7 +228,7 @@ export function GroupScreen({ groupId, user, onBack }: {
         </>
       )}
 
-      <div style={{ display: 'flex', gap: 8, padding: '16px 0 90px' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '16px 84px 90px 0' }}>
         <button className="btn sm" onClick={() => setInviting(true)}>Invite</button>
         <a className="btn sm" style={{ textDecoration: 'none', lineHeight: '32px' }}
           href={`${import.meta.env.BASE_URL}api/v1/groups/${group.id}/export.csv`}>Export CSV</a>
@@ -249,6 +251,10 @@ export function GroupScreen({ groupId, user, onBack }: {
           onDeleted={() => { setLastDeleted(editing); setEditing(null); reload(); }} />
       )}
       {inviting && <InviteSheet groupId={group.id} onClose={() => setInviting(false)} />}
+      {settingsOpen && (
+        <GroupSettingsSheet group={group} onClose={() => setSettingsOpen(false)}
+          onSaved={() => { setSettingsOpen(false); reload(); }} />
+      )}
       {importing && (
         <ImportSheet group={group} onClose={() => setImporting(false)}
           onDone={() => { setImporting(false); reload(); }} />
@@ -398,7 +404,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           </label>
           <label className="field" style={{ flex: 1 }}><span>Currency</span>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              <optgroup label="This group">
+                {[group.homeCurrency, ...group.currencies].map((c) => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
+              <optgroup label="All currencies">
+                {CURRENCIES.filter((c) => c !== group.homeCurrency && !group.currencies.includes(c))
+                  .map((c) => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
             </select>
           </label>
         </div>
@@ -658,6 +670,73 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         Continue
       </button>
       {slipScan !== null && <BusyOverlay scan={slipScan} onCancel={() => slipAbort.current?.abort()} />}
+    </Sheet>
+  );
+}
+
+// ---- Group settings (name, emoji, favorite currencies) ----
+
+const GROUP_EMOJI_IMPORT = GROUP_EMOJI;
+
+function GroupSettingsSheet({ group, onClose, onSaved }: {
+  group: Group; onClose: () => void; onSaved: () => void;
+}) {
+  const [name, setName] = useState(group.name);
+  const [emoji, setEmoji] = useState(group.emoji);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set(group.currencies));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateGroup(group.id, { name, emoji, currencies: [...favorites] });
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title="Group settings" onClose={onClose}>
+      <form onSubmit={save}>
+        {error && <div className="error" role="alert">{error}</div>}
+        <label className="field"><span>Name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
+        </label>
+        <div className="field"><span>Emoji</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {GROUP_EMOJI_IMPORT.map((e) => (
+              <button type="button" key={e} onClick={() => setEmoji(e === emoji ? '' : e)}
+                style={{ fontSize: 20, padding: 4, background: 'none', borderRadius: 8,
+                  border: e === emoji ? '2px solid var(--ss-brand)' : '2px solid transparent' }}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <span>Often-used currencies (quick picks in expenses; home is always {group.homeCurrency})</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 4 }}>
+            {CURRENCIES.filter((c) => c !== group.homeCurrency).map((c) => (
+              <button type="button" key={c} onClick={() => {
+                const next = new Set(favorites);
+                next.has(c) ? next.delete(c) : next.add(c);
+                setFavorites(next);
+              }}
+                className="btn sm"
+                style={favorites.has(c) ? { background: 'var(--ss-brand)', color: '#fff', borderColor: 'var(--ss-brand)' } : {}}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="btn primary block" disabled={busy || name.trim() === ''}>Save</button>
+      </form>
     </Sheet>
   );
 }

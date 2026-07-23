@@ -406,6 +406,7 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   return (
     <SheetModal title="New group" onClose={onClose}>
@@ -431,9 +432,73 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
           </Pressable>
         ))}
       </ScrollView>
+      <Text style={s.fieldLabel}>Also often used (quick picks in expenses — optional)</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {CURRENCIES.filter((cur) => cur !== currency).map((cur) => (
+          <Pressable key={cur}
+            onPress={() => setFavorites((prev) => {
+              const next = new Set(prev);
+              next.has(cur) ? next.delete(cur) : next.add(cur);
+              return next;
+            })}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: favorites.has(cur) ? c.brand : c.surface2 }}>
+            <Text style={{ color: favorites.has(cur) ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Btn primary label="Create group" disabled={name.trim() === ''}
-        onPress={() => api.createGroup(name, emoji, currency.toUpperCase())
+        onPress={() => api.createGroup(name, emoji, currency.toUpperCase(), [...favorites])
           .then((g) => onCreated(g.id)).catch((e) => setError(e.message))} />
+    </SheetModal>
+  );
+}
+
+function GroupSettingsSheet({ group, onClose, onSaved }: {
+  group: Group; onClose: () => void; onSaved: () => void;
+}) {
+  const [name, setName] = useState(group.name);
+  const [emoji, setEmoji] = useState(group.emoji);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set(group.currencies));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <SheetModal title="Group settings" onClose={onClose}>
+      {error && <Text style={s.error}>{error}</Text>}
+      <Field label="Name" value={name} onChangeText={setName} />
+      <Text style={s.fieldLabel}>Emoji</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {GROUP_EMOJI.map((e) => (
+          <Pressable key={e} onPress={() => setEmoji(e === emoji ? '' : e)}
+            style={{ padding: 5, borderRadius: 8, borderWidth: 2,
+              borderColor: e === emoji ? c.brand : 'transparent' }}>
+            <Text style={{ fontSize: 20 }}>{e}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={s.fieldLabel}>Often-used currencies (home is always {group.homeCurrency})</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {CURRENCIES.filter((cur) => cur !== group.homeCurrency).map((cur) => (
+          <Pressable key={cur}
+            onPress={() => setFavorites((prev) => {
+              const next = new Set(prev);
+              next.has(cur) ? next.delete(cur) : next.add(cur);
+              return next;
+            })}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: favorites.has(cur) ? c.brand : c.surface2 }}>
+            <Text style={{ color: favorites.has(cur) ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Btn primary label={busy ? 'Saving…' : 'Save'} disabled={busy || name.trim() === ''}
+        onPress={() => {
+          setBusy(true);
+          api.updateGroup(group.id, { name, emoji, currencies: [...favorites] })
+            .then(onSaved)
+            .catch((e) => setError((e as Error).message))
+            .finally(() => setBusy(false));
+        }} />
     </SheetModal>
   );
 }
@@ -450,6 +515,7 @@ function GroupScreen({ groupId, user, onBack }: {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [lastDeleted, setLastDeleted] = useState<Expense | null>(null);
   const [importing, setImporting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
 
@@ -474,10 +540,10 @@ function GroupScreen({ groupId, user, onBack }: {
       <View style={s.header}>
         <Btn small label="‹" onPress={onBack} />
         <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={s.h2}>{group.name}</Text>
+        <Pressable style={{ flex: 1 }} onPress={() => setSettingsOpen(true)}>
+          <Text style={s.h2}>{group.name} <Text style={[s.meta, { fontSize: 12 }]}>✎</Text></Text>
           <Text style={s.meta}>{group.members.length} members · {group.homeCurrency}</Text>
-        </View>
+        </Pressable>
         {myNet === 0 ? <Text style={s.meta}>settled ✓</Text>
           : <Amount minor={myNet} currency={group.homeCurrency} signed size={15} />}
       </View>
@@ -636,6 +702,10 @@ function GroupScreen({ groupId, user, onBack }: {
       {importing && (
         <ImportSheet group={group} onClose={() => setImporting(false)}
           onDone={() => { setImporting(false); reload(); }} />
+      )}
+      {settingsOpen && (
+        <GroupSettingsSheet group={group} onClose={() => setSettingsOpen(false)}
+          onSaved={() => { setSettingsOpen(false); reload(); }} />
       )}
       {settling && (
         <SettleSheet group={group} to={settling.to} suggested={settling.suggested}
@@ -851,6 +921,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     return out;
   });
   const [currency, setCurrency] = useState(editing?.currency ?? group.homeCurrency);
+  const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
 
@@ -927,6 +998,24 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       <Field label={`Amount (${currency})`} value={amountStr}
         onChangeText={(v) => { setAmountStr(v); setExactShares(null); }}
         keyboardType="decimal-pad" placeholder="0.00" />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {[group.homeCurrency, ...group.currencies,
+          ...(allCurrencies ? CURRENCIES.filter((cur) =>
+            cur !== group.homeCurrency && !group.currencies.includes(cur)) : []),
+        ].map((cur) => (
+          <Pressable key={cur} onPress={() => setCurrency(cur)}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: currency === cur ? c.brand : c.surface2 }}>
+            <Text style={{ color: currency === cur ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
+          </Pressable>
+        ))}
+        {!allCurrencies && (
+          <Pressable onPress={() => setAllCurrencies(true)}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.surface2 }}>
+            <Text style={{ color: c.brand, fontSize: 12.5 }}>more…</Text>
+          </Pressable>
+        )}
+      </View>
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>

@@ -232,11 +232,15 @@ final class Api
                     Http::json($rs, ['items' => $groups->listForUser(Http::user($rq)['id'])]));
                 $p->post('/groups', function (Request $rq, Response $rs) use ($groups): Response {
                     $b = Http::body($rq);
+                    $currencies = is_array($b['currencies'] ?? null) ? $b['currencies'] : [];
                     return Http::json($rs->withStatus(201), $groups->create(
                         Http::user($rq)['id'], Http::str($b, 'name'),
                         Http::str($b, 'emoji', ''), Http::str($b, 'homeCurrency', 'CAD'),
+                        $currencies,
                     ));
                 });
+                $p->patch('/groups/{id}', fn(Request $rq, Response $rs, array $a): Response =>
+                    Http::json($rs, $groups->update($a['id'], Http::user($rq)['id'], Http::body($rq))));
                 $p->get('/groups/{id}', function (Request $rq, Response $rs, array $a) use ($groups): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, $groups->get($a['id']));

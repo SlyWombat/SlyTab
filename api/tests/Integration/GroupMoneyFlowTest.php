@@ -354,6 +354,33 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertSame(['month' => '2026-06', 'minor' => 1000], $totals['byMonth'][1]);
     }
 
+    public function testGroupFavoriteCurrencies(): void
+    {
+        Db::pdo()->exec('DELETE FROM rate_limits');
+        $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'favs@example.com', 'password' => 'password-123',
+            'displayName' => 'Favs', 'deviceLabel' => 'test',
+        ]), 201);
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Trip', 'emoji' => '', 'homeCurrency' => 'CAD',
+            'currencies' => ['usd', 'MXN', 'CAD', 'USD'],
+        ], $r['token']), 201);
+        // deduped, uppercased, home currency dropped
+        self::assertSame(['USD', 'MXN'], $g['currencies']);
+
+        $g = $this->ok($this->request('PATCH', "/api/v1/groups/{$g['id']}", [
+            'name' => 'Winter Trip', 'emoji' => '⛷️', 'currencies' => ['EUR'],
+        ], $r['token']), 200);
+        self::assertSame('Winter Trip', $g['name']);
+        self::assertSame('⛷️', $g['emoji']);
+        self::assertSame(['EUR'], $g['currencies']);
+
+        $bad = $this->request('PATCH', "/api/v1/groups/{$g['id']}", [
+            'currencies' => ['NOT A CODE'],
+        ], $r['token']);
+        self::assertSame(400, $bad->getStatusCode());
+    }
+
     public function testExpenseLinksMultipleReceipts(): void
     {
         Db::pdo()->exec('DELETE FROM rate_limits'); // shared test IP
