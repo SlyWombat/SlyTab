@@ -46,6 +46,20 @@ export interface Settlement {
   id: string; groupId: string; fromUserId: string; toUserId: string;
   amountMinor: number; currency: string; status: 'pending' | 'confirmed';
 }
+export interface GroupTotals {
+  totalMinor: number;
+  byCategory: { category: string; minor: number }[];
+  byPayer: { userId: string; minor: number }[];
+  byShare: { userId: string; minor: number }[];
+  byMonth: { month: string; minor: number }[];
+}
+export interface SplitwiseGroup {
+  id: number; name: string; members: { id: number; name: string }[];
+}
+export interface ImportResult {
+  imported: { expenses: number; settlements: number; skipped: number };
+  errors: string[];
+}
 export interface HomeBalances {
   items: { group: Group; netMinor: number; currency: string }[];
   pendingSettlements: Settlement[];
@@ -125,6 +139,15 @@ export const api = {
     req<{ items: Expense[]; nextCursor: string | null }>('GET', `/groups/${groupId}/expenses`),
   addExpense: (groupId: string, data: object) =>
     req<Expense>('POST', `/groups/${groupId}/expenses`, data),
+  updateExpense: (id: string, data: object) => req<Expense>('PATCH', `/expenses/${id}`, data),
+  deleteExpense: (id: string) => req<{ ok: true }>('DELETE', `/expenses/${id}`),
+  restoreExpense: (id: string) => req<Expense>('POST', `/expenses/${id}/restore`),
+  groupTotals: (groupId: string) => req<GroupTotals>('GET', `/groups/${groupId}/totals`),
+  deleteAccount: (confirmEmail: string) => req<{ ok: true }>('DELETE', '/me', { confirmEmail }),
+  splitwiseApiGroups: (groupId: string, apiKey: string) =>
+    req<{ groups: SplitwiseGroup[] }>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey }),
+  splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number, mapping: Record<string, string>) =>
+    req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),
   settle: (groupId: string, toUserId: string, amountMinor: number, method: string) =>
     req<Settlement>('POST', `/groups/${groupId}/settlements`, { toUserId, amountMinor, method }),

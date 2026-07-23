@@ -25,6 +25,7 @@ use SlyTab\Services\PasswordResetService;
 use SlyTab\Services\RateLimiter;
 use SlyTab\Services\ReceiptService;
 use SlyTab\Services\SettlementService;
+use SlyTab\Services\SplitwiseApiImportService;
 use SlyTab\Support\ApiException;
 use SlyTab\Support\Env;
 use SlyTab\Support\Http;
@@ -46,6 +47,7 @@ final class Api
         $limiter = new RateLimiter($pdo);
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
+        $swApi = new SplitwiseApiImportService($pdo, $groups, $expenses, $activity);
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
 
@@ -70,7 +72,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $swApi,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -124,7 +126,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
@@ -138,6 +140,10 @@ final class Api
                 });
                 $p->patch('/me', fn(Request $rq, Response $rs): Response =>
                     Http::json($rs, $auth->updateProfile(Http::user($rq)['id'], Http::body($rq))));
+                $p->delete('/me', function (Request $rq, Response $rs) use ($auth): Response {
+                    $auth->deleteAccount(Http::user($rq)['id'], Http::str(Http::body($rq), 'confirmEmail'));
+                    return Http::json($rs, ['ok' => true]);
+                });
                 $p->post('/me/verify-request', function (Request $rq, Response $rs) use ($verifier, $limiter): Response {
                     $limiter->guard('verify', Http::user($rq)['id'], 5, 3600);
                     $verifier->request(Http::user($rq)['id']);
@@ -260,6 +266,10 @@ final class Api
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, $balances->forGroup($a['id']));
                 });
+                $p->get('/groups/{id}/totals', function (Request $rq, Response $rs, array $a) use ($groups, $balances): Response {
+                    $groups->assertMember($a['id'], Http::user($rq)['id']);
+                    return Http::json($rs, $balances->totalsFor($a['id']));
+                });
 
                 // settlements
                 $p->post('/groups/{id}/settlements', function (Request $rq, Response $rs, array $a) use ($groups, $settlements): Response {
@@ -316,6 +326,24 @@ final class Api
                         throw new ApiException('VALIDATION', "field 'mapping' must be a JSON object");
                     }
                     return Http::json($rs, $importer->import($a['id'], $userId, $csv, $mapping));
+                });
+
+                // Splitwise direct import (personal API key; never stored)
+                $p->post('/groups/{id}/import/splitwise-api', function (Request $rq, Response $rs, array $a) use ($groups, $swApi): Response {
+                    $userId = Http::user($rq)['id'];
+                    $groups->assertMember($a['id'], $userId);
+                    $b = Http::body($rq);
+                    $apiKey = Http::str($b, 'apiKey');
+                    if (!isset($b['swGroupId'])) {
+                        return Http::json($rs, ['groups' => $swApi->listGroups($apiKey)]);
+                    }
+                    $mapping = $b['mapping'] ?? [];
+                    if (!is_array($mapping)) {
+                        throw new ApiException('VALIDATION', "field 'mapping' must be an object");
+                    }
+                    return Http::json($rs, $swApi->import(
+                        $a['id'], $userId, $apiKey, (int) $b['swGroupId'], $mapping,
+                    ));
                 });
 
                 // activity + export + rates

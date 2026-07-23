@@ -319,4 +319,91 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertSame(-1125, $home['total']['minor']);
         self::assertSame('CAD', $home['total']['currency']);
     }
+
+    public function testGroupTotalsAggregateInHomeCurrency(): void
+    {
+        $reg = $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'totals@example.com', 'password' => 'password-123',
+            'displayName' => 'Totals', 'deviceLabel' => 'test',
+        ]), 201);
+        $t = $reg['token'];
+        $uid = $reg['user']['id'];
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Totals', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $t), 201);
+
+        foreach ([
+            ['Lunch', 1000, 'food', '2026-06-05'],
+            ['Taxi', 500, 'travel', '2026-07-01'],
+            ['Snacks', 250, 'food', '2026-07-02'],
+        ] as [$desc, $minor, $cat, $date]) {
+            $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+                'description' => $desc, 'amountMinor' => $minor, 'currency' => 'CAD',
+                'expenseDate' => $date, 'category' => $cat, 'splitMethod' => 'equal',
+                'payers' => [['userId' => $uid, 'amountMinor' => $minor]],
+                'shares' => [['userId' => $uid, 'amountMinor' => $minor]],
+            ], $t), 201);
+        }
+
+        $totals = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/totals", null, $t), 200);
+        self::assertSame(1750, $totals['totalMinor']);
+        self::assertSame(['category' => 'food', 'minor' => 1250], $totals['byCategory'][0]);
+        self::assertSame(['userId' => $uid, 'minor' => 1750], $totals['byPayer'][0]);
+        self::assertSame(['userId' => $uid, 'minor' => 1750], $totals['byShare'][0]);
+        self::assertSame(['month' => '2026-07', 'minor' => 750], $totals['byMonth'][0]);
+        self::assertSame(['month' => '2026-06', 'minor' => 1000], $totals['byMonth'][1]);
+    }
+
+    public function testAccountDeletionAnonymizesButKeepsBalances(): void
+    {
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $gone = $mk('goner');
+        $stay = $mk('stayer');
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Farewell', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $gone['token']), 201);
+        $invite = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/invites", [], $gone['token']), 201);
+        $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $stay['token']), 200);
+        $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Last supper', 'amountMinor' => 2000, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-20', 'category' => 'food', 'splitMethod' => 'equal',
+            'payers' => [['userId' => $gone['id'], 'amountMinor' => 2000]],
+            'shares' => [
+                ['userId' => $gone['id'], 'amountMinor' => 1000],
+                ['userId' => $stay['id'], 'amountMinor' => 1000],
+            ],
+        ], $gone['token']), 201);
+
+        // Wrong confirmation is rejected; correct one deletes.
+        $bad = $this->request('DELETE', '/api/v1/me', ['confirmEmail' => 'wrong@example.com'], $gone['token']);
+        self::assertSame(400, $bad->getStatusCode());
+        $this->ok($this->request('DELETE', '/api/v1/me', ['confirmEmail' => 'goner@example.com'], $gone['token']), 200);
+
+        // Session revoked, login gone. (Clear the shared-IP rate limiter
+        // first — this class registers a lot of users.)
+        Db::pdo()->exec('DELETE FROM rate_limits');
+        self::assertSame(401, $this->request('GET', '/api/v1/me', null, $gone['token'])->getStatusCode());
+        self::assertSame(401, $this->request('POST', '/api/v1/auth/login', [
+            'email' => 'goner@example.com', 'password' => 'password-123',
+        ])->getStatusCode());
+
+        // The email slot is free again.
+        $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'goner@example.com', 'password' => 'password-456',
+            'displayName' => 'Goner II', 'deviceLabel' => 'test',
+        ]), 201);
+
+        // The survivor still owes the debt; the payer is anonymized, not erased.
+        $bal = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/balances", null, $stay['token']), 200);
+        self::assertSame(-1000, $bal['net'][$stay['id']]);
+        self::assertSame(1000, $bal['net'][$gone['id']]);
+        $members = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}", null, $stay['token']), 200)['members'];
+        self::assertNotContains($gone['id'], array_column($members, 'id'), 'deleted user is no longer an active member');
+    }
 }

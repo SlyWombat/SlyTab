@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { computeSplit, CURRENCIES } from '@slytab/core';
 import {
   api, ApiFailure,
-  type Balances, type Expense, type Group, type Member, type ParsedReceipt, type User,
+  type Balances, type Expense, type Group, type GroupTotals, type Member,
+  type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { Amount, Badge, Sheet } from '../ui';
 
@@ -14,10 +15,13 @@ export function GroupScreen({ groupId, user, onBack }: {
   onBack: () => void;
 }) {
   const [group, setGroup] = useState<Group | null>(null);
-  const [tab, setTab] = useState<'expenses' | 'balances'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals'>('expenses');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [balances, setBalances] = useState<Balances | null>(null);
+  const [totals, setTotals] = useState<GroupTotals | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const [lastDeleted, setLastDeleted] = useState<Expense | null>(null);
   const [inviting, setInviting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
@@ -27,6 +31,7 @@ export function GroupScreen({ groupId, user, onBack }: {
     api.group(groupId).then(setGroup).catch((e) => setError(e.message));
     api.expenses(groupId).then((r) => setExpenses(r.items)).catch(() => {});
     api.balances(groupId).then(setBalances).catch(() => {});
+    api.groupTotals(groupId).then(setTotals).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
 
@@ -62,17 +67,28 @@ export function GroupScreen({ groupId, user, onBack }: {
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'expenses'} className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
         <button role="tab" aria-selected={tab === 'balances'} className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
+        <button role="tab" aria-selected={tab === 'totals'} className={tab === 'totals' ? 'on' : ''} onClick={() => setTab('totals')}>Totals</button>
       </div>
 
       {tab === 'expenses' && (
         <>
+          {lastDeleted !== null && (
+            <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
+              <div className="grow" style={{ fontSize: 13 }}>Deleted "{lastDeleted.description}"</div>
+              <button className="btn sm" onClick={() => {
+                api.restoreExpense(lastDeleted.id).then(() => { setLastDeleted(null); reload(); })
+                  .catch((err) => setError(err.message));
+              }}>Undo</button>
+            </div>
+          )}
           {expenses.length === 0 && <p className="muted" style={{ padding: 8 }}>No expenses yet — add the first one.</p>}
           {expenses.map((e) => {
             const paid = e.payers.filter((p) => p.userId === user.id).reduce((a, p) => a + p.amountMinor, 0);
             const owed = e.shares.filter((s) => s.userId === user.id).reduce((a, s) => a + s.amountMinor, 0);
             const effect = paid - owed;
             return (
-              <div className="row" key={e.id}>
+              <button className="row" key={e.id} onClick={() => setEditing(e)}
+                title="Edit expense" style={{ textAlign: 'left' }}>
                 <div className="grow">
                   <div className="name">{e.description}</div>
                   <div className="meta">
@@ -88,9 +104,53 @@ export function GroupScreen({ groupId, user, onBack }: {
                         <span className="dir">{effect > 0 ? 'you lent' : 'you borrowed'}</span>
                       </>}
                 </div>
-              </div>
+              </button>
             );
           })}
+        </>
+      )}
+
+      {tab === 'totals' && totals !== null && (
+        <>
+          <div className="hero">
+            <div className="cap">Group spending</div>
+            <div className="big"><Amount minor={totals.totalMinor} currency={group.homeCurrency} size={28} /></div>
+            <div className="sub">All expenses, in {group.homeCurrency}</div>
+          </div>
+          {totals.byMonth.length > 1 && (
+            <>
+              <div className="sect">By month</div>
+              {totals.byMonth.map((m) => (
+                <div className="row" key={m.month}>
+                  <div className="grow" style={{ fontSize: 13.5 }}>{m.month}</div>
+                  <Amount minor={m.minor} currency={group.homeCurrency} />
+                </div>
+              ))}
+            </>
+          )}
+          <div className="sect">By category</div>
+          {totals.byCategory.map((cat) => (
+            <div className="row" key={cat.category}>
+              <div className="grow" style={{ fontSize: 13.5 }}>{cat.category}</div>
+              <Amount minor={cat.minor} currency={group.homeCurrency} />
+            </div>
+          ))}
+          <div className="sect">Who paid</div>
+          {totals.byPayer.map((pr) => (
+            <div className="row" key={pr.userId}>
+              <Badge id={pr.userId} name={nameOf(pr.userId)} sm />
+              <div className="grow" style={{ fontSize: 13.5 }}>{pr.userId === user.id ? 'You' : nameOf(pr.userId)}</div>
+              <Amount minor={pr.minor} currency={group.homeCurrency} />
+            </div>
+          ))}
+          <div className="sect">Who consumed</div>
+          {totals.byShare.map((sh) => (
+            <div className="row" key={sh.userId}>
+              <Badge id={sh.userId} name={nameOf(sh.userId)} sm />
+              <div className="grow" style={{ fontSize: 13.5 }}>{sh.userId === user.id ? 'You' : nameOf(sh.userId)}</div>
+              <Amount minor={sh.minor} currency={group.homeCurrency} />
+            </div>
+          ))}
         </>
       )}
 
@@ -142,6 +202,12 @@ export function GroupScreen({ groupId, user, onBack }: {
         <AddExpenseSheet group={group} user={user} onClose={() => setAdding(false)}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
+      {editing !== null && (
+        <AddExpenseSheet group={group} user={user} editing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); reload(); }}
+          onDeleted={() => { setLastDeleted(editing); setEditing(null); reload(); }} />
+      )}
       {inviting && <InviteSheet groupId={group.id} onClose={() => setInviting(false)} />}
       {importing && (
         <ImportSheet group={group} onClose={() => setImporting(false)}
@@ -157,18 +223,24 @@ export function GroupScreen({ groupId, user, onBack }: {
 
 // ---- Add expense (ui_requirements §2.5, split math from @slytab/core) ----
 
-function AddExpenseSheet({ group, user, onClose, onSaved }: {
+function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
+  editing?: Expense | null; onDeleted?: () => void;
 }) {
-  const [description, setDescription] = useState('');
-  const [amountStr, setAmountStr] = useState('');
-  const [currency, setCurrency] = useState(group.homeCurrency);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [category, setCategory] = useState<string>('food');
-  const [payerId, setPayerId] = useState(user.id);
-  const [mode, setMode] = useState<'equal' | 'unequal'>('equal');
+  const [description, setDescription] = useState(editing?.description ?? '');
+  const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
+  const [currency, setCurrency] = useState(editing?.currency ?? group.homeCurrency);
+  const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
+  const [category, setCategory] = useState<string>(editing?.category ?? 'food');
+  const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
+  const [mode, setMode] = useState<'equal' | 'unequal'>(editing ? 'unequal' : 'equal');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
-  const [exact, setExact] = useState<Record<string, string>>({});
+  const [exact, setExact] = useState<Record<string, string>>(() => {
+    if (!editing) return {};
+    const out: Record<string, string> = {};
+    for (const sh of editing.shares) out[sh.userId] = (sh.amountMinor / 100).toFixed(2);
+    return out;
+  });
   const [fxOverride, setFxOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [needsRate, setNeedsRate] = useState(false);
@@ -240,7 +312,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
     if (!valid || shares === null) return;
     setError(null);
     try {
-      await api.addExpense(group.id, {
+      const payload = {
         description: description.trim(),
         amountMinor,
         currency: currency.toUpperCase(),
@@ -251,7 +323,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(fxOverride !== '' ? { fxRateOverride: parseFloat(fxOverride) } : {}),
         ...(receiptId !== null ? { receiptId } : {}),
-      });
+      };
+      await (editing ? api.updateExpense(editing.id, payload) : api.addExpense(group.id, payload));
       onSaved();
     } catch (err) {
       if (err instanceof ApiFailure && err.error.code === 'FX_RATE_UNAVAILABLE') {
@@ -262,7 +335,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
   }
 
   return (
-    <Sheet title="New expense" onClose={onClose}>
+    <Sheet title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
       <form onSubmit={submit}>
         {error && <div className="error" role="alert">{error}</div>}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -339,8 +412,18 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
             onClick={() => fileInput.current?.click()}>
             {scanBusy ? 'Reading your receipt…' : receiptId ? 'Receipt attached ✓ — rescan' : '📷 Scan receipt'}
           </button>
-          <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>Save expense</button>
+          <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>
+            {editing ? 'Save changes' : 'Save expense'}
+          </button>
         </div>
+        {editing && onDeleted && (
+          <button type="button" className="btn block" style={{ marginTop: 8, color: 'var(--ss-owe)' }}
+            onClick={() => {
+              api.deleteExpense(editing.id).then(onDeleted).catch((err) => setError(err.message));
+            }}>
+            Delete this expense
+          </button>
+        )}
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp"
           style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void onScanFile(f); e.target.value = ''; }} />
@@ -528,6 +611,11 @@ function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => voi
 function ImportSheet({ group, onClose, onDone }: {
   group: Group; onClose: () => void; onDone: () => void;
 }) {
+  const [source, setSource] = useState<'api' | 'csv'>('api');
+  const [apiKey, setApiKey] = useState('');
+  const [swGroups, setSwGroups] = useState<SplitwiseGroup[] | null>(null);
+  const [swGroupId, setSwGroupId] = useState<number | null>(null);
+  const [apiMapping, setApiMapping] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [inspect, setInspect] = useState<Awaited<ReturnType<typeof api.inspectSplitwise>> | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -572,6 +660,38 @@ function ImportSheet({ group, onClose, onDone }: {
     }
   }
 
+  async function loadSwGroups() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.splitwiseApiGroups(group.id, apiKey.trim());
+      setSwGroups(r.groups);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const swGroup = swGroups?.find((g) => g.id === swGroupId) ?? null;
+
+  async function runApi() {
+    if (swGroupId === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, apiMapping));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const apiComplete = swGroup !== null
+    && swGroup.members.every((m) => (apiMapping[String(m.id)] ?? '') !== '')
+    && new Set(Object.values(apiMapping)).size === swGroup.members.length;
+
   const complete = inspect !== null
     && inspect.members.every((m) => (mapping[m] ?? '') !== '')
     && new Set(Object.values(mapping)).size === inspect.members.length;
@@ -597,8 +717,73 @@ function ImportSheet({ group, onClose, onDone }: {
           )}
           <button className="btn primary block" onClick={onDone}>Done</button>
         </>
+      ) : source === 'api' ? (
+        <>
+          <div className="tabs">
+            <button type="button" className="on">Splitwise account</button>
+            <button type="button" onClick={() => setSource('csv')}>CSV file</button>
+          </div>
+          {swGroups === null ? (
+            <>
+              <p className="muted" style={{ padding: '8px 0' }}>
+                Connect with a Splitwise API key: sign in at{' '}
+                <b>secure.splitwise.com/apps</b> → Register your application
+                (any name) → copy the <b>API key</b>. It is used for this
+                import only and never stored.
+              </p>
+              <label className="field"><span>Splitwise API key</span>
+                <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+                  autoComplete="off" />
+              </label>
+              <button className="btn primary block" disabled={busy || apiKey.trim() === ''}
+                onClick={() => void loadSwGroups()}>
+                {busy ? 'Connecting…' : 'Load my Splitwise groups'}
+              </button>
+            </>
+          ) : (
+            <>
+              <label className="field"><span>Splitwise group</span>
+                <select value={swGroupId ?? ''} onChange={(e) => {
+                  setSwGroupId(e.target.value === '' ? null : Number(e.target.value));
+                  setApiMapping({});
+                }}>
+                  <option value="">— pick a group —</option>
+                  {swGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </label>
+              {swGroup !== null && (
+                <>
+                  <div className="sect" style={{ paddingLeft: 0 }}>Who is who?</div>
+                  {swGroup.members.map((m) => (
+                    <label className="field" key={m.id}>
+                      <span>Splitwise: "{m.name}"</span>
+                      <select value={apiMapping[String(m.id)] ?? ''}
+                        onChange={(e) => setApiMapping({ ...apiMapping, [String(m.id)]: e.target.value })}>
+                        <option value="">— pick a member —</option>
+                        {group.members.map((gm) => (
+                          <option key={gm.id} value={gm.id}>{gm.displayName}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                  <button className="btn primary block" disabled={!apiComplete || busy} onClick={() => void runApi()}>
+                    {busy ? 'Importing…' : 'Import everything'}
+                  </button>
+                  <p className="muted" style={{ textAlign: 'center', paddingTop: 8 }}>
+                    Exact paid/owed shares come straight from Splitwise;
+                    payments become confirmed settlements.
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </>
       ) : inspect === null ? (
         <>
+          <div className="tabs">
+            <button type="button" onClick={() => setSource('api')}>Splitwise account</button>
+            <button type="button" className="on">CSV file</button>
+          </div>
           <p className="muted" style={{ paddingBottom: 10 }}>
             In Splitwise: open the group → Settings → "Export as spreadsheet",
             then pick the CSV here. Everyone in the Splitwise group must

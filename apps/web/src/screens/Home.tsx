@@ -132,6 +132,8 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   onSaved: (u: User) => void;
   onSignOut: () => void;
 }) {
+  const [deleting, setDeleting] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
@@ -183,6 +185,36 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         <button className="btn primary block">Save profile</button>
       </form>
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
+      {!deleting ? (
+        <button className="btn block" style={{ marginTop: 8, color: 'var(--ss-owe)' }}
+          onClick={() => setDeleting(true)}>
+          Delete my account…
+        </button>
+      ) : (
+        <div style={{ marginTop: 8, border: '1px solid var(--ss-owe)', borderRadius: 12, padding: 12 }}>
+          <p style={{ fontSize: 13, paddingBottom: 8 }}>
+            This signs you out everywhere and anonymizes you as "Deleted user"
+            in shared groups (past expenses stay so nobody's balance changes).
+            It cannot be undone. Type your email to confirm.
+          </p>
+          <label className="field"><span>Your email</span>
+            <input type="email" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)}
+              placeholder={user.email} autoComplete="off" />
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn" style={{ flex: 1 }} onClick={() => { setDeleting(false); setConfirmEmail(''); }}>
+              Keep my account
+            </button>
+            <button className="btn" style={{ flex: 1, color: 'var(--ss-owe)' }}
+              disabled={confirmEmail.trim().toLowerCase() !== user.email}
+              onClick={() => {
+                api.deleteAccount(confirmEmail.trim()).then(onSignOut).catch((e) => setError(e.message));
+              }}>
+              Delete forever
+            </button>
+          </div>
+        </div>
+      )}
       <p className="muted" style={{ textAlign: 'center', paddingTop: 10 }}>
         {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>
       </p>

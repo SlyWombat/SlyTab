@@ -206,6 +206,44 @@ final class AuthService
     }
 
     /**
+     * FR-1.5 account deletion. The user row is anonymized, not removed, so
+     * historical expenses keep their references and other members' balances
+     * stay correct. Confirmation = retyping the account email.
+     */
+    public function deleteAccount(string $userId, string $confirmEmail): void
+    {
+        $stmt = $this->pdo->prepare('SELECT email FROM users WHERE id = ? AND deleted_at IS NULL');
+        $stmt->execute([$userId]);
+        $email = $stmt->fetchColumn();
+        if ($email === false) {
+            throw new ApiException('NOT_FOUND', 'user not found', 404);
+        }
+        if (strtolower(trim($confirmEmail)) !== $email) {
+            throw new ApiException('VALIDATION', 'type your account email exactly to confirm deletion');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare(
+                "UPDATE users SET email = CONCAT('deleted-', id, '@invalid.slytab'),
+                        display_name = 'Deleted user', avatar = '', payment_handles = '{}',
+                        password_hash = ?, deleted_at = ? WHERE id = ?",
+            )->execute([self::hashPassword(bin2hex(random_bytes(32))), Db::now(), $userId]);
+            $this->pdo->prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL')
+                ->execute([Db::now(), $userId]);
+            $this->pdo->prepare('UPDATE memberships SET left_at = ? WHERE user_id = ? AND left_at IS NULL')
+                ->execute([Db::now(), $userId]);
+            foreach (['oauth_identities', 'email_verifications', 'password_resets'] as $table) {
+                $this->pdo->prepare("DELETE FROM {$table} WHERE user_id = ?")->execute([$userId]);
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Issue a session for an already-authenticated user (OAuth flows).
      * @return array{token:string, user:array<string,mixed>}
      */

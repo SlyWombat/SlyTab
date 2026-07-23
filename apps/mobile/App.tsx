@@ -9,7 +9,8 @@ import * as SecureStore from 'expo-secure-store';
 import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@slytab/core';
 import {
   api, setToken, uploadReceipt,
-  type Balances, type Expense, type Group, type HomeBalances, type Member,
+  type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
+  type SplitwiseGroup,
   type ParsedReceipt, type User,
 } from './src/api';
 
@@ -304,6 +305,8 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
 }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
   const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
@@ -354,6 +357,35 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         onPress={() => void save()} />
       <View style={{ height: 8 }} />
       <Btn label="Sign out" onPress={onSignOut} />
+      <View style={{ height: 8 }} />
+      {!deleting ? (
+        <Pressable onPress={() => setDeleting(true)}>
+          <Text style={{ color: c.owe, textAlign: 'center', fontSize: 13.5, padding: 6 }}>Delete my account…</Text>
+        </Pressable>
+      ) : (
+        <View style={{ borderWidth: 1, borderColor: c.owe, borderRadius: 12, padding: 12 }}>
+          <Text style={[s.body, { fontSize: 12.5, marginBottom: 8 }]}>
+            This signs you out everywhere and anonymizes you as "Deleted user"
+            in shared groups (past expenses stay so nobody's balance changes).
+            It cannot be undone. Type your email to confirm.
+          </Text>
+          <Field label="Your email" value={confirmEmail} onChangeText={setConfirmEmail}
+            keyboardType="email-address" autoCapitalize="none" placeholder={user.email} />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Btn label="Keep my account" onPress={() => { setDeleting(false); setConfirmEmail(''); }} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Btn label="Delete forever"
+                disabled={confirmEmail.trim().toLowerCase() !== user.email}
+                onPress={() => {
+                  api.deleteAccount(confirmEmail.trim()).then(onSignOut)
+                    .catch((e) => setError((e as Error).message));
+                }} />
+            </View>
+          </View>
+        </View>
+      )}
       <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>{user.email}</Text>
     </SheetModal>
   );
@@ -401,10 +433,14 @@ function GroupScreen({ groupId, user, onBack }: {
   groupId: string; user: User; onBack: () => void;
 }) {
   const [group, setGroup] = useState<Group | null>(null);
-  const [tab, setTab] = useState<'expenses' | 'balances'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals'>('expenses');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [balances, setBalances] = useState<Balances | null>(null);
+  const [totals, setTotals] = useState<GroupTotals | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
+  const [lastDeleted, setLastDeleted] = useState<Expense | null>(null);
+  const [importing, setImporting] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
 
@@ -412,6 +448,7 @@ function GroupScreen({ groupId, user, onBack }: {
     api.group(groupId).then(setGroup).catch(() => {});
     api.expenses(groupId).then((r) => setExpenses(r.items)).catch(() => {});
     api.balances(groupId).then(setBalances).catch(() => {});
+    api.groupTotals(groupId).then(setTotals).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
 
@@ -437,10 +474,10 @@ function GroupScreen({ groupId, user, onBack }: {
       </View>
 
       <View style={s.tabs}>
-        {(['expenses', 'balances'] as const).map((t) => (
+        {(['expenses', 'balances', 'totals'] as const).map((t) => (
           <Pressable key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
             <Text style={[s.tabText, tab === t && { color: c.text }]}>
-              {t === 'expenses' ? 'Expenses' : 'Balances'}
+              {t === 'expenses' ? 'Expenses' : t === 'balances' ? 'Balances' : 'Totals'}
             </Text>
           </Pressable>
         ))}
@@ -453,12 +490,20 @@ function GroupScreen({ groupId, user, onBack }: {
           onRefresh={reload}
           refreshing={false}
           ListEmptyComponent={<Text style={s.meta}>No expenses yet.</Text>}
+          ListHeaderComponent={lastDeleted === null ? null : (
+            <View style={[s.row, { borderColor: c.owe }]}>
+              <Text style={[s.body, { flex: 1, fontSize: 12.5 }]}>Deleted "{lastDeleted.description}"</Text>
+              <Btn small label="Undo" onPress={() => {
+                api.restoreExpense(lastDeleted.id).then(() => { setLastDeleted(null); reload(); }).catch(() => {});
+              }} />
+            </View>
+          )}
           renderItem={({ item: e }) => {
             const paid = e.payers.filter((p) => p.userId === user.id).reduce((a, p) => a + p.amountMinor, 0);
             const owed = e.shares.filter((sh) => sh.userId === user.id).reduce((a, sh) => a + sh.amountMinor, 0);
             const effect = paid - owed;
             return (
-              <View style={s.row}>
+              <Pressable style={s.row} onPress={() => setEditing(e)}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.rowName}>{e.description}</Text>
                   <Text style={s.meta}>
@@ -474,10 +519,56 @@ function GroupScreen({ groupId, user, onBack }: {
                     </>
                   )}
                 </View>
-              </View>
+              </Pressable>
             );
           }}
         />
+      ) : tab === 'totals' ? (
+        <ScrollView>
+          {totals === null ? <ActivityIndicator color={c.brand} /> : (
+            <>
+              <View style={s.hero}>
+                <Text style={s.cap}>GROUP SPENDING</Text>
+                <Amount minor={totals.totalMinor} currency={group.homeCurrency} size={26} />
+                <Text style={s.meta}>All expenses, in {group.homeCurrency}</Text>
+              </View>
+              {totals.byMonth.length > 1 && (
+                <>
+                  <Text style={s.cap}>BY MONTH</Text>
+                  {totals.byMonth.map((m) => (
+                    <View style={s.row} key={m.month}>
+                      <Text style={[s.body, { flex: 1 }]}>{m.month}</Text>
+                      <Amount minor={m.minor} currency={group.homeCurrency} />
+                    </View>
+                  ))}
+                </>
+              )}
+              <Text style={s.cap}>BY CATEGORY</Text>
+              {totals.byCategory.map((cat) => (
+                <View style={s.row} key={cat.category}>
+                  <Text style={[s.body, { flex: 1 }]}>{cat.category}</Text>
+                  <Amount minor={cat.minor} currency={group.homeCurrency} />
+                </View>
+              ))}
+              <Text style={s.cap}>WHO PAID</Text>
+              {totals.byPayer.map((pr) => (
+                <View style={s.row} key={pr.userId}>
+                  <Badge id={pr.userId} name={nameOf(pr.userId)} size={22} />
+                  <Text style={[s.body, { flex: 1 }]}>{pr.userId === user.id ? 'You' : nameOf(pr.userId)}</Text>
+                  <Amount minor={pr.minor} currency={group.homeCurrency} />
+                </View>
+              ))}
+              <Text style={s.cap}>WHO CONSUMED</Text>
+              {totals.byShare.map((sh) => (
+                <View style={s.row} key={sh.userId}>
+                  <Badge id={sh.userId} name={nameOf(sh.userId)} size={22} />
+                  <Text style={[s.body, { flex: 1 }]}>{sh.userId === user.id ? 'You' : nameOf(sh.userId)}</Text>
+                  <Amount minor={sh.minor} currency={group.homeCurrency} />
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
       ) : (
         <ScrollView>
           {group.members.map((m) => (
@@ -509,6 +600,9 @@ function GroupScreen({ groupId, user, onBack }: {
         <Btn small label="Invite"
           onPress={() => api.createInvite(group.id)
             .then((i) => setInviteLink(`https://electricrv.ca/slytab/join/${i.token}`))} />
+        {group.archivedAt === null && (
+          <Btn small label="Import from Splitwise" onPress={() => setImporting(true)} />
+        )}
       </View>
       {inviteLink && (
         <InviteSheet group={group} link={inviteLink} onClose={() => setInviteLink(null)} />
@@ -524,12 +618,130 @@ function GroupScreen({ groupId, user, onBack }: {
           onClose={() => setAdding(false)}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
+      {editing !== null && (
+        <AddExpenseSheet group={group} user={user} editing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); reload(); }}
+          onDeleted={() => { setLastDeleted(editing); setEditing(null); reload(); }} />
+      )}
+      {importing && (
+        <ImportSheet group={group} onClose={() => setImporting(false)}
+          onDone={() => { setImporting(false); reload(); }} />
+      )}
       {settling && (
         <SettleSheet group={group} to={settling.to} suggested={settling.suggested}
           onClose={() => setSettling(null)}
           onDone={() => { setSettling(null); reload(); }} />
       )}
     </View>
+  );
+}
+
+function ImportSheet({ group, onClose, onDone }: {
+  group: Group; onClose: () => void; onDone: () => void;
+}) {
+  const [apiKey, setApiKey] = useState('');
+  const [swGroups, setSwGroups] = useState<SplitwiseGroup[] | null>(null);
+  const [swGroupId, setSwGroupId] = useState<number | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ expenses: number; settlements: number; skipped: number } | null>(null);
+
+  const swGroup = swGroups?.find((g) => g.id === swGroupId) ?? null;
+  const complete = swGroup !== null
+    && swGroup.members.every((m) => (mapping[String(m.id)] ?? '') !== '')
+    && new Set(Object.values(mapping)).size === swGroup.members.length;
+
+  async function connect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.splitwiseApiGroups(group.id, apiKey.trim());
+      setSwGroups(r.groups);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run() {
+    if (swGroupId === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, mapping);
+      setResult(r.imported);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SheetModal title="Import from Splitwise" onClose={onClose}>
+      {error && <Text style={s.error}>{error}</Text>}
+      {result !== null ? (
+        <>
+          <Text style={[s.body, { marginBottom: 10 }]}>
+            Imported {result.expenses} expenses and {result.settlements} settlements
+            {result.skipped > 0 ? ` · ${result.skipped} personal expenses skipped` : ''}.
+          </Text>
+          <Btn primary label="Done" onPress={onDone} />
+        </>
+      ) : swGroups === null ? (
+        <>
+          <Text style={[s.meta, { marginBottom: 10 }]}>
+            Sign in at secure.splitwise.com/apps → "Register your application"
+            (any name) → copy the API key. The key is used for this import
+            only and never stored.
+          </Text>
+          <Field label="Splitwise API key" value={apiKey} onChangeText={setApiKey}
+            secureTextEntry autoCapitalize="none" />
+          <Btn primary label={busy ? 'Connecting…' : 'Load my Splitwise groups'}
+            disabled={busy || apiKey.trim() === ''} onPress={() => void connect()} />
+        </>
+      ) : (
+        <>
+          <Text style={s.fieldLabel}>Splitwise group</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {swGroups.map((g) => (
+              <Pressable key={g.id}
+                onPress={() => { setSwGroupId(g.id); setMapping({}); }}
+                style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14,
+                  backgroundColor: g.id === swGroupId ? c.brand : c.surface2 }}>
+                <Text style={{ color: g.id === swGroupId ? '#fff' : c.text2, fontSize: 13 }}>{g.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {swGroup !== null && (
+            <>
+              <Text style={s.fieldLabel}>Who is who? Tap to cycle through members</Text>
+              {swGroup.members.map((m) => {
+                const mapped = group.members.find((gm) => gm.id === mapping[String(m.id)]);
+                return (
+                  <Pressable key={m.id} style={s.row}
+                    onPress={() => {
+                      const idx = group.members.findIndex((gm) => gm.id === mapping[String(m.id)]);
+                      const next = group.members[(idx + 1) % group.members.length];
+                      setMapping({ ...mapping, [String(m.id)]: next?.id ?? '' });
+                    }}>
+                    <Text style={[s.body, { flex: 1 }]}>{m.name}</Text>
+                    <Text style={{ color: mapped ? c.brand : c.text3, fontSize: 13.5 }}>
+                      {mapped ? `→ ${mapped.displayName}` : 'tap to map'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              <Btn primary label={busy ? 'Importing…' : 'Import everything'}
+                disabled={!complete || busy} onPress={() => void run()} />
+            </>
+          )}
+        </>
+      )}
+    </SheetModal>
   );
 }
 
@@ -556,19 +768,25 @@ function InviteSheet({ group, link, onClose }: { group: Group; link: string; onC
   );
 }
 
-function AddExpenseSheet({ group, user, onClose, onSaved }: {
+function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
+  editing?: Expense | null; onDeleted?: () => void;
 }) {
-  const [description, setDescription] = useState('');
-  const [amountStr, setAmountStr] = useState('');
+  const [description, setDescription] = useState(editing?.description ?? '');
+  const [amountStr, setAmountStr] = useState(editing ? (editing.amountMinor / 100).toFixed(2) : '');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [scanBusy, setScanBusy] = useState(false);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
-  const [exactShares, setExactShares] = useState<Record<string, number> | null>(null);
-  const [currency, setCurrency] = useState(group.homeCurrency);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exactShares, setExactShares] = useState<Record<string, number> | null>(() => {
+    if (!editing) return null;
+    const out: Record<string, number> = {};
+    for (const sh of editing.shares) out[sh.userId] = sh.amountMinor;
+    return out;
+  });
+  const [currency, setCurrency] = useState(editing?.currency ?? group.homeCurrency);
+  const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
 
   const shares = useMemo(() => {
@@ -609,17 +827,18 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
     if (shares === null) return;
     setError(null);
     try {
-      await api.addExpense(group.id, {
+      const payload = {
         description: description.trim(),
         amountMinor,
         currency,
         expenseDate: date,
-        category: 'other',
+        category: editing?.category ?? 'other',
         splitMethod: exactShares !== null ? 'exact' : 'equal',
-        payers: [{ userId: user.id, amountMinor }],
+        payers: [{ userId: editing?.payers[0]?.userId ?? user.id, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(receiptId !== null ? { receiptId } : {}),
-      });
+      };
+      await (editing ? api.updateExpense(editing.id, payload) : api.addExpense(group.id, payload));
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -627,7 +846,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
   }
 
   return (
-    <SheetModal title="New expense" onClose={onClose}>
+    <SheetModal title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label={`Amount (${currency})`} value={amountStr}
         onChangeText={(v) => { setAmountStr(v); setExactShares(null); }}
@@ -680,9 +899,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
           })}
         </>
       )}
-      <Btn primary label="Save expense"
+      <Btn primary label={editing ? 'Save changes' : 'Save expense'}
         disabled={amountMinor <= 0 || description.trim() === '' || shares === null}
         onPress={save} />
+      {editing && onDeleted && (
+        <>
+          <View style={{ height: 8 }} />
+          <Btn label="Delete this expense" onPress={() => {
+            api.deleteExpense(editing.id).then(onDeleted).catch((e) => setError((e as Error).message));
+          }} />
+        </>
+      )}
       {assigning !== null && (
         <AssignItemsSheet parsed={assigning} members={group.members} user={user}
           onCancel={() => setAssigning(null)}

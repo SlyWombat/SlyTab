@@ -27,6 +27,82 @@ final class BalanceService
      *   pairwise: list<array{from:string,to:string,amountMinor:int}>
      * }
      */
+    /**
+     * Spending summaries for the Totals tab — everything converted into the
+     * group's home currency with each expense's locked rate. Settlements are
+     * transfers, not spending, so they are not included.
+     *
+     * @return array{
+     *   totalMinor:int,
+     *   byCategory:list<array{category:string,minor:int}>,
+     *   byPayer:list<array{userId:string,minor:int}>,
+     *   byShare:list<array{userId:string,minor:int}>,
+     *   byMonth:list<array{month:string,minor:int}>
+     * }
+     */
+    public function totalsFor(string $groupId): array
+    {
+        $total = 0;
+        $byCategory = [];
+        $byMonth = [];
+        $stmt = $this->pdo->prepare(
+            'SELECT amount, fx_rate, category, expense_date FROM expenses
+             WHERE group_id = ? AND deleted_at IS NULL',
+        );
+        $stmt->execute([$groupId]);
+        foreach ($stmt->fetchAll() as $e) {
+            $minor = self::toHome((int) $e['amount'], $e['fx_rate']);
+            $total += $minor;
+            $byCategory[$e['category']] = ($byCategory[$e['category']] ?? 0) + $minor;
+            $month = substr($e['expense_date'], 0, 7);
+            $byMonth[$month] = ($byMonth[$month] ?? 0) + $minor;
+        }
+
+        $byPayer = $this->participantTotals($groupId, 'expense_payers');
+        $byShare = $this->participantTotals($groupId, 'expense_shares');
+
+        arsort($byCategory);
+        krsort($byMonth);
+        return [
+            'totalMinor' => $total,
+            'byCategory' => array_map(
+                static fn(string $k, int $v): array => ['category' => $k, 'minor' => $v],
+                array_keys($byCategory), array_values($byCategory),
+            ),
+            'byPayer' => $byPayer,
+            'byShare' => $byShare,
+            'byMonth' => array_map(
+                static fn(string $k, int $v): array => ['month' => $k, 'minor' => $v],
+                array_keys($byMonth), array_values($byMonth),
+            ),
+        ];
+    }
+
+    /** @return list<array{userId:string,minor:int}> converted, descending */
+    private function participantTotals(string $groupId, string $table): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT p.user_id, p.amount, e.fx_rate FROM {$table} p
+             JOIN expenses e ON e.id = p.expense_id
+             WHERE e.group_id = ? AND e.deleted_at IS NULL",
+        );
+        $stmt->execute([$groupId]);
+        $sums = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $sums[$r['user_id']] = ($sums[$r['user_id']] ?? 0) + self::toHome((int) $r['amount'], $r['fx_rate']);
+        }
+        arsort($sums);
+        return array_map(
+            static fn(string $k, int $v): array => ['userId' => $k, 'minor' => $v],
+            array_keys($sums), array_values($sums),
+        );
+    }
+
+    private static function toHome(int $minor, mixed $fxRate): int
+    {
+        return $fxRate === null ? $minor : (int) round($minor * (float) $fxRate);
+    }
+
     public function forGroup(string $groupId): array
     {
         $net = [];

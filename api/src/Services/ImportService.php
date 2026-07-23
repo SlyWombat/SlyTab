@@ -292,7 +292,7 @@ final class ImportService
         return (int) round(((float) $value) * 100);
     }
 
-    private static function mapCategory(string $splitwise): string
+    public static function mapCategory(string $splitwise): string
     {
         $sw = strtolower($splitwise);
         return match (true) {
