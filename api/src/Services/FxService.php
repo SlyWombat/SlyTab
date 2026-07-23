@@ -17,6 +17,17 @@ final class FxService
 {
     private const MAX_FALLBACK_DAYS = 7;
 
+    /**
+     * Currencies the ECB feed doesn't cover (Chilean peso and friends —
+     * issue from real use: a receipt scanned in Chile had no CLP support).
+     * Rates come from the open daily currency-api feed instead.
+     */
+    private const EXTRA_CURRENCIES = [
+        'AED', 'ARS', 'BOB', 'CLP', 'COP', 'CRC', 'DOP', 'EGP', 'GTQ', 'JOD',
+        'KES', 'LKR', 'MAD', 'PEN', 'PKR', 'QAR', 'RSD', 'SAR', 'TWD', 'UAH',
+        'UYU', 'VND',
+    ];
+
     public function __construct(private readonly PDO $pdo) {}
 
     /**
@@ -40,7 +51,53 @@ final class FxService
         foreach ($rates as $quote => $rate) {
             $stmt->execute([$data['date'], 'EUR', $quote, (string) $rate]);
         }
-        return ['date' => $data['date'], 'count' => count($rates)];
+        $extra = $this->fetchExtraRates(null);
+        return ['date' => $data['date'], 'count' => count($rates) + $extra];
+    }
+
+    /**
+     * Secondary source for EXTRA_CURRENCIES: the keyless daily
+     * currency-api feed (EUR base), latest or a specific date.
+     * Soft-fails to 0 — a missing rate surfaces later as
+     * FX_RATE_UNAVAILABLE with a manual-rate escape hatch.
+     */
+    private function fetchExtraRates(?string $date): int
+    {
+        if (\SlyTab\Support\Env::get('FX_OFFLINE') !== '') {
+            return 0;
+        }
+        $tag = $date ?? 'latest';
+        $urls = [
+            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{$tag}/v1/currencies/eur.json",
+            "https://{$tag}.currency-api.pages.dev/v1/currencies/eur.json",
+        ];
+        foreach ($urls as $url) {
+            $json = @file_get_contents($url);
+            if ($json === false) {
+                continue;
+            }
+            try {
+                $data = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                continue;
+            }
+            $eur = $data['eur'] ?? [];
+            $stamp = $data['date'] ?? $date ?? gmdate('Y-m-d');
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO fx_rates (rate_date, base, quote, rate) VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE rate = VALUES(rate)',
+            );
+            $count = 0;
+            foreach (self::EXTRA_CURRENCIES as $code) {
+                $rate = $eur[strtolower($code)] ?? null;
+                if (is_numeric($rate) && $rate > 0) {
+                    $stmt->execute([$stamp, 'EUR', $code, (string) $rate]);
+                    $count++;
+                }
+            }
+            return $count;
+        }
+        return 0;
     }
 
     public function rateFor(string $date, string $from, string $to): float
@@ -63,6 +120,10 @@ final class FxService
             // Historical date (e.g. Splitwise import): fetch that day's ECB
             // reference from frankfurter on demand. Currency codes only.
             $this->fetchHistorical($date);
+            $rate = $this->lookup($date, $currency);
+        }
+        if ($rate === null && in_array($currency, self::EXTRA_CURRENCIES, true)) {
+            $this->fetchExtraRates($date < gmdate('Y-m-d') ? $date : null);
             $rate = $this->lookup($date, $currency);
         }
         if ($rate === null) {

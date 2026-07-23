@@ -1,13 +1,17 @@
 /**
- * Supported currencies — the ECB reference set (matches what the FX feed
- * can convert), ordered with the household defaults first. Pickers must
+ * Supported currencies, ordered with the household defaults first, then
+ * alphabetical. Most come from the ECB reference feed; the rest (CLP,
+ * ARS, PEN, … — added after a receipt scanned in Chile had no CLP) from
+ * the secondary daily feed (FxService::EXTRA_CURRENCIES). Pickers must
  * use this list; free-text currency entry is not allowed (issue #1).
  */
 export const CURRENCIES = [
   'CAD', 'USD', 'EUR', 'GBP', 'MXN',
-  'AUD', 'BGN', 'BRL', 'CHF', 'CNY', 'CZK', 'DKK', 'HKD', 'HUF', 'IDR',
-  'ILS', 'INR', 'ISK', 'JPY', 'KRW', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN',
-  'RON', 'SEK', 'SGD', 'THB', 'TRY', 'ZAR',
+  'AED', 'ARS', 'AUD', 'BGN', 'BOB', 'BRL', 'CHF', 'CLP', 'CNY', 'COP',
+  'CRC', 'CZK', 'DKK', 'DOP', 'EGP', 'GTQ', 'HKD', 'HUF', 'IDR', 'ILS',
+  'INR', 'ISK', 'JOD', 'JPY', 'KES', 'KRW', 'LKR', 'MAD', 'MYR', 'NOK',
+  'NZD', 'PEN', 'PHP', 'PKR', 'PLN', 'QAR', 'RON', 'RSD', 'SAR', 'SEK',
+  'SGD', 'THB', 'TRY', 'TWD', 'UAH', 'UYU', 'VND', 'ZAR',
 ] as const;
 
 export type Currency = (typeof CURRENCIES)[number];
