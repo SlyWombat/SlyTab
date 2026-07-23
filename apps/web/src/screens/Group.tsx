@@ -1084,6 +1084,13 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
           PayPal.Me
         </a>
       )}
+      {handles.venmo && (
+        <a className="btn block" style={{ textDecoration: 'none', marginBottom: 8 }}
+          href={`https://venmo.com/${handles.venmo}?txn=pay&amount=${amountMajor}&note=${encodeURIComponent(group.name + ' (via SlyTab)')}`}
+          target="_blank" rel="noreferrer" onClick={() => record('venmo')}>
+          Venmo
+        </a>
+      )}
       <button className="btn block" disabled={amountMinor <= 0} onClick={() => record('cash')}>
         Record cash or other
       </button>

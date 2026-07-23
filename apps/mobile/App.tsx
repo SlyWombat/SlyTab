@@ -1408,6 +1408,11 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
           onPress={() => record('paypal',
             `https://paypal.me/${handles.paypalMe}/${amountMajor}${group.homeCurrency}`)} />
       )}
+      {handles.venmo && (
+        <Btn label="Venmo"
+          onPress={() => record('venmo',
+            `https://venmo.com/${handles.venmo}?txn=pay&amount=${amountMajor}&note=${encodeURIComponent(`${group.name} (via SlyTab)`)}`)} />
+      )}
       <Btn label="Record cash or other" onPress={() => record('cash')} />
       <Text style={[s.meta, { textAlign: 'center', marginTop: 8 }]}>
         SlyTab never holds your money — {to.displayName} confirms when it arrives.
