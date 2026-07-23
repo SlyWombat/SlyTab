@@ -18,7 +18,8 @@ use SlyTab\Support\Ulid;
  */
 final class ReceiptService
 {
-    private const MAX_BYTES = 10 * 1024 * 1024;
+    private const MAX_BYTES = 25 * 1024 * 1024; // Pixel "Motion Photos" easily exceed 10 MB
+    private const MAX_DIMENSION = 1600;
     private const MIME_EXT = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
     private const CLAUDE_MODEL = 'claude-opus-4-8';
 
@@ -31,7 +32,7 @@ final class ReceiptService
             throw new ApiException('VALIDATION', 'image upload failed');
         }
         if ($file->getSize() === null || $file->getSize() > self::MAX_BYTES) {
-            throw new ApiException('VALIDATION', 'image must be 10 MB or smaller', 413);
+            throw new ApiException('VALIDATION', 'image must be 25 MB or smaller', 413);
         }
         $mime = $file->getClientMediaType() ?? '';
         if (!isset(self::MIME_EXT[$mime])) {
@@ -45,13 +46,18 @@ final class ReceiptService
         }
         $relPath = "receipts/{$groupId}/{$id}." . self::MIME_EXT[$mime];
         $file->moveTo(self::dataDir() . '/' . $relPath);
+        [$relPath, $mime] = $this->normalizeImage($relPath, $mime);
 
         $parsed = null;
         $parseError = null;
         try {
             $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime);
         } catch (\Throwable $e) {
-            $parseError = $e instanceof ApiException ? $e->getMessage() : 'could not read this receipt';
+            $parseError = $e instanceof ApiException
+                ? $e->getMessage()
+                : (str_contains($e->getMessage(), 'unreachable')
+                    ? 'the receipt reader is offline right now — the photo is attached, try Rescan later'
+                    : 'could not read this receipt — the photo is attached, enter the details manually');
             error_log('receipt parse failed: ' . $e->getMessage());
         }
 
@@ -68,6 +74,53 @@ final class ReceiptService
             $out['parseError'] = $parseError;
         }
         return $out;
+    }
+
+    /**
+     * Re-encode oversized photos: downscale to MAX_DIMENSION and save as
+     * JPEG. Cuts multi-MB phone photos (and strips the video trailer that
+     * Pixel "Motion Photos" append) so the vision model gets a fast,
+     * clean image. No-op when GD is unavailable or the image is already
+     * small.
+     *
+     * @return array{0:string,1:string} [relPath, mime] after normalization
+     */
+    private function normalizeImage(string $relPath, string $mime): array
+    {
+        $path = self::dataDir() . '/' . $relPath;
+        if (!function_exists('imagecreatefromstring')) {
+            return [$relPath, $mime];
+        }
+        $size = @getimagesize($path);
+        if ($size === false) {
+            return [$relPath, $mime];
+        }
+        [$w, $h] = $size;
+        $big = max($w, $h);
+        if ($big <= self::MAX_DIMENSION && (filesize($path) ?: 0) <= 2 * 1024 * 1024) {
+            return [$relPath, $mime];
+        }
+        $src = @imagecreatefromstring((string) file_get_contents($path));
+        if ($src === false) {
+            return [$relPath, $mime];
+        }
+        $scale = min(1.0, self::MAX_DIMENSION / $big);
+        $nw = max(1, (int) round($w * $scale));
+        $nh = max(1, (int) round($h * $scale));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($src);
+
+        $newRel = preg_replace('/\.[a-z]+$/', '.jpg', $relPath) ?? $relPath;
+        $ok = imagejpeg($dst, self::dataDir() . '/' . $newRel, 85);
+        imagedestroy($dst);
+        if (!$ok) {
+            return [$relPath, $mime];
+        }
+        if ($newRel !== $relPath) {
+            @unlink($path);
+        }
+        return [$newRel, 'image/jpeg'];
     }
 
     /** @return array{path: string, mime: string, groupId: string} */

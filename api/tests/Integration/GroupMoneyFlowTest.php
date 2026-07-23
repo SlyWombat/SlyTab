@@ -354,8 +354,55 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertSame(['month' => '2026-06', 'minor' => 1000], $totals['byMonth'][1]);
     }
 
+    public function testExpenseLinksMultipleReceipts(): void
+    {
+        Db::pdo()->exec('DELETE FROM rate_limits'); // shared test IP
+        $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'receipts@example.com', 'password' => 'password-123',
+            'displayName' => 'Receipts', 'deviceLabel' => 'test',
+        ]), 201);
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Receipts', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $r['token']), 201);
+
+        $pdo = Db::pdo();
+        $mk = static function (string $id) use ($pdo, $g, $r): void {
+            $pdo->prepare('INSERT INTO receipts (id, group_id, image_path, created_by) VALUES (?, ?, ?, ?)')
+                ->execute([$id, $g['id'], "receipts/{$g['id']}/{$id}.jpg", $r['user']['id']]);
+        };
+        $mk('01TESTRECEIPTBILL000000000');
+        $mk('01TESTRECEIPTSLIP000000000');
+
+        $e = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Dinner with tip slip', 'amountMinor' => 5750, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-22', 'category' => 'food', 'splitMethod' => 'equal',
+            'payers' => [['userId' => $r['user']['id'], 'amountMinor' => 5750]],
+            'shares' => [['userId' => $r['user']['id'], 'amountMinor' => 5750]],
+            'receiptIds' => ['01TESTRECEIPTBILL000000000', '01TESTRECEIPTSLIP000000000'],
+        ], $r['token']), 201);
+
+        $linked = $pdo->prepare('SELECT id FROM receipts WHERE expense_id = ? ORDER BY id');
+        $linked->execute([$e['id']]);
+        self::assertSame(
+            ['01TESTRECEIPTBILL000000000', '01TESTRECEIPTSLIP000000000'],
+            $linked->fetchAll(\PDO::FETCH_COLUMN),
+        );
+        self::assertSame('01TESTRECEIPTBILL000000000', $e['receiptId']);
+
+        // A receipt from another group cannot be attached.
+        $bad = $this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Bad link', 'amountMinor' => 100, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-22', 'category' => 'food', 'splitMethod' => 'equal',
+            'payers' => [['userId' => $r['user']['id'], 'amountMinor' => 100]],
+            'shares' => [['userId' => $r['user']['id'], 'amountMinor' => 100]],
+            'receiptIds' => ['01DOESNOTEXIST000000000000'],
+        ], $r['token']);
+        self::assertSame(422, $bad->getStatusCode());
+    }
+
     public function testAccountDeletionAnonymizesButKeepsBalances(): void
     {
+        Db::pdo()->exec('DELETE FROM rate_limits'); // shared test IP
         $mk = function (string $name): array {
             $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
                 'email' => "{$name}@example.com", 'password' => 'password-123',

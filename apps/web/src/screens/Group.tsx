@@ -5,9 +5,24 @@ import {
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
-import { Amount, Badge, Sheet } from '../ui';
+import { Amount, Badge, Mark, Sheet } from '../ui';
 
 const CATEGORIES = ['food', 'home', 'travel', 'fun', 'utilities', 'other'] as const;
+
+/** Full-screen scrim with the spinning coin while a receipt is being read. */
+function BusyOverlay({ label }: { label: string }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 14,
+      background: 'color-mix(in srgb, var(--ss-bg) 78%, transparent)', backdropFilter: 'blur(2px)',
+    }} role="status" aria-live="polite">
+      <style>{'@keyframes ss-spin { to { transform: rotate(360deg); } }'}</style>
+      <div style={{ animation: 'ss-spin 1.2s linear infinite', lineHeight: 0 }}><Mark size={44} /></div>
+      <div style={{ fontSize: 14, color: 'var(--ss-text-2)' }}>{label}</div>
+    </div>
+  );
+}
 
 export function GroupScreen({ groupId, user, onBack }: {
   groupId: string;
@@ -245,6 +260,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [error, setError] = useState<string | null>(null);
   const [needsRate, setNeedsRate] = useState(false);
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -271,9 +287,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
 
   function applyAssignment(result: {
     totalMinor: number; currency: string | null; merchant: string | null;
-    date: string | null; shares: Record<string, number>;
+    date: string | null; shares: Record<string, number>; receiptIds: string[];
   }) {
     setAssigning(null);
+    setExtraReceiptIds(result.receiptIds);
     setAmountStr((result.totalMinor / 100).toFixed(2));
     if (result.currency && /^[A-Z]{3}$/.test(result.currency)) setCurrency(result.currency);
     if (result.merchant) setDescription(result.merchant);
@@ -322,7 +339,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(fxOverride !== '' ? { fxRateOverride: parseFloat(fxOverride) } : {}),
-        ...(receiptId !== null ? { receiptId } : {}),
+        ...(receiptId !== null || extraReceiptIds.length > 0
+          ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
+          : {}),
       };
       await (editing ? api.updateExpense(editing.id, payload) : api.addExpense(group.id, payload));
       onSaved();
@@ -430,31 +449,63 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void onScanFile(f); e.target.value = ''; }} />
       </form>
       {assigning !== null && (
-        <AssignItemsSheet parsed={assigning} members={group.members} user={user}
+        <AssignItemsSheet parsed={assigning} group={group} members={group.members} user={user}
           onCancel={() => setAssigning(null)} onDone={applyAssignment} />
       )}
+      {scanBusy && <BusyOverlay label="Reading your receipt…" />}
     </Sheet>
   );
 }
 
 // ---- Receipt item assignment (ui_requirements §2.6 step 4) ----
 
-function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
+function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   parsed: ParsedReceipt;
+  group: Group;
   members: Member[];
   user: User;
   onCancel: () => void;
   onDone: (r: {
     totalMinor: number; currency: string | null; merchant: string | null;
-    date: string | null; shares: Record<string, number>;
+    date: string | null; shares: Record<string, number>; receiptIds: string[];
   }) => void;
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+  const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
+  const [slipBusy, setSlipBusy] = useState(false);
+  const [slipError, setSlipError] = useState<string | null>(null);
+  const slipInput = useRef<HTMLInputElement>(null);
 
   const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
-  const totalMinor = parsed.totalMinor
+  const billTotal = parsed.totalMinor
     ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
+  const totalMinor = billTotal + (slip?.tipMinor ?? 0);
   const extra = totalMinor - itemsSum; // tax + tip + any unparsed delta
+
+  /** Issue #9: the card slip carries the final total with tip — scan it,
+   *  take the difference over the bill as the tip, prorate like tax. */
+  async function onSlipFile(file: File) {
+    setSlipBusy(true);
+    setSlipError(null);
+    try {
+      const r = await api.uploadReceipt(group.id, file);
+      const slipTotal = r.parsed?.totalMinor ?? null;
+      if (slipTotal === null) {
+        setSlipError('could not read a total on that slip — you can still adjust the amount after Continue');
+        return;
+      }
+      const tip = slipTotal - billTotal;
+      if (tip < 0) {
+        setSlipError('the card slip total is lower than the bill — check you scanned the right photos');
+        return;
+      }
+      setSlip({ tipMinor: tip, receiptId: r.id });
+    } catch (err) {
+      setSlipError((err as Error).message);
+    } finally {
+      setSlipBusy(false);
+    }
+  }
   const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
 
   function toggle(itemIndex: number, memberId: string) {
@@ -539,6 +590,16 @@ function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
           Split the rest equally
         </button>
       )}
+      {slipError && <div className="error" role="alert">{slipError}</div>}
+      <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={slipBusy}
+        onClick={() => slipInput.current?.click()}>
+        {slip !== null
+          ? `Tip from card slip: ${(slip.tipMinor / 100).toFixed(2)} ✓ — rescan`
+          : slipBusy ? 'Reading the card slip…' : 'Scan card slip (adds the tip)'}
+      </button>
+      <input ref={slipInput} type="file" accept="image/jpeg,image/png,image/webp"
+        style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void onSlipFile(f); e.target.value = ''; }} />
       <p className="muted" style={{ padding: '10px 2px' }}>
         {members
           .filter((m) => (perMember[m.id] ?? 0) !== 0)
@@ -549,9 +610,11 @@ function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
         onClick={() => onDone({
           totalMinor, currency: parsed.currency, merchant: parsed.merchant,
           date: parsed.date, shares: perMember,
+          receiptIds: slip !== null ? [slip.receiptId] : [],
         })}>
         Continue
       </button>
+      {slipBusy && <BusyOverlay label="Reading the card slip…" />}
     </Sheet>
   );
 }

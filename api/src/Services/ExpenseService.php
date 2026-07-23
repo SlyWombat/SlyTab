@@ -43,9 +43,10 @@ final class ExpenseService
             )->execute([
                 $id, $groupId, $v['description'], $v['amount'], $v['currency'],
                 $v['fxRate'], $v['fxRateSource'], $v['date'], $v['category'],
-                $v['notes'], $v['receiptId'], $userId,
+                $v['notes'], $v['receiptIds'][0] ?? null, $userId,
             ]);
             $this->insertParticipants($id, $v);
+            $this->linkReceipts($id, $groupId, $v['receiptIds']);
             if ($recordActivity) {
                 $this->activity->record($groupId, $userId, 'added', 'expense', $id, [
                     'description' => $v['description'], 'amount' => $v['amount'], 'currency' => $v['currency'],
@@ -75,8 +76,9 @@ final class ExpenseService
                         expense_date=?, category=?, notes=?, receipt_id=? WHERE id=?',
             )->execute([
                 $v['description'], $v['amount'], $v['currency'], $v['fxRate'], $v['fxRateSource'],
-                $v['date'], $v['category'], $v['notes'], $v['receiptId'], $expenseId,
+                $v['date'], $v['category'], $v['notes'], $v['receiptIds'][0] ?? null, $expenseId,
             ]);
+            $this->linkReceipts($expenseId, $groupId, $v['receiptIds']);
             $this->pdo->prepare('DELETE FROM expense_payers WHERE expense_id = ?')->execute([$expenseId]);
             $this->pdo->prepare('DELETE FROM expense_shares WHERE expense_id = ?')->execute([$expenseId]);
             $this->insertParticipants($expenseId, $v);
@@ -152,6 +154,56 @@ final class ExpenseService
     // ---- internals ----
 
     /** @param array<string,mixed> $data @return array<string,mixed> validated */
+    /** @param array<string,mixed> $data @return list<string> */
+    private static function receiptIds(array $data): array
+    {
+        $ids = [];
+        if (isset($data['receiptId']) && is_string($data['receiptId']) && $data['receiptId'] !== '') {
+            $ids[] = $data['receiptId'];
+        }
+        foreach (($data['receiptIds'] ?? []) as $rid) {
+            if (is_string($rid) && $rid !== '' && !in_array($rid, $ids, true)) {
+                $ids[] = $rid;
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Reject unknown or cross-group receipt ids up front, before the
+     * expense row (whose receipt_id FK would fire first) is written.
+     *
+     * @param list<string> $ids @return list<string>
+     */
+    private function checkedReceiptIds(string $groupId, array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM receipts WHERE group_id = ? AND id IN ({$in})");
+        $stmt->execute([$groupId, ...$ids]);
+        if ((int) $stmt->fetchColumn() !== count($ids)) {
+            throw new ApiException('VALIDATION', 'receipt not found in this group', 422);
+        }
+        return $ids;
+    }
+
+    /**
+     * Attach the given receipts to the expense (issue #9: bill + card
+     * slip). Ids are pre-validated by checkedReceiptIds().
+     *
+     * @param list<string> $ids
+     */
+    private function linkReceipts(string $expenseId, string $groupId, array $ids): void
+    {
+        $this->pdo->prepare('UPDATE receipts SET expense_id = NULL WHERE expense_id = ?')->execute([$expenseId]);
+        foreach ($ids as $rid) {
+            $this->pdo->prepare('UPDATE receipts SET expense_id = ? WHERE id = ? AND group_id = ?')
+                ->execute([$expenseId, $rid, $groupId]);
+        }
+    }
+
     private function validate(string $groupId, array $data): array
     {
         $description = trim((string) ($data['description'] ?? ''));
@@ -216,7 +268,7 @@ final class ExpenseService
             'date' => $date,
             'category' => $category,
             'notes' => isset($data['notes']) ? mb_substr((string) $data['notes'], 0, 2000) : null,
-            'receiptId' => isset($data['receiptId']) ? (string) $data['receiptId'] : null,
+            'receiptIds' => $this->checkedReceiptIds($groupId, self::receiptIds($data)),
             'splitMethod' => $splitMethod,
             'splitInput' => $data['splitInput'] ?? null,
             'payers' => $payers,

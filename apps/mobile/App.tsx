@@ -776,6 +776,18 @@ function InviteSheet({ group, link, onClose }: { group: Group; link: string; onC
   );
 }
 
+function BusyOverlay({ label }: { label: string }) {
+  return (
+    <Modal transparent statusBarTranslucent animationType="fade">
+      <View style={{ flex: 1, backgroundColor: 'rgba(6,10,18,0.78)',
+        alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+        <ActivityIndicator size="large" color={c.brand} />
+        <Text style={[s.body, { color: c.text2 }]}>{label}</Text>
+      </View>
+    </Modal>
+  );
+}
+
 function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
   editing?: Expense | null; onDeleted?: () => void;
@@ -785,6 +797,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   const [exactShares, setExactShares] = useState<Record<string, number> | null>(() => {
@@ -844,7 +857,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         splitMethod: exactShares !== null ? 'exact' : 'equal',
         payers: [{ userId: editing?.payers[0]?.userId ?? user.id, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
-        ...(receiptId !== null ? { receiptId } : {}),
+        ...(receiptId !== null || extraReceiptIds.length > 0
+          ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
+          : {}),
       };
       await (editing ? api.updateExpense(editing.id, payload) : api.addExpense(group.id, payload));
       onSaved();
@@ -918,11 +933,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           }} />
         </>
       )}
+      {scanBusy && <BusyOverlay label="Reading your receipt…" />}
       {assigning !== null && (
-        <AssignItemsSheet parsed={assigning} members={group.members} user={user}
+        <AssignItemsSheet parsed={assigning} group={group} members={group.members} user={user}
           onCancel={() => setAssigning(null)}
           onDone={(r) => {
             setAssigning(null);
+            setExtraReceiptIds(r.receiptIds);
             setAmountStr((r.totalMinor / 100).toFixed(2));
             if (r.merchant) setDescription(r.merchant);
             if (r.currency && CURRENCIES.includes(r.currency as never)) setCurrency(r.currency);
@@ -936,20 +953,55 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
 
 // ---- Receipt item assignment (mobile port of the web sheet) ----
 
-function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
+function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   parsed: ParsedReceipt;
+  group: Group;
   members: Member[];
   user: User;
   onCancel: () => void;
   onDone: (r: {
     totalMinor: number; currency: string | null; merchant: string | null;
-    date: string | null; shares: Record<string, number>;
+    date: string | null; shares: Record<string, number>; receiptIds: string[];
   }) => void;
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+  const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
+  const [slipBusy, setSlipBusy] = useState(false);
+  const [slipError, setSlipError] = useState<string | null>(null);
   const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
-  const totalMinor = parsed.totalMinor ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
+  const billTotal = parsed.totalMinor ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
+  const totalMinor = billTotal + (slip?.tipMinor ?? 0);
   const extra = totalMinor - itemsSum;
+
+  // Issue #9: the card slip carries the final total with tip — scan it,
+  // take the difference over the bill as the tip, prorate like tax.
+  async function scanSlip() {
+    setSlipError(null);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { setSlipError('camera permission is needed'); return; }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      const asset = result.assets?.[0];
+      if (result.canceled || !asset) return;
+      setSlipBusy(true);
+      const r = await uploadReceipt(group.id, asset.uri, asset.mimeType ?? 'image/jpeg');
+      const slipTotal = r.parsed?.totalMinor ?? null;
+      if (slipTotal === null) {
+        setSlipError('could not read a total on that slip — you can adjust the amount after Continue');
+        return;
+      }
+      const tip = slipTotal - billTotal;
+      if (tip < 0) {
+        setSlipError('the card slip total is lower than the bill — check you scanned the right photos');
+        return;
+      }
+      setSlip({ tipMinor: tip, receiptId: r.id });
+    } catch (e) {
+      setSlipError((e as Error).message);
+    } finally {
+      setSlipBusy(false);
+    }
+  }
   const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
 
   const perMember = useMemo(() => {
@@ -1015,6 +1067,11 @@ function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
             return next;
           })} />
       )}
+      {slipError !== null && <Text style={s.error}>{slipError}</Text>}
+      <Btn label={slip !== null
+          ? `Tip from card slip: ${(slip.tipMinor / 100).toFixed(2)} ✓ — rescan`
+          : 'Scan card slip (adds the tip)'}
+        disabled={slipBusy} onPress={() => void scanSlip()} />
       <Text style={[s.meta, { marginVertical: 8 }]}>
         {members.filter((m) => (perMember[m.id] ?? 0) !== 0)
           .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${((perMember[m.id] ?? 0) / 100).toFixed(2)}`)
@@ -1024,7 +1081,9 @@ function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
         onPress={() => onDone({
           totalMinor, currency: parsed.currency, merchant: parsed.merchant,
           date: parsed.date, shares: perMember,
+          receiptIds: slip !== null ? [slip.receiptId] : [],
         })} />
+      {slipBusy && <BusyOverlay label="Reading the card slip…" />}
     </SheetModal>
   );
 }

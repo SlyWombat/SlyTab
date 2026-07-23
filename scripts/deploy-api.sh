@@ -83,8 +83,14 @@ require '$APPDIR/api/vendor/autoload.php';
 \\SlyTab\\App::create()->run();
 EOF
 cp "$REPO/api/public/.htaccess" "$SHIMDIR/.htaccess"
+cat > "$SHIMDIR/.user.ini" <<EOF
+; Receipt uploads: phone photos (Pixel Motion Photos) run 10-20 MB.
+upload_max_filesize = 25M
+post_max_size = 26M
+memory_limit = 256M
+EOF
 curl -sS -m 60 "$BASE/execute/Fileman/upload_files" -H "$AUTH" -F "dir=$PUB/slytab/api" -F "overwrite=1" \
-  -F "file-1=@$SHIMDIR/index.php" -F "file-2=@$SHIMDIR/.htaccess" | st
+  -F "file-1=@$SHIMDIR/index.php" -F "file-2=@$SHIMDIR/.htaccess" -F "file-3=@$SHIMDIR/.user.ini" | st
 rm -rf "$SHIMDIR"
 
 echo "== 5/6 migrate + seed rates + health =="
