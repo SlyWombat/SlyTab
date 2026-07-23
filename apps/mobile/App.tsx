@@ -209,6 +209,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [creating, setCreating] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -231,9 +232,16 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       {user.emailVerifiedAt === null && (
         <View style={[s.row, { borderColor: c.owe }]}>
           <Text style={[s.body, { flex: 1, fontSize: 12.5 }]}>
-            Confirm your email — we sent a link to {user.email}
+            {verifySent
+              ? `Confirmation email sent to ${user.email} — check your inbox and junk folder.`
+              : `Confirm your email — press Resend to get a link at ${user.email}.`}
           </Text>
-          <Btn small label="Resend" onPress={() => api.resendVerification().catch(() => {})} />
+          <Btn small label={verifySent ? 'Sent ✓' : 'Resend'} disabled={verifySent}
+            onPress={() => {
+              api.resendVerification()
+                .then(() => { setError(null); setVerifySent(true); })
+                .catch((e) => setError((e as Error).message));
+            }} />
         </View>
       )}
 

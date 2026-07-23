@@ -62,6 +62,16 @@ final class Api
             });
             $g->post('/fetch-rates', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, $fx->refresh()));
+            // Deliverability probe (issue #8): did the MTA accept the message?
+            $g->post('/mail-test', function (Request $rq, Response $rs): Response {
+                $to = Http::str(Http::body($rq), 'to');
+                $accepted = (new Mailer())->dispatch(
+                    $to,
+                    'SlyTab mail test',
+                    "This is a deliverability test from SlyTab.\nIf you can read this, outbound mail works.",
+                );
+                return Http::json($rs, ['accepted' => $accepted]);
+            });
         })->add(function (Request $rq, $handler) {
             $expected = Env::require('MIGRATE_TOKEN');
             if (!hash_equals($expected, $rq->getHeaderLine('X-Admin-Token'))) {

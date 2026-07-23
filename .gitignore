@@ -32,3 +32,6 @@ desktop.ini
 
 # PHP tooling
 api/.phpunit.result.cache
+
+# Owner-only operational docs (steps Dave must take; excluded from the public repo)
+docs/private/

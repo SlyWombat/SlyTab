@@ -13,6 +13,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [verifySent, setVerifySent] = useState(false);
 
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
@@ -39,11 +40,15 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       {user.emailVerifiedAt === null && (
         <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
           <div className="grow" style={{ fontSize: 13 }}>
-            Confirm your email — we sent a link to <b>{user.email}</b>.
+            {verifySent
+              ? <>Confirmation email sent to <b>{user.email}</b> — check your inbox and junk folder.</>
+              : <>Confirm your email — press Resend to get a link at <b>{user.email}</b>.</>}
           </div>
-          <button className="btn sm" onClick={() => {
-            api.resendVerification().then(() => setError(null)).catch((e) => setError(e.message));
-          }}>Resend</button>
+          <button className="btn sm" disabled={verifySent} onClick={() => {
+            api.resendVerification()
+              .then(() => { setError(null); setVerifySent(true); })
+              .catch((e) => setError(e.message));
+          }}>{verifySent ? 'Sent ✓' : 'Resend'}</button>
         </div>
       )}
 
