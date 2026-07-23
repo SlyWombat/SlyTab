@@ -46,6 +46,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   production. Fixed with `CGIPassAuth On` + `SetEnvIf` in the API
   .htaccess (found by the production receipt end-to-end test).
 
+### Added (earlier the same day)
+
 - **Production launch** (2026-07-22): live at electricrv.ca/slytab. Web +
   PHP API on cPanel; the database runs at home on kdocker2 through the
   SlyTesla rathole tunnel (VM :3307, TLS with pinned CA, IP-restricted at
