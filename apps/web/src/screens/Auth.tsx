@@ -76,12 +76,25 @@ export function Auth({ onSignedIn, joinPending }: {
           Forgot password?
         </button>
       )}
-      <p className="muted" style={{ paddingTop: 8 }}>
-        📱 Android:{' '}
-        <a href={`${import.meta.env.BASE_URL}downloads/slytab.apk`} style={{ color: 'var(--ss-brand)' }}>
-          download the app (APK)
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--ss-space-1)', marginTop: 'var(--ss-space-5)' }}>
+        <a
+          className="btn"
+          href={`${import.meta.env.BASE_URL}downloads/slytab.apk`}
+          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 'var(--ss-space-2)' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M8.4 5.4 7.2 3.5" fill="none" />
+              <path d="M15.6 5.4l1.2-1.9" fill="none" />
+            </g>
+            <path d="M6 12.5a6 6 0 0 1 12 0v1.2H6z" fill="currentColor" />
+            <circle cx="9.6" cy="9.9" r="1" fill="var(--ss-surface-2)" />
+            <circle cx="14.4" cy="9.9" r="1" fill="var(--ss-surface-2)" />
+          </svg>
+          Get the Android app
         </a>
-      </p>
+        <span className="muted" style={{ fontSize: 12 }}>Direct download (APK) — same account as the web app</span>
+      </div>
     </div>
   );
 }
