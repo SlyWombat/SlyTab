@@ -95,23 +95,68 @@ export interface ReceiptResult {
   id: string; groupId: string; parsed: ParsedReceipt | null; parseError?: string;
 }
 
-export async function uploadReceipt(groupId: string, uri: string, mime: string): Promise<ReceiptResult> {
-  const fd = new FormData();
-  // React Native FormData file part: { uri, name, type }
-  fd.append('image', {
-    uri, name: `receipt.${mime === 'image/png' ? 'png' : 'jpg'}`, type: mime,
-  } as unknown as Blob);
+/** Progress/cancel hooks for long uploads on slow connections (issue #9). */
+export interface UploadHooks {
+  onUploadProgress?: (fraction: number) => void;
+  onUploaded?: () => void;
+}
+
+export interface UploadHandle {
+  promise: Promise<ReceiptResult>;
+  cancel: () => void;
+}
+
+/**
+ * Receipt upload with progress + cancel via expo-file-system's upload
+ * task (RN fetch cannot report upload progress). The caller shrinks the
+ * image first — see shrinkPhoto in App.tsx.
+ */
+export function uploadReceipt(groupId: string, uri: string, mime: string, hooks: UploadHooks = {}): UploadHandle {
+  const FileSystem = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}/groups/${groupId}/receipts`, { method: 'POST', headers, body: fd });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiFailure(
-      (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'upload failed' },
-      res.status,
-    );
-  }
-  return json as ReceiptResult;
+  let uploadDone = false;
+  const task = FileSystem.createUploadTask(
+    `${BASE}/groups/${groupId}/receipts`,
+    uri,
+    {
+      httpMethod: 'POST',
+      headers,
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: 'image',
+      mimeType: mime,
+      parameters: {},
+    },
+    ({ totalBytesSent, totalBytesExpectedToSend }) => {
+      if (totalBytesExpectedToSend > 0) {
+        const fraction = totalBytesSent / totalBytesExpectedToSend;
+        hooks.onUploadProgress?.(fraction);
+        if (fraction >= 1 && !uploadDone) {
+          uploadDone = true;
+          hooks.onUploaded?.();
+        }
+      }
+    },
+  );
+  const promise = task.uploadAsync().then((res) => {
+    if (res == null) {
+      throw new ApiFailure({ code: 'CANCELED', message: 'upload canceled' }, 0);
+    }
+    let json: unknown = {};
+    try { json = JSON.parse(res.body); } catch { /* non-JSON body */ }
+    if (res.status < 200 || res.status >= 300) {
+      throw new ApiFailure(
+        (json as { error?: ApiError }).error
+          ?? { code: 'NETWORK', message: "the upload didn't reach the server — check your connection and try again" },
+        res.status,
+      );
+    }
+    return json as ReceiptResult;
+  }, (e) => {
+    throw e instanceof ApiFailure ? e : new ApiFailure(
+      { code: 'NETWORK', message: "the upload didn't reach the server — check your connection and try again" }, 0);
+  });
+  return { promise, cancel: () => { void task.cancelAsync(); } };
 }
 
 export const api = {

@@ -44,14 +44,25 @@ final class ReceiptService
         if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
             throw new \RuntimeException("cannot create receipt directory {$dir}");
         }
+        $uploadBytes = (int) $file->getSize();
         $relPath = "receipts/{$groupId}/{$id}." . self::MIME_EXT[$mime];
         $file->moveTo(self::dataDir() . '/' . $relPath);
+
+        $t0 = microtime(true);
         [$relPath, $mime] = $this->normalizeImage($relPath, $mime);
+        $normalizeMs = (int) round((microtime(true) - $t0) * 1000);
+        $normalizedBytes = (int) (filesize(self::dataDir() . '/' . $relPath) ?: 0);
 
         $parsed = null;
         $parseError = null;
+        $t1 = microtime(true);
         try {
             $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime);
+            // Issue #10: keep the raw parse for repeat testing (data dir only).
+            @file_put_contents(
+                self::dataDir() . '/' . preg_replace('/\.[a-z]+$/', '.parse.json', $relPath),
+                json_encode($parsed, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR),
+            );
         } catch (\Throwable $e) {
             $parseError = $e instanceof ApiException
                 ? $e->getMessage()
@@ -60,6 +71,7 @@ final class ReceiptService
                     : 'could not read this receipt — the photo is attached, enter the details manually');
             error_log('receipt parse failed: ' . $e->getMessage());
         }
+        $parseMs = (int) round((microtime(true) - $t1) * 1000);
 
         $this->pdo->prepare(
             'INSERT INTO receipts (id, group_id, image_path, parsed, created_by) VALUES (?, ?, ?, ?, ?)',
@@ -68,12 +80,52 @@ final class ReceiptService
             $parsed === null ? null : json_encode($parsed, JSON_THROW_ON_ERROR),
             $userId,
         ]);
+        $this->recordMetrics([
+            'receipt_id' => $id,
+            'group_id' => $groupId,
+            'upload_bytes' => $uploadBytes,
+            'normalized_bytes' => $normalizedBytes,
+            'normalize_ms' => $normalizeMs,
+            'engine' => $this->engineName(),
+            'parse_ms' => $parseMs,
+            'outcome' => $parsed !== null ? 'parsed' : 'parse_failed',
+            'confidence' => $parsed['confidence'] ?? null,
+            'error' => $parseError,
+        ]);
 
         $out = ['id' => $id, 'groupId' => $groupId, 'parsed' => $parsed];
         if ($parseError !== null) {
             $out['parseError'] = $parseError;
         }
         return $out;
+    }
+
+    /** Testing-phase telemetry (issue #10). Never allowed to break an upload. */
+    private function recordMetrics(array $m): void
+    {
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO receipt_metrics (id, receipt_id, group_id, upload_bytes, normalized_bytes,
+                                              normalize_ms, engine, parse_ms, outcome, confidence, error)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            )->execute([
+                Ulid::generate(), $m['receipt_id'], $m['group_id'], $m['upload_bytes'],
+                $m['normalized_bytes'], $m['normalize_ms'], $m['engine'], $m['parse_ms'],
+                $m['outcome'], $m['confidence'], $m['error'] === null ? null : mb_substr($m['error'], 0, 500),
+            ]);
+        } catch (\Throwable $e) {
+            error_log('receipt metrics failed: ' . $e->getMessage());
+        }
+    }
+
+    private function engineName(): string
+    {
+        $engine = Env::get('RECEIPT_ENGINE', 'auto');
+        if ($engine !== 'auto') {
+            return $engine;
+        }
+        return Env::get('LOCAL_LLM_URL') !== '' ? 'local'
+            : (Env::get('ANTHROPIC_API_KEY') !== '' ? 'claude' : 'none');
     }
 
     /**
@@ -112,14 +164,17 @@ final class ReceiptService
         imagedestroy($src);
 
         $newRel = preg_replace('/\.[a-z]+$/', '.jpg', $relPath) ?? $relPath;
-        $ok = imagejpeg($dst, self::dataDir() . '/' . $newRel, 85);
+        $tmpOut = self::dataDir() . '/' . $newRel . '.tmp';
+        $ok = imagejpeg($dst, $tmpOut, 85);
         imagedestroy($dst);
         if (!$ok) {
+            @unlink($tmpOut);
             return [$relPath, $mime];
         }
-        if ($newRel !== $relPath) {
-            @unlink($path);
-        }
+        // Issue #10: keep the untouched upload for repeat testing.
+        $origRel = preg_replace('/\.([a-z]+)$/', '.orig.$1', $relPath) ?? $relPath;
+        @rename($path, self::dataDir() . '/' . $origRel);
+        rename($tmpOut, self::dataDir() . '/' . $newRel);
         return [$newRel, 'image/jpeg'];
     }
 

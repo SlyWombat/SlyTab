@@ -12,6 +12,8 @@
   "dependencies": {
     "@slytab/core": "*",
     "expo": "~54.0.0",
+    "expo-file-system": "~19.0.21",
+    "expo-image-manipulator": "~14.0.7",
     "expo-image-picker": "~17.0.11",
     "expo-secure-store": "~15.0.7",
     "expo-status-bar": "~3.0.0",

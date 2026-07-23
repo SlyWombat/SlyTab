@@ -1,14 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@slytab/core';
 import {
-  api, setToken, uploadReceipt,
+  api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type SplitwiseGroup,
   type ParsedReceipt, type User,
@@ -776,16 +777,57 @@ function InviteSheet({ group, link, onClose }: { group: Group; link: string; onC
   );
 }
 
-function BusyOverlay({ label }: { label: string }) {
+type ScanStage =
+  | { stage: 'upload'; fraction: number }
+  | { stage: 'read'; startedAt: number };
+
+/** Staged scan progress (issue #9): upload % → reading with elapsed time. */
+function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => void }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+  const elapsed = scan.stage === 'read' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
   return (
     <Modal transparent statusBarTranslucent animationType="fade">
       <View style={{ flex: 1, backgroundColor: 'rgba(6,10,18,0.78)',
         alignItems: 'center', justifyContent: 'center', gap: 14 }}>
         <ActivityIndicator size="large" color={c.brand} />
-        <Text style={[s.body, { color: c.text2 }]}>{label}</Text>
+        {scan.stage === 'upload' ? (
+          <>
+            <Text style={s.body}>Uploading photo… {Math.round(scan.fraction * 100)}%</Text>
+            <View style={{ width: 200, height: 6, borderRadius: 3, backgroundColor: c.surface2 }}>
+              <View style={{ width: 200 * Math.min(1, scan.fraction), height: 6,
+                borderRadius: 3, backgroundColor: c.brand }} />
+            </View>
+          </>
+        ) : (
+          <Text style={s.body}>
+            Reading the receipt… {elapsed}s{'  '}
+            <Text style={{ color: c.text2 }}>(usually 5–15s)</Text>
+          </Text>
+        )}
+        {onCancel && <Btn small label="Cancel" onPress={onCancel} />}
       </View>
     </Modal>
   );
+}
+
+/**
+ * Downscale a photo before upload — slow cellular links choke on the
+ * 10-20 MB photos phones produce, and the server only needs ~1600px.
+ */
+async function shrinkPhoto(uri: string): Promise<{ uri: string; mime: string }> {
+  try {
+    const out = await ImageManipulator.manipulateAsync(
+      uri, [{ resize: { width: 1600 } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+    );
+    return { uri: out.uri, mime: 'image/jpeg' };
+  } catch {
+    return { uri, mime: 'image/jpeg' };
+  }
 }
 
 function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted }: {
@@ -798,8 +840,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [error, setError] = useState<string | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
-  const [scanBusy, setScanBusy] = useState(false);
+  const [scanProg, setScanProg] = useState<ScanStage | null>(null);
+  const scanHandle = useRef<{ cancel: () => void } | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
+  const scanBusy = scanProg !== null;
   const [exactShares, setExactShares] = useState<Record<string, number> | null>(() => {
     if (!editing) return null;
     const out: Record<string, number> = {};
@@ -829,8 +873,14 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
-      setScanBusy(true);
-      const r = await uploadReceipt(group.id, asset.uri, asset.mimeType ?? 'image/jpeg');
+      setScanProg({ stage: 'upload', fraction: 0 });
+      const small = await shrinkPhoto(asset.uri);
+      const handle = uploadReceipt(group.id, small.uri, small.mime, {
+        onUploadProgress: (fraction) => setScanProg({ stage: 'upload', fraction }),
+        onUploaded: () => setScanProg({ stage: 'read', startedAt: Date.now() }),
+      });
+      scanHandle.current = handle;
+      const r = await handle.promise;
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -838,9 +888,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         setAssigning(r.parsed);
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (!(e instanceof ApiFailure && e.error.code === 'CANCELED')) {
+        setError((e as Error).message);
+      }
     } finally {
-      setScanBusy(false);
+      setScanProg(null);
+      scanHandle.current = null;
     }
   }
 
@@ -933,7 +986,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           }} />
         </>
       )}
-      {scanBusy && <BusyOverlay label="Reading your receipt…" />}
+      {scanProg !== null && <BusyOverlay scan={scanProg} onCancel={() => scanHandle.current?.cancel()} />}
       {assigning !== null && (
         <AssignItemsSheet parsed={assigning} group={group} members={group.members} user={user}
           onCancel={() => setAssigning(null)}
@@ -966,8 +1019,10 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
   const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
-  const [slipBusy, setSlipBusy] = useState(false);
+  const [slipScan, setSlipScan] = useState<ScanStage | null>(null);
+  const slipHandle = useRef<{ cancel: () => void } | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
+  const slipBusy = slipScan !== null;
   const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
   const billTotal = parsed.totalMinor ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
   const totalMinor = billTotal + (slip?.tipMinor ?? 0);
@@ -983,8 +1038,14 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
-      setSlipBusy(true);
-      const r = await uploadReceipt(group.id, asset.uri, asset.mimeType ?? 'image/jpeg');
+      setSlipScan({ stage: 'upload', fraction: 0 });
+      const small = await shrinkPhoto(asset.uri);
+      const handle = uploadReceipt(group.id, small.uri, small.mime, {
+        onUploadProgress: (fraction) => setSlipScan({ stage: 'upload', fraction }),
+        onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
+      });
+      slipHandle.current = handle;
+      const r = await handle.promise;
       const slipTotal = r.parsed?.totalMinor ?? null;
       if (slipTotal === null) {
         setSlipError('could not read a total on that slip — you can adjust the amount after Continue');
@@ -997,9 +1058,12 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       }
       setSlip({ tipMinor: tip, receiptId: r.id });
     } catch (e) {
-      setSlipError((e as Error).message);
+      if (!(e instanceof ApiFailure && e.error.code === 'CANCELED')) {
+        setSlipError((e as Error).message);
+      }
     } finally {
-      setSlipBusy(false);
+      setSlipScan(null);
+      slipHandle.current = null;
     }
   }
   const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
@@ -1083,7 +1147,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
           date: parsed.date, shares: perMember,
           receiptIds: slip !== null ? [slip.receiptId] : [],
         })} />
-      {slipBusy && <BusyOverlay label="Reading the card slip…" />}
+      {slipScan !== null && <BusyOverlay scan={slipScan} onCancel={() => slipHandle.current?.cancel()} />}
     </SheetModal>
   );
 }

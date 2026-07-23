@@ -64,6 +64,15 @@ final class Api
             });
             $g->post('/fetch-rates', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, $fx->refresh()));
+            // Testing metrics (issue #10): recent receipt-pipeline rows.
+            $g->get('/metrics/receipts', function (Request $rq, Response $rs) use ($pdo): Response {
+                $stmt = $pdo->query(
+                    'SELECT receipt_id, group_id, upload_bytes, normalized_bytes, normalize_ms,
+                            engine, parse_ms, outcome, confidence, error, created_at
+                     FROM receipt_metrics ORDER BY id DESC LIMIT 50',
+                );
+                return Http::json($rs, ['items' => $stmt->fetchAll()]);
+            });
             // Deliverability probe (issue #8): did the MTA accept the message?
             $g->post('/mail-test', function (Request $rq, Response $rs): Response {
                 $to = Http::str(Http::body($rq), 'to');

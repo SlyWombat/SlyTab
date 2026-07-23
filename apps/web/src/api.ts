@@ -179,6 +179,75 @@ async function upload<T>(path: string, field: string, file: File, extra: Record<
   return json as T;
 }
 
+/** Progress/cancel hooks for long uploads on slow connections (issue #9). */
+export interface UploadHooks {
+  onUploadProgress?: (fraction: number) => void;
+  onUploaded?: () => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * XHR-based upload: fetch() cannot report upload progress. Rejects with
+ * code CANCELED on abort and NETWORK on connection failure.
+ */
+function uploadWithProgress<T>(path: string, field: string, blob: Blob, filename: string, hooks: UploadHooks): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const fd = new FormData();
+    fd.append(field, blob, filename);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE}${path}`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && hooks.onUploadProgress) hooks.onUploadProgress(e.loaded / e.total);
+    };
+    xhr.upload.onload = () => hooks.onUploaded?.();
+    xhr.onload = () => {
+      let json: unknown = {};
+      try { json = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(json as T);
+      } else {
+        reject(new ApiFailure(
+          (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'upload failed' },
+          xhr.status,
+        ));
+      }
+    };
+    xhr.onerror = () => reject(new ApiFailure(
+      { code: 'NETWORK', message: "the upload didn't reach the server — check your connection and try again" }, 0));
+    xhr.ontimeout = xhr.onerror;
+    xhr.onabort = () => reject(new ApiFailure({ code: 'CANCELED', message: 'upload canceled' }, 0));
+    hooks.signal?.addEventListener('abort', () => xhr.abort());
+    xhr.send(fd);
+  });
+}
+
+/**
+ * Downscale a photo in the browser before upload: slow cellular links
+ * choke on 10-20 MB phone photos, and the server only needs ~1600px.
+ * Falls back to the original file if decoding fails.
+ */
+export async function shrinkImage(file: File, maxDim = 1600): Promise<{ blob: Blob; name: string }> {
+  if (file.size < 500 * 1024) return { blob: file, name: file.name };
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
+    if (blob === null || blob.size >= file.size) return { blob: file, name: file.name };
+    return { blob, name: file.name.replace(/\.[a-z]+$/i, '') + '.jpg' };
+  } catch {
+    return { blob: file, name: file.name };
+  }
+}
+
 export const api = {
   register: (email: string, password: string, displayName: string) =>
     req<{ token: string; user: User }>('POST', '/auth/register', {
@@ -193,8 +262,10 @@ export const api = {
   me: () => req<User>('GET', '/me'),
   patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles'>>) =>
     req<User>('PATCH', '/me', data),
-  uploadReceipt: (groupId: string, file: File) =>
-    upload<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', file),
+  uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}) => {
+    const { blob, name } = await shrinkImage(file);
+    return uploadWithProgress<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', blob, name, hooks);
+  },
   inspectSplitwise: (groupId: string, file: File) =>
     upload<{
       members: string[]; expenseRows: number; paymentRows: number;

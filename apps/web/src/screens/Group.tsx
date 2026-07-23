@@ -9,8 +9,18 @@ import { Amount, Badge, Mark, Sheet } from '../ui';
 
 const CATEGORIES = ['food', 'home', 'travel', 'fun', 'utilities', 'other'] as const;
 
-/** Full-screen scrim with the spinning coin while a receipt is being read. */
-function BusyOverlay({ label }: { label: string }) {
+export type ScanStage =
+  | { stage: 'upload'; fraction: number }
+  | { stage: 'read'; startedAt: number };
+
+/** Staged scan progress (issue #9): upload % → reading with elapsed time. */
+function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => void }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+  const elapsed = scan.stage === 'read' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column',
@@ -19,7 +29,22 @@ function BusyOverlay({ label }: { label: string }) {
     }} role="status" aria-live="polite">
       <style>{'@keyframes ss-spin { to { transform: rotate(360deg); } }'}</style>
       <div style={{ animation: 'ss-spin 1.2s linear infinite', lineHeight: 0 }}><Mark size={44} /></div>
-      <div style={{ fontSize: 14, color: 'var(--ss-text-2)' }}>{label}</div>
+      {scan.stage === 'upload' ? (
+        <>
+          <div style={{ fontSize: 14, color: 'var(--ss-text)' }}>
+            Uploading photo… {Math.round(scan.fraction * 100)}%
+          </div>
+          <div style={{ width: 200, height: 6, borderRadius: 3, background: 'var(--ss-surface-2)' }}>
+            <div style={{ width: `${Math.round(scan.fraction * 100)}%`, height: '100%',
+              borderRadius: 3, background: 'var(--ss-brand)', transition: 'width .2s' }} />
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 14, color: 'var(--ss-text)' }}>
+          Reading the receipt… {elapsed}s <span style={{ color: 'var(--ss-text-2)' }}>(usually 5–15s)</span>
+        </div>
+      )}
+      {onCancel && <button type="button" className="btn sm" onClick={onCancel}>Cancel</button>}
     </div>
   );
 }
@@ -261,17 +286,24 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [needsRate, setNeedsRate] = useState(false);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
-  const [scanBusy, setScanBusy] = useState(false);
+  const [scan, setScan] = useState<ScanStage | null>(null);
+  const scanAbort = useRef<AbortController | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const scanBusy = scan !== null;
 
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
 
   async function onScanFile(file: File) {
-    setScanBusy(true);
+    setScan({ stage: 'upload', fraction: 0 });
+    scanAbort.current = new AbortController();
     setError(null);
     try {
-      const r = await api.uploadReceipt(group.id, file);
+      const r = await api.uploadReceipt(group.id, file, {
+        onUploadProgress: (fraction) => setScan({ stage: 'upload', fraction }),
+        onUploaded: () => setScan({ stage: 'read', startedAt: Date.now() }),
+        signal: scanAbort.current.signal,
+      });
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -279,9 +311,11 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         setAssigning(r.parsed);
       }
     } catch (err) {
-      setError((err as Error).message);
+      if (!(err instanceof ApiFailure && err.error.code === 'CANCELED')) {
+        setError((err as Error).message);
+      }
     } finally {
-      setScanBusy(false);
+      setScan(null);
     }
   }
 
@@ -452,7 +486,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         <AssignItemsSheet parsed={assigning} group={group} members={group.members} user={user}
           onCancel={() => setAssigning(null)} onDone={applyAssignment} />
       )}
-      {scanBusy && <BusyOverlay label="Reading your receipt…" />}
+      {scan !== null && <BusyOverlay scan={scan} onCancel={() => scanAbort.current?.abort()} />}
     </Sheet>
   );
 }
@@ -472,9 +506,11 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
   const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
-  const [slipBusy, setSlipBusy] = useState(false);
+  const [slipScan, setSlipScan] = useState<ScanStage | null>(null);
+  const slipAbort = useRef<AbortController | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
   const slipInput = useRef<HTMLInputElement>(null);
+  const slipBusy = slipScan !== null;
 
   const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
   const billTotal = parsed.totalMinor
@@ -485,10 +521,15 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   /** Issue #9: the card slip carries the final total with tip — scan it,
    *  take the difference over the bill as the tip, prorate like tax. */
   async function onSlipFile(file: File) {
-    setSlipBusy(true);
+    setSlipScan({ stage: 'upload', fraction: 0 });
+    slipAbort.current = new AbortController();
     setSlipError(null);
     try {
-      const r = await api.uploadReceipt(group.id, file);
+      const r = await api.uploadReceipt(group.id, file, {
+        onUploadProgress: (fraction) => setSlipScan({ stage: 'upload', fraction }),
+        onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
+        signal: slipAbort.current.signal,
+      });
       const slipTotal = r.parsed?.totalMinor ?? null;
       if (slipTotal === null) {
         setSlipError('could not read a total on that slip — you can still adjust the amount after Continue');
@@ -501,9 +542,11 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       }
       setSlip({ tipMinor: tip, receiptId: r.id });
     } catch (err) {
-      setSlipError((err as Error).message);
+      if (!(err instanceof ApiFailure && err.error.code === 'CANCELED')) {
+        setSlipError((err as Error).message);
+      }
     } finally {
-      setSlipBusy(false);
+      setSlipScan(null);
     }
   }
   const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
@@ -614,7 +657,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         })}>
         Continue
       </button>
-      {slipBusy && <BusyOverlay label="Reading the card slip…" />}
+      {slipScan !== null && <BusyOverlay scan={slipScan} onCancel={() => slipAbort.current?.abort()} />}
     </Sheet>
   );
 }
