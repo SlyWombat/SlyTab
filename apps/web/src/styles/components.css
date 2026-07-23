@@ -44,11 +44,18 @@ button.row:hover { background: var(--ss-surface-2); }
 .btn.sm { line-height: 32px; padding: 0 var(--ss-space-3); font-size: 12px; border-radius: 9px; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.field { display: block; margin-bottom: var(--ss-space-3); }
+.field { display: block; margin-bottom: var(--ss-space-3); min-width: 0; }
 .field span { display: block; font-size: 11.5px; color: var(--ss-text-3); margin-bottom: 4px; }
 .field input, .field select, .field textarea { width: 100%; background: var(--ss-surface-2);
   border: 1px solid var(--ss-outline); border-radius: 10px; color: var(--ss-text);
-  font: 400 14px var(--ss-font-body); padding: 10px 12px; }
+  font: 400 14px var(--ss-font-body); padding: 10px 12px;
+  /* Own the rendering on iOS: native selects/date inputs ignore padding,
+     keep intrinsic widths, and overprint in flex rows (issue #11). */
+  appearance: none; -webkit-appearance: none; min-width: 0; min-height: 42px; }
+.field select { background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a94ad' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 30px; }
+.field input[type='date'] { display: block; }
+.field input[type='date']::-webkit-date-and-time-value { text-align: left; }
 .field input.amt { font-family: var(--ss-font-mono); font-variant-numeric: tabular-nums; }
 
 .error { background: color-mix(in srgb, var(--ss-danger) 12%, transparent);
