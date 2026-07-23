@@ -14,6 +14,7 @@ use SlyTab\Middleware\RequireAuth;
 use SlyTab\Services\ActivityService;
 use SlyTab\Services\AuthService;
 use SlyTab\Services\BalanceService;
+use SlyTab\Services\EmailVerificationService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
 use SlyTab\Services\GroupService;
@@ -44,6 +45,7 @@ final class Api
         $limiter = new RateLimiter($pdo);
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
+        $verifier = new EmailVerificationService($pdo, new Mailer());
 
         $ip = static fn(Request $rq): string =>
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
@@ -66,19 +68,25 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer,
+            $limiter, $resets, $ip, $importer, $verifier,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
 
             // ---- auth (public, rate-limited per client IP) ----
-            $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth, $limiter, $ip): Response {
+            $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth, $limiter, $ip, $verifier): Response {
                 $limiter->guard('auth', $ip($rq), 10, 60);
                 $b = Http::body($rq);
-                return Http::json($rs->withStatus(201), $auth->register(
+                $result = $auth->register(
                     Http::str($b, 'email'), Http::str($b, 'password'),
                     Http::str($b, 'displayName'), Http::str($b, 'deviceLabel', ''),
-                ));
+                );
+                try {
+                    $verifier->request($result['user']['id']); // issue #1: confirm the address
+                } catch (\Throwable $e) {
+                    error_log('verification email failed: ' . $e->getMessage());
+                }
+                return Http::json($rs->withStatus(201), $result);
             });
             $g->post('/auth/login', function (Request $rq, Response $rs) use ($auth, $limiter, $ip): Response {
                 $limiter->guard('auth', $ip($rq), 10, 60);
@@ -98,10 +106,14 @@ final class Api
                 $resets->reset(Http::str($b, 'token'), Http::str($b, 'password'));
                 return Http::json($rs, ['ok' => true]);
             });
+            $g->post('/auth/verify/{token}', function (Request $rq, Response $rs, array $a) use ($verifier): Response {
+                $verifier->verify($a['token']);
+                return Http::json($rs, ['ok' => true]);
+            });
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
@@ -115,6 +127,11 @@ final class Api
                 });
                 $p->patch('/me', fn(Request $rq, Response $rs): Response =>
                     Http::json($rs, $auth->updateProfile(Http::user($rq)['id'], Http::body($rq))));
+                $p->post('/me/verify-request', function (Request $rq, Response $rs) use ($verifier, $limiter): Response {
+                    $limiter->guard('verify', Http::user($rq)['id'], 5, 3600);
+                    $verifier->request(Http::user($rq)['id']);
+                    return Http::json($rs, ['ok' => true]);
+                });
                 $p->get('/me/sessions', fn(Request $rq, Response $rs): Response =>
                     Http::json($rs, ['items' => $auth->listSessions(Http::user($rq)['id'])]));
                 $p->delete('/me/sessions/{id}', function (Request $rq, Response $rs, array $a) use ($auth): Response {
@@ -152,7 +169,10 @@ final class Api
                 });
                 $p->post('/groups/{id}/invites', function (Request $rq, Response $rs, array $a) use ($groups): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
-                    $invite = $groups->createInvite($a['id'], Http::user($rq)['id']);
+                    $body = $rq->getParsedBody();
+                    $email = is_array($body) && is_string($body['email'] ?? null) && $body['email'] !== ''
+                        ? $body['email'] : null;
+                    $invite = $groups->createInvite($a['id'], Http::user($rq)['id'], $email);
                     return Http::json($rs->withStatus(201), $invite + ['path' => "/join/{$invite['token']}"]);
                 });
                 $p->post('/join/{token}', fn(Request $rq, Response $rs, array $a): Response =>

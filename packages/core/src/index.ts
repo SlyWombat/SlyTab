@@ -1,3 +1,4 @@
+export * from './currencies.js';
 export * from './money.js';
 export * from './split.js';
 export * from './balance.js';

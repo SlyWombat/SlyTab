@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { CURRENCIES, GROUP_EMOJI } from '@slytab/core';
 import { api, type HomeBalances, type User } from '../api';
 import { Amount, Badge, Mark, Sheet } from '../ui';
 
@@ -36,6 +37,17 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       </div>
 
       {error && <div className="error" role="alert">{error}</div>}
+
+      {user.emailVerifiedAt === null && (
+        <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
+          <div className="grow" style={{ fontSize: 13 }}>
+            Confirm your email — we sent a link to <b>{user.email}</b>.
+          </div>
+          <button className="btn sm" onClick={() => {
+            api.resendVerification().then(() => setError(null)).catch((e) => setError(e.message));
+          }}>Resend</button>
+        </div>
+      )}
 
       <div className="hero">
         <div className="cap">Your balance</div>
@@ -150,7 +162,9 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={80} />
         </label>
         <label className="field"><span>Default currency</span>
-          <input value={currency} onChange={(e) => setCurrency(e.target.value)} maxLength={3} pattern="[A-Za-z]{3}" />
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </label>
         <div className="sect" style={{ paddingLeft: 0 }}>How people pay you</div>
         <label className="field"><span>Interac e-Transfer email</span>
@@ -199,11 +213,21 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
         <label className="field"><span>Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} placeholder="Cottage Trip" />
         </label>
-        <label className="field"><span>Emoji (optional)</span>
-          <input value={emoji} onChange={(e) => setEmoji(e.target.value)} maxLength={4} placeholder="🏕️" />
-        </label>
+        <div className="field"><span>Emoji</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {GROUP_EMOJI.map((e) => (
+              <button type="button" key={e} onClick={() => setEmoji(e === emoji ? '' : e)}
+                style={{ fontSize: 20, padding: 4, background: 'none', borderRadius: 8,
+                  border: e === emoji ? '2px solid var(--ss-brand)' : '2px solid transparent' }}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="field"><span>Home currency</span>
-          <input value={currency} onChange={(e) => setCurrency(e.target.value)} maxLength={3} pattern="[A-Za-z]{3}" />
+          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </label>
         <button className="btn primary block">Create group</button>
       </form>

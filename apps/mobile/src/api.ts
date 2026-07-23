@@ -19,7 +19,8 @@ export class ApiFailure extends Error {
 }
 
 export interface User {
-  id: string; email: string; displayName: string; avatar: string;
+  id: string; email: string; emailVerifiedAt: string | null;
+  displayName: string; avatar: string;
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
 }
@@ -68,6 +69,36 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return json as T;
 }
 
+export interface ReceiptItem { name: string; quantity: number; totalMinor: number }
+export interface ParsedReceipt {
+  merchant: string | null; date: string | null; currency: string | null;
+  items: ReceiptItem[]; subtotalMinor: number | null; taxMinor: number | null;
+  tipMinor: number | null; totalMinor: number | null;
+  confidence: 'high' | 'medium' | 'low';
+}
+export interface ReceiptResult {
+  id: string; groupId: string; parsed: ParsedReceipt | null; parseError?: string;
+}
+
+export async function uploadReceipt(groupId: string, uri: string, mime: string): Promise<ReceiptResult> {
+  const fd = new FormData();
+  // React Native FormData file part: { uri, name, type }
+  fd.append('image', {
+    uri, name: `receipt.${mime === 'image/png' ? 'png' : 'jpg'}`, type: mime,
+  } as unknown as Blob);
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/groups/${groupId}/receipts`, { method: 'POST', headers, body: fd });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiFailure(
+      (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'upload failed' },
+      res.status,
+    );
+  }
+  return json as ReceiptResult;
+}
+
 export const api = {
   register: (email: string, password: string, displayName: string) =>
     req<{ token: string; user: User }>('POST', '/auth/register', {
@@ -82,8 +113,10 @@ export const api = {
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
   createGroup: (name: string, emoji: string, homeCurrency: string) =>
     req<Group>('POST', '/groups', { name, emoji, homeCurrency }),
-  createInvite: (groupId: string) =>
-    req<{ token: string; path: string }>('POST', `/groups/${groupId}/invites`),
+  createInvite: (groupId: string, email?: string) =>
+    req<{ token: string; path: string; emailed: boolean }>(
+      'POST', `/groups/${groupId}/invites`, email ? { email } : {}),
+  resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (inviteToken: string) => req<Group>('POST', `/join/${inviteToken}`),
   expenses: (groupId: string) =>
     req<{ items: Expense[]; nextCursor: string | null }>('GET', `/groups/${groupId}/expenses`),

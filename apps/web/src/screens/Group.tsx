@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { computeSplit } from '@slytab/core';
+import { computeSplit, CURRENCIES } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type Member, type ParsedReceipt, type User,
@@ -271,7 +271,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
               onChange={(e) => setAmountStr(e.target.value)} required />
           </label>
           <label className="field" style={{ flex: 1 }}><span>Currency</span>
-            <input value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} />
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </label>
         </div>
         {(needsRate || (currency.toUpperCase() !== group.homeCurrency && fxOverride !== '')) && (
@@ -475,13 +477,39 @@ function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
 function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => void }) {
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     api.createInvite(groupId).then((i) => {
       setLink(`${location.origin}${import.meta.env.BASE_URL}join/${i.token}`);
     });
   }, [groupId]);
+
+  async function sendEmail(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.createInvite(groupId, email);
+      setSent(email);
+      setEmail('');
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <Sheet title="Invite to group" onClose={onClose}>
+      {error && <div className="error" role="alert">{error}</div>}
+      {sent && <p className="muted" style={{ paddingBottom: 8 }}>Invitation emailed to {sent} ✓</p>}
+      <form onSubmit={sendEmail} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <label className="field" style={{ flex: 1, marginBottom: 8 }}><span>Invite by email</span>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            placeholder="them@example.com" required />
+        </label>
+        <button className="btn primary" style={{ marginBottom: 8 }}>Send</button>
+      </form>
+      <div className="sect" style={{ paddingLeft: 0 }}>Or share the link</div>
       {link === null ? <p className="muted">Creating link…</p> : (
         <>
           <p style={{ fontSize: 13, wordBreak: 'break-all', background: 'var(--ss-surface-2)', padding: 12, borderRadius: 10 }}>{link}</p>

@@ -74,7 +74,7 @@ final class AuthService
     public function verifyToken(string $token): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT s.id AS session_id, s.expires_at, s.revoked_at, u.id, u.email, u.display_name,
+            'SELECT s.id AS session_id, s.expires_at, s.revoked_at, u.id, u.email, u.email_verified_at, u.display_name,
                     u.avatar, u.default_currency, u.payment_handles, u.deleted_at
              FROM sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = ?',
@@ -134,7 +134,7 @@ final class AuthService
     public function userById(string $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, display_name, avatar, default_currency, payment_handles
+            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles
              FROM users WHERE id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$id]);
@@ -245,6 +245,7 @@ final class AuthService
         return [
             'id' => $row['id'],
             'email' => $row['email'],
+            'emailVerifiedAt' => $row['email_verified_at'] ?? null,
             'displayName' => $row['display_name'],
             'avatar' => $row['avatar'],
             'defaultCurrency' => $row['default_currency'],

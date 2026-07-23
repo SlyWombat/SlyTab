@@ -4,10 +4,12 @@ import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import { computeSplit, formatMinor, tokens } from '@slytab/core';
+import * as ImagePicker from 'expo-image-picker';
+import { computeSplit, CURRENCIES, formatMinor, GROUP_EMOJI, tokens } from '@slytab/core';
 import {
-  api, setToken,
-  type Balances, type Expense, type Group, type HomeBalances, type Member, type User,
+  api, setToken, uploadReceipt,
+  type Balances, type Expense, type Group, type HomeBalances, type Member,
+  type ParsedReceipt, type User,
 } from './src/api';
 
 const c = tokens.color.dark;
@@ -69,13 +71,18 @@ function SheetModal({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode;
 }) {
   return (
-    <Modal transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.sheetBack} onPress={onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Modal transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={{ flex: 1, justifyContent: 'flex-end' }}
+      >
+        <Pressable style={s.sheetBack} onPress={onClose} />
         <View style={s.sheet}>
           <View style={s.grabber} />
           <Text style={s.sheetTitle}>{title}</Text>
-          <ScrollView keyboardShouldPersistTaps="handled">{children}</ScrollView>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+            {children}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -183,6 +190,15 @@ function HomeScreen({ user, onOpenGroup, onSignOut }: {
       </View>
       {error && <Text style={s.error}>{error}</Text>}
 
+      {user.emailVerifiedAt === null && (
+        <View style={[s.row, { borderColor: c.owe }]}>
+          <Text style={[s.body, { flex: 1, fontSize: 12.5 }]}>
+            Confirm your email — we sent a link to {user.email}
+          </Text>
+          <Btn small label="Resend" onPress={() => api.resendVerification().catch(() => {})} />
+        </View>
+      )}
+
       <View style={s.hero}>
         <Text style={s.cap}>YOUR BALANCE</Text>
         {data === null ? <ActivityIndicator color={c.brand} /> : total === 0
@@ -243,9 +259,26 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
     <SheetModal title="New group" onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label="Name" value={name} onChangeText={setName} placeholder="Cottage Trip" />
-      <Field label="Emoji (optional)" value={emoji} onChangeText={setEmoji} placeholder="🏕️" />
-      <Field label="Home currency" value={currency} onChangeText={setCurrency}
-        autoCapitalize="characters" maxLength={3} />
+      <Text style={s.fieldLabel}>Emoji</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {GROUP_EMOJI.map((e) => (
+          <Pressable key={e} onPress={() => setEmoji(e === emoji ? '' : e)}
+            style={{ padding: 5, borderRadius: 8, borderWidth: 2,
+              borderColor: e === emoji ? c.brand : 'transparent' }}>
+            <Text style={{ fontSize: 20 }}>{e}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={s.fieldLabel}>Home currency</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+        {CURRENCIES.map((cur) => (
+          <Pressable key={cur} onPress={() => setCurrency(cur)}
+            style={{ paddingVertical: 6, paddingHorizontal: 12, marginRight: 6, borderRadius: 14,
+              backgroundColor: cur === currency ? c.brand : c.surface2 }}>
+            <Text style={{ color: cur === currency ? '#fff' : c.text2, fontWeight: '600', fontSize: 13 }}>{cur}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       <Btn primary label="Create group" disabled={name.trim() === ''}
         onPress={() => api.createGroup(name, emoji, currency.toUpperCase())
           .then((g) => onCreated(g.id)).catch((e) => setError(e.message))} />
@@ -318,11 +351,18 @@ function GroupScreen({ groupId, user, onBack }: {
                 <View style={{ flex: 1 }}>
                   <Text style={s.rowName}>{e.description}</Text>
                   <Text style={s.meta}>
-                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate}
+                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid{' '}
+                    {formatMinor(e.amountMinor, e.currency)} · {e.expenseDate}
                   </Text>
                 </View>
-                {effect === 0 ? <Text style={s.meta}>not involved</Text>
-                  : <Amount minor={effect} currency={e.currency} signed />}
+                <View style={{ alignItems: 'flex-end' }}>
+                  {effect === 0 ? <Text style={s.meta}>not involved</Text> : (
+                    <>
+                      <Amount minor={effect} currency={e.currency} signed />
+                      <Text style={s.meta}>{effect > 0 ? 'you lent' : 'you borrowed'}</Text>
+                    </>
+                  )}
+                </View>
               </View>
             );
           }}
@@ -360,12 +400,7 @@ function GroupScreen({ groupId, user, onBack }: {
             .then((i) => setInviteLink(`https://electricrv.ca/slytab/join/${i.token}`))} />
       </View>
       {inviteLink && (
-        <SheetModal title="Invite to group" onClose={() => setInviteLink(null)}>
-          <Text style={[s.body, { padding: 10, backgroundColor: c.surface2, borderRadius: 10 }]} selectable>
-            {inviteLink}
-          </Text>
-          <Text style={s.meta}>Anyone with this link can join for 7 days. Long-press to copy.</Text>
-        </SheetModal>
+        <InviteSheet group={group} link={inviteLink} onClose={() => setInviteLink(null)} />
       )}
 
       {group.archivedAt === null && (
@@ -387,6 +422,29 @@ function GroupScreen({ groupId, user, onBack }: {
   );
 }
 
+function InviteSheet({ group, link, onClose }: { group: Group; link: string; onClose: () => void }) {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <SheetModal title="Invite to group" onClose={onClose}>
+      {error && <Text style={s.error}>{error}</Text>}
+      {sent && <Text style={[s.meta, { marginBottom: 8 }]}>Invitation emailed to {sent} ✓</Text>}
+      <Field label="Invite by email" value={email} onChangeText={setEmail}
+        autoCapitalize="none" keyboardType="email-address" placeholder="them@example.com" />
+      <Btn primary label="Send email invite" disabled={email.trim() === ''}
+        onPress={() => api.createInvite(group.id, email.trim())
+          .then(() => { setSent(email.trim()); setEmail(''); setError(null); })
+          .catch((e) => setError(e.message))} />
+      <Text style={s.cap}>OR SHARE THE LINK</Text>
+      <Text style={[s.body, { padding: 10, backgroundColor: c.surface2, borderRadius: 10 }]} selectable>
+        {link}
+      </Text>
+      <Text style={s.meta}>Anyone with this link can join for 7 days. Long-press to copy.</Text>
+    </SheetModal>
+  );
+}
+
 function AddExpenseSheet({ group, user, onClose, onSaved }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
 }) {
@@ -394,13 +452,47 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
   const [amountStr, setAmountStr] = useState('');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
+  const [receiptId, setReceiptId] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
+  const [exactShares, setExactShares] = useState<Record<string, number> | null>(null);
+  const [currency, setCurrency] = useState(group.homeCurrency);
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const amountMinor = Math.round((parseFloat(amountStr) || 0) * 100);
 
   const shares = useMemo(() => {
+    if (exactShares !== null) return exactShares;
     const ids = group.members.filter((m) => included.has(m.id)).map((m) => ({ id: m.id }));
     if (ids.length === 0 || amountMinor <= 0) return null;
     try { return computeSplit('equal', amountMinor, ids); } catch { return null; }
-  }, [group.members, included, amountMinor]);
+  }, [exactShares, group.members, included, amountMinor]);
+
+  async function scan(fromCamera: boolean) {
+    setError(null);
+    try {
+      if (fromCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) { setError('camera permission is needed to scan receipts'); return; }
+      }
+      const result = fromCamera
+        ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+      const asset = result.assets?.[0];
+      if (result.canceled || !asset) return;
+      setScanBusy(true);
+      const r = await uploadReceipt(group.id, asset.uri, asset.mimeType ?? 'image/jpeg');
+      setReceiptId(r.id);
+      if (r.parsed === null) {
+        setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
+      } else {
+        setAssigning(r.parsed);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setScanBusy(false);
+    }
+  }
 
   async function save() {
     if (shares === null) return;
@@ -409,12 +501,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
       await api.addExpense(group.id, {
         description: description.trim(),
         amountMinor,
-        currency: group.homeCurrency,
-        expenseDate: new Date().toISOString().slice(0, 10),
+        currency,
+        expenseDate: date,
         category: 'other',
-        splitMethod: 'equal',
+        splitMethod: exactShares !== null ? 'exact' : 'equal',
         payers: [{ userId: user.id, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
+        ...(receiptId !== null ? { receiptId } : {}),
       });
       onSaved();
     } catch (e) {
@@ -425,29 +518,167 @@ function AddExpenseSheet({ group, user, onClose, onSaved }: {
   return (
     <SheetModal title="New expense" onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
-      <Field label={`Amount (${group.homeCurrency})`} value={amountStr}
-        onChangeText={setAmountStr} keyboardType="decimal-pad" placeholder="0.00" />
+      <Field label={`Amount (${currency})`} value={amountStr}
+        onChangeText={(v) => { setAmountStr(v); setExactShares(null); }}
+        keyboardType="decimal-pad" placeholder="0.00" />
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
-      <Text style={s.fieldLabel}>Split equally between</Text>
-      {group.members.map((m) => {
-        const on = included.has(m.id);
-        return (
-          <Pressable key={m.id} style={s.checkRow}
-            onPress={() => {
-              const next = new Set(included);
-              on ? next.delete(m.id) : next.add(m.id);
-              setIncluded(next);
-            }}>
-            <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
-            <Badge id={m.id} name={m.displayName} size={22} />
-            <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-            <Text style={s.meta}>{on && shares?.[m.id] !== undefined ? (shares[m.id]! / 100).toFixed(2) : '—'}</Text>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+        <View style={{ flex: 1 }}>
+          <Btn label={scanBusy ? 'Reading…' : receiptId ? 'Rescan receipt' : '📷 Scan receipt'}
+            disabled={scanBusy} onPress={() => void scan(true)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Btn label="Photo library" disabled={scanBusy} onPress={() => void scan(false)} />
+        </View>
+      </View>
+      {exactShares !== null ? (
+        <>
+          <Text style={s.fieldLabel}>Split from receipt</Text>
+          {Object.entries(exactShares).map(([uid, v]) => {
+            const m = group.members.find((mm) => mm.id === uid);
+            return (
+              <View key={uid} style={s.checkRow}>
+                <Badge id={uid} name={m?.displayName ?? '?'} size={22} />
+                <Text style={[s.body, { flex: 1 }]}>{uid === user.id ? 'You' : m?.displayName ?? 'Member'}</Text>
+                <Text style={s.meta}>{(v / 100).toFixed(2)}</Text>
+              </View>
+            );
+          })}
+          <Pressable onPress={() => setExactShares(null)}>
+            <Text style={s.link}>Clear and split equally instead</Text>
           </Pressable>
-        );
-      })}
+        </>
+      ) : (
+        <>
+          <Text style={s.fieldLabel}>Split equally between</Text>
+          {group.members.map((m) => {
+            const on = included.has(m.id);
+            return (
+              <Pressable key={m.id} style={s.checkRow}
+                onPress={() => {
+                  const next = new Set(included);
+                  on ? next.delete(m.id) : next.add(m.id);
+                  setIncluded(next);
+                }}>
+                <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
+                <Badge id={m.id} name={m.displayName} size={22} />
+                <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
+                <Text style={s.meta}>{on && shares?.[m.id] !== undefined ? (shares[m.id]! / 100).toFixed(2) : '—'}</Text>
+              </Pressable>
+            );
+          })}
+        </>
+      )}
       <Btn primary label="Save expense"
         disabled={amountMinor <= 0 || description.trim() === '' || shares === null}
         onPress={save} />
+      {assigning !== null && (
+        <AssignItemsSheet parsed={assigning} members={group.members} user={user}
+          onCancel={() => setAssigning(null)}
+          onDone={(r) => {
+            setAssigning(null);
+            setAmountStr((r.totalMinor / 100).toFixed(2));
+            if (r.merchant) setDescription(r.merchant);
+            if (r.currency && CURRENCIES.includes(r.currency as never)) setCurrency(r.currency);
+            if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setDate(r.date);
+            setExactShares(r.shares);
+          }} />
+      )}
+    </SheetModal>
+  );
+}
+
+// ---- Receipt item assignment (mobile port of the web sheet) ----
+
+function AssignItemsSheet({ parsed, members, user, onCancel, onDone }: {
+  parsed: ParsedReceipt;
+  members: Member[];
+  user: User;
+  onCancel: () => void;
+  onDone: (r: {
+    totalMinor: number; currency: string | null; merchant: string | null;
+    date: string | null; shares: Record<string, number>;
+  }) => void;
+}) {
+  const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+  const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
+  const totalMinor = parsed.totalMinor ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
+  const extra = totalMinor - itemsSum;
+  const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
+
+  const perMember = useMemo(() => {
+    const out: Record<string, number> = {};
+    parsed.items.forEach((item, i) => {
+      const who = [...(assign[i] ?? [])].sort();
+      if (who.length === 0) return;
+      const split = computeSplit('equal', item.totalMinor, who.map((id) => ({ id })));
+      for (const [id, v] of Object.entries(split)) out[id] = (out[id] ?? 0) + v;
+    });
+    if (extra !== 0 && Object.keys(out).length > 0) {
+      const weights = Object.entries(out).filter(([, v]) => v > 0)
+        .map(([id, v]) => ({ id, shares: v }));
+      if (weights.length > 0) {
+        const prorated = computeSplit('shares', Math.abs(extra), weights);
+        for (const [id, v] of Object.entries(prorated)) out[id] = (out[id] ?? 0) + (extra > 0 ? v : -v);
+      }
+    }
+    return out;
+  }, [assign, parsed.items, extra]);
+
+  return (
+    <SheetModal title="Assign items" onClose={onCancel}>
+      <Text style={[s.meta, { marginBottom: 8 }]}>
+        {parsed.merchant ?? 'Receipt'} · total {(totalMinor / 100).toFixed(2)}
+        {parsed.currency ? ` ${parsed.currency}` : ''}
+        {extra !== 0 ? ` (incl. ${(extra / 100).toFixed(2)} tax/tip, prorated)` : ''}
+      </Text>
+      {parsed.items.map((item, i) => (
+        <View key={i} style={[s.row, { flexWrap: 'wrap' }]}>
+          <View style={{ flex: 1, minWidth: 120 }}>
+            <Text style={s.rowName}>{item.name}</Text>
+            <Text style={s.meta}>{item.quantity !== 1 ? `${item.quantity} × ` : ''}{(item.totalMinor / 100).toFixed(2)}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 4 }}>
+            {members.map((m) => {
+              const on = assign[i]?.has(m.id) ?? false;
+              return (
+                <Pressable key={m.id}
+                  onPress={() => setAssign((prev) => {
+                    const next = { ...prev };
+                    const set = new Set(next[i] ?? []);
+                    set.has(m.id) ? set.delete(m.id) : set.add(m.id);
+                    next[i] = set;
+                    return next;
+                  })}
+                  style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
+                    borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
+                  <Badge id={m.id} name={m.displayName} size={22} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ))}
+      {!allAssigned && (
+        <Btn label="Split the rest equally"
+          onPress={() => setAssign((prev) => {
+            const next = { ...prev };
+            parsed.items.forEach((_, i) => {
+              if ((next[i]?.size ?? 0) === 0) next[i] = new Set(members.map((m) => m.id));
+            });
+            return next;
+          })} />
+      )}
+      <Text style={[s.meta, { marginVertical: 8 }]}>
+        {members.filter((m) => (perMember[m.id] ?? 0) !== 0)
+          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${((perMember[m.id] ?? 0) / 100).toFixed(2)}`)
+          .join(' · ') || 'Tap the badges to assign each item.'}
+      </Text>
+      <Btn primary label="Continue" disabled={!allAssigned}
+        onPress={() => onDone({
+          totalMinor, currency: parsed.currency, merchant: parsed.merchant,
+          date: parsed.date, shares: perMember,
+        })} />
     </SheetModal>
   );
 }
@@ -542,7 +773,7 @@ const s = StyleSheet.create({
   tabOn: { backgroundColor: c.surface },
   tabText: { color: c.text2, fontWeight: '600', fontSize: 13 },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
-  sheetBack: { flex: 1, backgroundColor: 'rgba(4,7,14,0.62)' },
+  sheetBack: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(4,7,14,0.62)' },
   sheet: {
     backgroundColor: c.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
     padding: 16, maxHeight: '88%',

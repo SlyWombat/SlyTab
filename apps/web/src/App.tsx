@@ -19,6 +19,12 @@ function pendingResetToken(): string | null {
   return m?.[1] ?? null;
 }
 
+/** Pull an email-verification token from /verify/<token> URLs. */
+function pendingVerifyToken(): string | null {
+  const m = location.pathname.match(/\/verify\/([a-f0-9]{64})$/);
+  return m?.[1] ?? null;
+}
+
 function ResetScreen({ token, onDone }: { token: string; onDone: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +70,19 @@ export function App() {
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
   const [joinToken, setJoinToken] = useState<string | null>(pendingJoinToken);
   const [resetToken, setResetToken] = useState<string | null>(pendingResetToken);
+  const [verifyState, setVerifyState] = useState<'pending' | 'done' | 'failed' | null>(
+    pendingVerifyToken() === null ? null : 'pending',
+  );
+
+  // Confirm the email address from /verify/<token> links.
+  useEffect(() => {
+    const token = pendingVerifyToken();
+    if (token === null) return;
+    api.verifyEmail(token)
+      .then(() => setVerifyState('done'))
+      .catch(() => setVerifyState('failed'))
+      .finally(() => history.replaceState(null, '', import.meta.env.BASE_URL));
+  }, []);
 
   // Restore the session on load.
   useEffect(() => {
@@ -90,6 +109,23 @@ export function App() {
   }, [user, joinToken]);
 
   if (!checked) return null;
+
+  if (verifyState === 'pending') {
+    return <div className="center"><p className="muted">Confirming your email…</p></div>;
+  }
+  if (verifyState === 'done' || verifyState === 'failed') {
+    return (
+      <div className="center">
+        <Mark size={48} />
+        <p style={{ color: 'var(--ss-text-2)' }}>
+          {verifyState === 'done'
+            ? 'Email confirmed ✓ — you can close this tab or continue below.'
+            : 'This confirmation link has expired — sign in and use "Resend" to get a new one.'}
+        </p>
+        <button className="btn primary" onClick={() => setVerifyState(null)}>Continue</button>
+      </div>
+    );
+  }
 
   if (resetToken !== null) {
     return (

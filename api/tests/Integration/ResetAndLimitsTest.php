@@ -130,6 +130,55 @@ final class ResetAndLimitsTest extends TestCase
         ])->getStatusCode());
     }
 
+    public function testEmailVerificationFlow(): void
+    {
+        $r = self::json($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'verify-me@example.com', 'password' => 'a-long-enough-password', 'displayName' => 'V',
+        ]));
+        self::assertNull($r['user']['emailVerifiedAt']);
+
+        $mailer = new CapturingMailer();
+        (new \SlyTab\Services\EmailVerificationService(Db::pdo(), $mailer))->request($r['user']['id']);
+        self::assertCount(1, $mailer->sent);
+        self::assertSame(1, preg_match('#/verify/([a-f0-9]{64})#', $mailer->sent[0]['body'], $m));
+
+        $res = $this->request('POST', "/api/v1/auth/verify/{$m[1]}");
+        self::assertSame(200, $res->getStatusCode(), (string) $res->getBody());
+
+        $me = self::json($this->request('GET', '/api/v1/me', null, $r['token']));
+        self::assertNotNull($me['emailVerifiedAt']);
+
+        // Tokens are single-use.
+        self::assertSame(410, $this->request('POST', "/api/v1/auth/verify/{$m[1]}")->getStatusCode());
+    }
+
+    public function testEmailInviteSendsAJoinableLink(): void
+    {
+        $owner = self::json($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'owner@example.com', 'password' => 'a-long-enough-password', 'displayName' => 'Owner',
+        ]));
+        $guest = self::json($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'guest@example.com', 'password' => 'a-long-enough-password', 'displayName' => 'Guest',
+        ]));
+        $group = self::json($this->request('POST', '/api/v1/groups', [
+            'name' => 'Email Invites', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $owner['token']));
+
+        $mailer = new CapturingMailer();
+        $pdo = Db::pdo();
+        $groups = new \SlyTab\Services\GroupService($pdo, new \SlyTab\Services\ActivityService($pdo), $mailer);
+        $invite = $groups->createInvite($group['id'], $owner['user']['id'], 'Friend@Example.com');
+        self::assertTrue($invite['emailed']);
+        self::assertCount(1, $mailer->sent);
+        self::assertSame('friend@example.com', $mailer->sent[0]['to']);
+        self::assertStringContainsString('Owner invited you to "Email Invites"', $mailer->sent[0]['subject']);
+        self::assertSame(1, preg_match('#/join/([a-f0-9]{32})#', $mailer->sent[0]['body'], $m));
+
+        $res = $this->request('POST', "/api/v1/join/{$m[1]}", [], $guest['token']);
+        self::assertSame(200, $res->getStatusCode(), (string) $res->getBody());
+        self::assertCount(2, self::json($res)['members']);
+    }
+
     public function testAdminEndpointsRequireToken(): void
     {
         self::assertSame(403, $this->request('POST', '/api/internal/migrate')->getStatusCode());

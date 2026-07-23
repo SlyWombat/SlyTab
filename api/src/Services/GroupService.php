@@ -19,6 +19,7 @@ final class GroupService
     public function __construct(
         private readonly PDO $pdo,
         private readonly ActivityService $activity,
+        private readonly Mailer $mailer = new Mailer(),
     ) {}
 
     /** @return array<string,mixed> */
@@ -118,16 +119,43 @@ final class GroupService
         }
     }
 
-    /** @return array{token:string, expiresAt:string} */
-    public function createInvite(string $groupId, string $userId): array
+    /**
+     * Mint an invite link; when $email is given, also send it as an email
+     * invitation from the inviter (issue #1 item 4).
+     *
+     * @return array{token:string, expiresAt:string, emailed:bool}
+     */
+    public function createInvite(string $groupId, string $userId, ?string $email = null): array
     {
         $this->assertWritable($groupId);
+        if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new ApiException('VALIDATION', 'a valid email address is required');
+        }
         $token = bin2hex(random_bytes(16));
         $expires = gmdate('Y-m-d H:i:s', time() + self::INVITE_DAYS * 86400);
         $this->pdo->prepare(
             'INSERT INTO invites (id, group_id, token_hash, created_by, expires_at) VALUES (?, ?, ?, ?, ?)',
         )->execute([Ulid::generate(), $groupId, self::hashInvite($token), $userId, $expires]);
-        return ['token' => $token, 'expiresAt' => $expires];
+
+        if ($email !== null) {
+            $group = $this->get($groupId);
+            $inviter = 'A SlyTab member';
+            foreach ($group['members'] as $m) {
+                if ($m['id'] === $userId) {
+                    $inviter = $m['displayName'];
+                }
+            }
+            $base = Env::get('APP_URL', 'https://electricrv.ca/slytab');
+            $this->mailer->send(
+                strtolower(trim($email)),
+                "{$inviter} invited you to \"{$group['name']}\" on SlyTab",
+                "{$inviter} wants to split expenses with you in \"{$group['name']}\".\n\n"
+                . "Join here (link works for 7 days):\n\n{$base}/join/{$token}\n\n"
+                . "SlyTab is the private expense splitter at {$base} - free, no ads,\n"
+                . "no tracking.\n",
+            );
+        }
+        return ['token' => $token, 'expiresAt' => $expires, 'emailed' => $email !== null];
     }
 
     /** @return array<string,mixed> the joined group */

@@ -21,6 +21,7 @@ export class ApiFailure extends Error {
 export interface User {
   id: string;
   email: string;
+  emailVerifiedAt: string | null;
   displayName: string;
   avatar: string;
   defaultCurrency: string;
@@ -195,8 +196,11 @@ export const api = {
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
   createGroup: (name: string, emoji: string, homeCurrency: string) =>
     req<Group>('POST', '/groups', { name, emoji, homeCurrency }),
-  createInvite: (groupId: string) =>
-    req<{ token: string; expiresAt: string; path: string }>('POST', `/groups/${groupId}/invites`),
+  createInvite: (groupId: string, email?: string) =>
+    req<{ token: string; expiresAt: string; path: string; emailed: boolean }>(
+      'POST', `/groups/${groupId}/invites`, email ? { email } : {}),
+  verifyEmail: (token: string) => req<{ ok: true }>('POST', `/auth/verify/${token}`),
+  resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (token: string) => req<Group>('POST', `/join/${token}`),
 
   expenses: (groupId: string, cursor?: string) =>
