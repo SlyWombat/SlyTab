@@ -394,7 +394,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           </View>
         </View>
       )}
-      <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>{user.email}</Text>
+      <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>Account: {user.email}</Text>
     </SheetModal>
   );
 }

@@ -221,7 +221,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </div>
       )}
       <p className="muted" style={{ textAlign: 'center', paddingTop: 10 }}>
-        {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>
+        Account: {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>
       </p>
     </Sheet>
   );
