@@ -12,6 +12,7 @@ use SlyTab\Db\Db;
 use SlyTab\Db\Migrator;
 use SlyTab\Middleware\RequireAuth;
 use SlyTab\Services\ActivityService;
+use SlyTab\Services\AppleAuthService;
 use SlyTab\Services\AuthService;
 use SlyTab\Services\BalanceService;
 use SlyTab\Services\EmailVerificationService;
@@ -50,6 +51,7 @@ final class Api
         $swApi = new SplitwiseApiImportService($pdo, $groups, $expenses, $activity);
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
+        $apple = new AppleAuthService($pdo, $auth);
 
         $ip = static fn(Request $rq): string =>
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
@@ -82,7 +84,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google, $swApi,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -131,6 +133,15 @@ final class Api
                 $b = Http::body($rq);
                 return Http::json($rs, $google->signIn(
                     Http::str($b, 'idToken'), Http::str($b, 'deviceLabel', ''),
+                ));
+            });
+            $g->get('/auth/apple/config', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, ['enabled' => $apple->enabled(), 'clientId' => $apple->clientId()]));
+            $g->post('/auth/apple', function (Request $rq, Response $rs) use ($apple, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
+                $b = Http::body($rq);
+                return Http::json($rs, $apple->signIn(
+                    Http::str($b, 'idToken'), Http::str($b, 'deviceLabel', ''), Http::str($b, 'displayName', ''),
                 ));
             });
 
