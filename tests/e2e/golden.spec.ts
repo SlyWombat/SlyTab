@@ -19,7 +19,7 @@ test('sign up, create group, add expense, check balances, save profile', async (
 
   // --- create a group ---
   await page.getByRole('button', { name: 'New group' }).click();
-  await page.getByLabel('Name').fill('Cottage E2E');
+  await page.getByLabel('Name', { exact: true }).fill('Cottage E2E');
   await page.getByRole('button', { name: 'Create group' }).click();
   await expect(page.getByRole('heading', { name: 'Cottage E2E' })).toBeVisible();
 
