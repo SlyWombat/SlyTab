@@ -533,6 +533,11 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           ))}
         </>
       )}
+      {/* Issue #27: the phone apps, for people using the web app. */}
+      <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
+        href={`${import.meta.env.BASE_URL}marketing/apps/`} target="_blank" rel="noreferrer">
+        📱 Get the phone apps
+      </a>
       <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
       {!deleting ? (

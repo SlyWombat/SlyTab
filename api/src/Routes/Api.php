@@ -69,6 +69,23 @@ final class Api
                 $rs->getBody()->write(file_get_contents($img['path']));
                 return $rs->withHeader('Content-Type', $img['mime']);
             });
+            // Issue #25: link a report to its GitHub issue / close + email reporter.
+            $g->patch('/bugs/{id}', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
+                $bugs->linkIssue($a['id'], (int) Http::str(Http::body($rq), 'issueNumber'));
+                return Http::json($rs, ['ok' => true]);
+            });
+            $g->post('/bugs/{id}/notify-closed', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
+                $resolution = (string) (($rq->getParsedBody() ?? [])['resolution'] ?? '');
+                return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution));
+            });
+            // Owner status mails and other one-off sends (admin-token only).
+            $g->post('/send-mail', function (Request $rq, Response $rs): Response {
+                $b = Http::body($rq);
+                $accepted = (new Mailer())->dispatch(
+                    Http::str($b, 'to'), Http::str($b, 'subject'), Http::str($b, 'body'),
+                );
+                return Http::json($rs, ['accepted' => $accepted]);
+            });
             $g->post('/migrate', function (Request $rq, Response $rs) use ($pdo): Response {
                 $ran = (new Migrator($pdo))->migrate();
                 return Http::json($rs, ['applied' => $ran]);

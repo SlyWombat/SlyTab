@@ -62,11 +62,12 @@ final class BugReportService
             'INSERT INTO bug_reports (id, user_id, message, context, image_path) VALUES (?, ?, ?, ?, ?)',
         )->execute([$id, $userId, $message, $context === '' ? null : $context, $imagePath]);
 
+        $user = $this->pdo->prepare('SELECT display_name, email FROM users WHERE id = ?');
+        $user->execute([$userId]);
+        $u = $user->fetch() ?: ['display_name' => 'unknown', 'email' => 'unknown'];
+
         $notify = Env::get('BUG_REPORT_EMAIL');
         if ($notify !== '') {
-            $user = $this->pdo->prepare('SELECT display_name, email FROM users WHERE id = ?');
-            $user->execute([$userId]);
-            $u = $user->fetch() ?: ['display_name' => 'unknown', 'email' => 'unknown'];
             $this->mailer->dispatch(
                 $notify,
                 "SlyTab bug report from {$u['display_name']}",
@@ -77,7 +78,57 @@ final class BugReportService
             );
         }
 
+        // Issue #25: the reporter hears back immediately…
+        $this->mailer->dispatch(
+            $u['email'],
+            'SlyTab got your bug report',
+            "Hi {$u['display_name']},\n\n"
+            . "Thanks — your report is in and a human (and their robot) will look at it:\n\n"
+            . "> {$message}\n\n"
+            . "We'll email you again when it's resolved.\n\n— SlyTab",
+        );
+
         return ['id' => $id, 'status' => 'new'];
+    }
+
+    /** Issue #25: remember which GitHub issue tracks this report. */
+    public function linkIssue(string $bugId, int $issueNumber): void
+    {
+        $this->pdo->prepare('UPDATE bug_reports SET issue_number = ? WHERE id = ?')
+            ->execute([$issueNumber, $bugId]);
+    }
+
+    /**
+     * Issue #25: …and hears back again when the issue closes. Marks the
+     * report closed; safe to call once per report.
+     */
+    public function closeAndNotify(string $bugId, string $resolution = ''): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT b.message, b.status, b.issue_number, u.display_name, u.email
+             FROM bug_reports b JOIN users u ON u.id = b.user_id WHERE b.id = ?',
+        );
+        $stmt->execute([$bugId]);
+        $r = $stmt->fetch();
+        if (!$r) {
+            throw new ApiException('NOT_FOUND', 'bug report not found', 404);
+        }
+        if ($r['status'] !== 'closed') {
+            $this->pdo->prepare("UPDATE bug_reports SET status = 'closed' WHERE id = ?")->execute([$bugId]);
+            $issue = $r['issue_number'] !== null
+                ? " (issue #{$r['issue_number']}, https://github.com/SlyWombat/SlyTab/issues/{$r['issue_number']})"
+                : '';
+            $this->mailer->dispatch(
+                $r['email'],
+                'Your SlyTab bug report is resolved',
+                "Hi {$r['display_name']},\n\n"
+                . "The bug you reported is resolved{$issue}:\n\n"
+                . "> {$r['message']}\n\n"
+                . ($resolution !== '' ? "{$resolution}\n\n" : '')
+                . "Thanks for helping make SlyTab better.\n\n— SlyTab",
+            );
+        }
+        return ['id' => $bugId, 'status' => 'closed'];
     }
 
     /** Newest-first listing for the internal review endpoint. @return array<int,array<string,mixed>> */
@@ -85,7 +136,7 @@ final class BugReportService
     {
         $stmt = $this->pdo->prepare(
             'SELECT b.id, b.message, b.context, b.image_path IS NOT NULL AS has_image, b.status,
-                    b.created_at, u.display_name, u.email
+                    b.issue_number, b.created_at, u.display_name, u.email
              FROM bug_reports b JOIN users u ON u.id = b.user_id
              ORDER BY b.created_at DESC LIMIT ?',
         );
@@ -98,6 +149,7 @@ final class BugReportService
             'context' => $r['context'],
             'hasImage' => (bool) $r['has_image'],
             'status' => $r['status'],
+            'issueNumber' => $r['issue_number'] === null ? null : (int) $r['issue_number'],
             'createdAt' => $r['created_at'],
         ], $stmt->fetchAll());
     }

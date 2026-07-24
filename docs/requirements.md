@@ -170,6 +170,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   images) and reviewable together via the token-guarded internal API;
   the owner is notified by email when configured (`BUG_REPORT_EMAIL`).
   Rate-limited (10/day/user) like other upload endpoints.
+- **FR-10.2 (MUST)** The reporter is kept in the loop by email (issue
+  #25): an acknowledgment when the report lands, and a resolution note
+  when the tracking issue closes (reports carry their GitHub issue
+  number; the close notification includes the issue link).
 
 ## 3. Non-functional requirements
 

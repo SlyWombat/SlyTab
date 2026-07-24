@@ -137,6 +137,26 @@ export interface HomeBalances {
   };
 }
 
+/**
+ * Issue #26: sessions labeled just "web" were indistinguishable in the
+ * profile's device list — name the browser and OS so "logged in twice"
+ * reads as what it is.
+ */
+function deviceLabel(): string {
+  const ua = navigator.userAgent;
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /OPR\//.test(ua) ? 'Opera'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const os = /Android/.test(ua) ? 'Android'
+    : /iPhone|iPad/.test(ua) ? 'iOS'
+    : /Mac OS X/.test(ua) ? 'macOS'
+    : /Windows/.test(ua) ? 'Windows'
+    : /Linux/.test(ua) ? 'Linux' : 'web';
+  return `${browser} on ${os}`;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -286,10 +306,10 @@ export async function shrinkImage(file: File, maxDim = 1600): Promise<{ blob: Bl
 export const api = {
   register: (email: string, password: string, displayName: string) =>
     req<{ token: string; user: User }>('POST', '/auth/register', {
-      email, password, displayName, deviceLabel: 'web',
+      email, password, displayName, deviceLabel: deviceLabel(),
     }),
   login: (email: string, password: string) =>
-    req<{ token: string; user: User }>('POST', '/auth/login', { email, password, deviceLabel: 'web' }),
+    req<{ token: string; user: User }>('POST', '/auth/login', { email, password, deviceLabel: deviceLabel() }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
   resetRequest: (email: string) => req<{ ok: true }>('POST', '/auth/reset-request', { email }),
   resetPassword: (token: string, password: string) =>
@@ -365,11 +385,11 @@ export const api = {
   verifyEmail: (token: string) => req<{ ok: true }>('POST', `/auth/verify/${token}`),
   googleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/google/config'),
   googleSignIn: (idToken: string) =>
-    req<{ token: string; user: User }>('POST', '/auth/google', { idToken, deviceLabel: 'web' }),
+    req<{ token: string; user: User }>('POST', '/auth/google', { idToken, deviceLabel: deviceLabel() }),
   appleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/apple/config'),
   appleSignIn: (idToken: string, displayName?: string) =>
     req<{ token: string; user: User }>('POST', '/auth/apple', {
-      idToken, deviceLabel: 'web', ...(displayName ? { displayName } : {}),
+      idToken, deviceLabel: deviceLabel(), ...(displayName ? { displayName } : {}),
     }),
   resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (token: string) => req<Group>('POST', `/join/${token}`),

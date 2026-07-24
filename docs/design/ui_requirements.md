@@ -237,12 +237,16 @@ badge.
 
 Sections: account (name, avatar, email, change password), payment handles,
 default currency, theme (System / Dark / Light), notifications (per-category
-toggles, off by default per FR-8.2), sessions/devices (revoke), **report a
-bug** (FR-10.1: inline form — "what went wrong?" textarea + optional
-screenshot attach; confirmation reads "Thanks — your report is in"), export
-my data (FR-9.2), sign out, delete account (typed confirmation, explains
-anonymization per FR-1.5). Footer: version + git SHA, privacy policy link,
-"Made by Electric RV".
+toggles, off by default per FR-8.2), sessions/devices (revoke; labels name
+the browser and OS — issue #26 — and idle sessions are swept on login),
+**get the phone apps** (issue #27: web-only link to the install page —
+home-screen install today, Android beta APK, iOS TestFlight when live),
+**report a bug** (FR-10.1: inline form — "what went wrong?" textarea +
+optional screenshot attach; confirmation reads "Thanks — your report is
+in"; the reporter is emailed on receipt and on resolution per FR-10.2),
+export my data (FR-9.2), sign out, delete account (typed confirmation,
+explains anonymization per FR-1.5). Footer: version + git SHA, privacy
+policy link, "Made by Electric RV".
 
 ## 3. Cross-cutting UI rules
 

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — Get the apps</title>
+<style>
+  :root { --bg:#0c1220; --surface:#141c2e; --outline:#2e3d5e; --text:#eef2fa;
+    --text2:#a9b4cc; --brand:#4f8ef7; color-scheme: dark; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --surface:#fff; --outline:#d4dbe8; --text:#16203a;
+      --text2:#4a5878; --brand:#2f6fe0; color-scheme: light; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 400 15.5px/1.6 Inter, "Segoe UI", system-ui, sans-serif;
+    padding: 48px 20px 80px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font: 600 26px/1.25 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.02em; margin-bottom: 4px; }
+  h2 { font: 600 17px/1.3 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    margin: 28px 0 8px; }
+  p, li { color: var(--text2); }
+  strong { color: var(--text); }
+  ol, ul { padding-left: 20px; margin: 8px 0; }
+  a { color: var(--brand); }
+  .card { background: var(--surface); border: 1px solid var(--outline);
+    border-radius: 14px; padding: 18px; margin: 14px 0; }
+  .soon { font-size: 12.5px; border: 1px solid var(--outline); border-radius: 8px;
+    padding: 2px 8px; color: var(--text2); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Get SlyTab on your phone</h1>
+  <p class="updated">The web app at <a href="https://electricrv.ca/slytab/">electricrv.ca/slytab</a> works everywhere — these are the ways to make it feel like a native app.</p>
+
+  <div class="card">
+    <h2>📱 Add to your home screen (works today)</h2>
+    <p>The full app — receipt scanning included — runs in your browser and
+    installs like an app:</p>
+    <ol>
+      <li><strong>Android (Chrome):</strong> open the app → tap the ⋮ menu → <strong>Add to Home screen</strong>.</li>
+      <li><strong>iPhone (Safari):</strong> open the app → tap the Share icon → <strong>Add to Home Screen</strong>.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>🤖 Android app <span class="soon">private beta</span></h2>
+    <p>The native Android app is in family testing. Ask Dave for the
+    current APK — it installs directly (you may need to allow
+    "install unknown apps" for your browser).</p>
+  </div>
+
+  <div class="card">
+    <h2>🍎 iPhone app <span class="soon">coming soon</span></h2>
+    <p>The iOS app is headed for TestFlight. When it's ready, an invite
+    link will appear here and in the app.</p>
+  </div>
+
+  <p style="margin-top: 24px"><a href="../privacy/">Privacy policy</a> · Made by Electric RV</p>
+</main>
+</body>
+</html>

@@ -276,6 +276,16 @@ final class AuthService
 
     private function createSession(string $userId, string $deviceLabel): string
     {
+        // Issue #26: a browser that re-logs-in orphans its old session
+        // (the token is gone client-side but the row lived on for 180
+        // days). Any fresh login sweeps the user's sessions that have
+        // been idle for 30+ days — nobody re-authenticates on a device
+        // they used this month.
+        $this->pdo->prepare(
+            'UPDATE sessions SET revoked_at = ?
+             WHERE user_id = ? AND revoked_at IS NULL AND last_seen_at < ?',
+        )->execute([Db::now(), $userId, gmdate('Y-m-d H:i:s', time() - 30 * 86400)]);
+
         $token = bin2hex(random_bytes(32));
         $this->pdo->prepare(
             'INSERT INTO sessions (id, user_id, token_hash, device_label, expires_at)
