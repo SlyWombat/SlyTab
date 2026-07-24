@@ -92,9 +92,12 @@ button top-right.
 **Create group sheet** — name, emoji picker, home currency (defaults to your
 currency). On create → straight to Invite sheet.
 
-**Invite sheet** — QR code (large, centre), share-link button (system share
-sheet on mobile, copy on web), expiry note ("Link works for 7 days"),
-`Revoke link`. (FR-2.3)
+**Invite sheet** — leads with **People you know** (issue #24 / FR-2.6):
+everyone from your other groups, deduped, alphabetical, one `＋ Add` tap
+each — no email, no round-trip. Below it, "Or someone new": email invite,
+QR code (large, centre), share-link button (system share sheet on mobile,
+copy on web), expiry note ("Link works for 7 days"), `Revoke link`.
+(FR-2.3)
 
 **Join group** (via link/QR) — group name, emoji, member count, `Join`
 button. If not signed in, auth flows first and returns here.

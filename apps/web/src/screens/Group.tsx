@@ -369,7 +369,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           onSaved={() => { setEditing(null); reload(); }}
           onDeleted={() => { setLastDeleted(editing); setEditing(null); reload(); }} />
       )}
-      {inviting && <InviteSheet groupId={group.id} onClose={() => setInviting(false)} />}
+      {inviting && <InviteSheet group={group} user={user} onClose={() => setInviting(false)} onChanged={reload} />}
       {settingsOpen && (
         <GroupSettingsSheet group={group} onClose={() => setSettingsOpen(false)}
           onSaved={() => { setSettingsOpen(false); reload(); }} />
@@ -1024,17 +1024,34 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
 
 // ---- Invite ----
 
-function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => void }) {
+function InviteSheet({ group, user, onClose, onChanged }: {
+  group: Group; user: User; onClose: () => void; onChanged: () => void;
+}) {
+  const groupId = group.id;
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Issue #24: people from your other groups are one tap away.
+  const [people, setPeople] = useState<Member[] | null>(null);
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [addBusy, setAddBusy] = useState<string | null>(null);
   useEffect(() => {
     api.createInvite(groupId).then((i) => {
       setLink(`${location.origin}${import.meta.env.BASE_URL}join/${i.token}`);
     });
-  }, [groupId]);
+    api.groups().then((r) => {
+      const inGroup = new Set(group.members.map((m) => m.id));
+      const seen = new Map<string, Member>();
+      for (const g of r.items) {
+        for (const m of g.members) {
+          if (m.id !== user.id && !inGroup.has(m.id) && !seen.has(m.id)) seen.set(m.id, m);
+        }
+      }
+      setPeople([...seen.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)));
+    }).catch(() => setPeople([]));
+  }, [groupId, group.members, user.id]);
 
   async function sendEmail(e: FormEvent) {
     e.preventDefault();
@@ -1051,6 +1068,29 @@ function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => voi
   return (
     <Sheet title="Invite to group" onClose={onClose}>
       {error && <div className="error" role="alert">{error}</div>}
+      {people !== null && people.length > 0 && (
+        <>
+          <div className="sect" style={{ paddingLeft: 0 }}>People you know</div>
+          {people.map((p) => (
+            <div className="row" key={p.id}>
+              <Badge id={p.id} name={p.displayName} />
+              <div className="grow"><div className="name">{p.displayName}</div></div>
+              <button type="button" className="btn sm" disabled={addBusy !== null || added.has(p.id)}
+                onClick={() => {
+                  setAddBusy(p.id);
+                  setError(null);
+                  api.addKnownMember(groupId, p.id)
+                    .then(() => { setAdded((s) => new Set(s).add(p.id)); onChanged(); })
+                    .catch((err) => setError((err as Error).message))
+                    .finally(() => setAddBusy(null));
+                }}>
+                {added.has(p.id) ? 'Added ✓' : addBusy === p.id ? '…' : '＋ Add'}
+              </button>
+            </div>
+          ))}
+          <div className="sect" style={{ paddingLeft: 0 }}>Or someone new</div>
+        </>
+      )}
       {sent && <p className="muted" style={{ paddingBottom: 8 }}>Invitation emailed to {sent} ✓</p>}
       <form onSubmit={sendEmail} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
         <label className="field" style={{ flex: 1, marginBottom: 8 }}><span>Invite by email</span>

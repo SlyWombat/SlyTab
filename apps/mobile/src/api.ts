@@ -213,6 +213,9 @@ export const api = {
   patchMe: (data: object) => req<User>('PATCH', '/me', data),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
   group: (id: string) => req<Group>('GET', `/groups/${id}`),
+  /** Add someone you already share a group with (issue #24). */
+  addKnownMember: (groupId: string, userId: string) =>
+    req<Group>('POST', `/groups/${groupId}/members`, { userId }),
   createGroup: (name: string, emoji: string, homeCurrency: string, currencies: string[] = []) =>
     req<Group>('POST', '/groups', { name, emoji, homeCurrency, currencies }),
   updateGroup: (id: string, data: { name?: string; emoji?: string; currencies?: string[] }) =>

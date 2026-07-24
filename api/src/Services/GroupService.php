@@ -294,6 +294,49 @@ final class GroupService
         return (string) $userId;
     }
 
+    /**
+     * Issue #24: add someone the inviter already shares a group with —
+     * pick from "people you know" instead of typing an email. The
+     * shared-group requirement is the consent model: they can already
+     * see each other, exactly like Splitwise friends.
+     *
+     * @return array<string,mixed> the updated group
+     */
+    public function addKnownMember(string $groupId, string $inviterId, string $targetUserId): array
+    {
+        $this->assertWritable($groupId);
+        $shared = $this->pdo->prepare(
+            'SELECT 1 FROM memberships a
+             JOIN memberships b ON b.group_id = a.group_id
+             WHERE a.user_id = ? AND b.user_id = ?
+               AND a.left_at IS NULL AND b.left_at IS NULL LIMIT 1',
+        );
+        $shared->execute([$inviterId, $targetUserId]);
+        if ($shared->fetchColumn() === false) {
+            throw new ApiException('FORBIDDEN', 'you can only add people you already share a group with', 403);
+        }
+        $alive = $this->pdo->prepare('SELECT 1 FROM users WHERE id = ? AND deleted_at IS NULL');
+        $alive->execute([$targetUserId]);
+        if ($alive->fetchColumn() === false) {
+            throw new ApiException('NOT_FOUND', 'that person no longer has an account', 404);
+        }
+
+        $member = $this->pdo->prepare(
+            'SELECT 1 FROM memberships WHERE group_id = ? AND user_id = ? AND left_at IS NULL',
+        );
+        $member->execute([$groupId, $targetUserId]);
+        if ($member->fetchColumn() === false) {
+            $upd = $this->pdo->prepare('UPDATE memberships SET left_at = NULL, joined_at = ? WHERE group_id = ? AND user_id = ?');
+            $upd->execute([Db::now(), $groupId, $targetUserId]);
+            if ($upd->rowCount() === 0) {
+                $this->pdo->prepare('INSERT INTO memberships (group_id, user_id) VALUES (?, ?)')
+                    ->execute([$groupId, $targetUserId]);
+            }
+            $this->activity->record($groupId, $inviterId, 'added', 'member', $targetUserId);
+        }
+        return $this->get($groupId);
+    }
+
     public function createInvite(string $groupId, string $userId, ?string $email = null, bool $historyWaiting = false): array
     {
         $this->assertWritable($groupId);

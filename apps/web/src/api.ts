@@ -349,6 +349,9 @@ export const api = {
       errors: string[];
     }>(`/groups/${groupId}/import/splitwise`, 'csv', file, { mapping: JSON.stringify(mapping) }),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),
+  /** Add someone you already share a group with (issue #24). */
+  addKnownMember: (groupId: string, userId: string) =>
+    req<Group>('POST', `/groups/${groupId}/members`, { userId }),
 
   groups: () => req<{ items: Group[] }>('GET', '/groups'),
   group: (id: string) => req<Group>('GET', `/groups/${id}`),

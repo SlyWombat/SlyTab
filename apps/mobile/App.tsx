@@ -1102,7 +1102,7 @@ function GroupScreen({ groupId, user, onBack }: {
         )}
       </View>
       {inviteLink && (
-        <InviteSheet group={group} link={inviteLink} onClose={() => setInviteLink(null)} />
+        <InviteSheet group={group} user={user} link={inviteLink} onClose={() => setInviteLink(null)} onChanged={reload} />
       )}
 
       {group.archivedAt === null && (
@@ -1283,13 +1283,54 @@ function ImportSheet({ group, onClose, onDone }: {
   );
 }
 
-function InviteSheet({ group, link, onClose }: { group: Group; link: string; onClose: () => void }) {
+function InviteSheet({ group, user, link, onClose, onChanged }: {
+  group: Group; user: User; link: string; onClose: () => void; onChanged: () => void;
+}) {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Issue #24: people from your other groups are one tap away.
+  const [people, setPeople] = useState<Member[] | null>(null);
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [addBusy, setAddBusy] = useState<string | null>(null);
+  useEffect(() => {
+    api.homeBalances().then((r) => {
+      const inGroup = new Set(group.members.map((m) => m.id));
+      const seen = new Map<string, Member>();
+      for (const item of r.items) {
+        for (const m of item.group.members) {
+          if (m.id !== user.id && !inGroup.has(m.id) && !seen.has(m.id)) seen.set(m.id, m);
+        }
+      }
+      setPeople([...seen.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)));
+    }).catch(() => setPeople([]));
+  }, [group.members, user.id]);
   return (
     <SheetModal title="Invite to group" onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
+      {people !== null && people.length > 0 && (
+        <>
+          <Text style={s.cap}>PEOPLE YOU KNOW</Text>
+          {people.map((p) => (
+            <View style={s.row} key={p.id}>
+              <Badge id={p.id} name={p.displayName} />
+              <Text style={[s.rowName, { flex: 1 }]}>{p.displayName}</Text>
+              <Btn small primary={!added.has(p.id)}
+                label={added.has(p.id) ? 'Added ✓' : addBusy === p.id ? '…' : '＋ Add'}
+                disabled={addBusy !== null || added.has(p.id)}
+                onPress={() => {
+                  setAddBusy(p.id);
+                  setError(null);
+                  api.addKnownMember(group.id, p.id)
+                    .then(() => { setAdded((s2) => new Set(s2).add(p.id)); onChanged(); })
+                    .catch((e) => setError((e as Error).message))
+                    .finally(() => setAddBusy(null));
+                }} />
+            </View>
+          ))}
+          <Text style={s.cap}>OR SOMEONE NEW</Text>
+        </>
+      )}
       {sent && <Text style={[s.meta, { marginBottom: 8 }]}>Invitation emailed to {sent} ✓</Text>}
       <Field label="Invite by email" value={email} onChangeText={setEmail}
         autoCapitalize="none" keyboardType="email-address" placeholder="them@example.com" />

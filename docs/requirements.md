@@ -48,6 +48,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-2.3 (MUST)** Members join via invite link or QR code (signed,
   expiring token). No email lookup/directory — you can't discover users you
   haven't been invited by.
+- **FR-2.6 (MUST)** *People you know are one tap away* (issue #24): the
+  invite sheet lists everyone you share any group with, and adding them
+  needs no email or invite round-trip. The shared-group requirement is the
+  consent model — it never widens who can discover whom beyond FR-2.3.
 - **FR-2.4 (MUST)** A member can leave a group only when their net balance in
   it is zero; otherwise the app prompts to settle first.
 - **FR-2.5 (SHOULD)** Group archive (read-only) once a trip/household ends.

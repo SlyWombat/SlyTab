@@ -306,6 +306,13 @@ final class Api
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, $groups->get($a['id']));
                 });
+                // Issue #24: add a person you already share a group with.
+                $p->post('/groups/{id}/members', function (Request $rq, Response $rs, array $a) use ($groups): Response {
+                    $userId = Http::user($rq)['id'];
+                    $groups->assertMember($a['id'], $userId);
+                    $target = Http::str(Http::body($rq), 'userId');
+                    return Http::json($rs->withStatus(201), $groups->addKnownMember($a['id'], $userId, $target));
+                });
                 $p->post('/groups/{id}/invites', function (Request $rq, Response $rs, array $a) use ($groups): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     $body = $rq->getParsedBody();
