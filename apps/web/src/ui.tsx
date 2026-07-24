@@ -34,7 +34,10 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     <>
       <div className="sheet-back" onClick={onClose} />
       <div className="sheet" role="dialog" aria-label={title}>
-        <h2>{title}</h2>
+        <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <h2 style={{ flex: 1, minWidth: 0 }}>{title}</h2>
+          <button type="button" className="btn sm" aria-label="Close" onClick={onClose}>✕</button>
+        </div>
         {children}
       </div>
     </>

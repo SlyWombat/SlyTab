@@ -306,7 +306,10 @@ final class ReceiptService
                         ? " (if the symbol is ambiguous, e.g. just '\$', the buyer expects {$currencyHint})"
                         : '')
                     . '. A "suggested tip"/"Tip 10%"/"propina sugerida" line printed near '
-                    . 'the total is tip, never tax. Use null for anything unreadable.',
+                    . 'the total is tip, never tax. Loyalty/rewards lines ("credits earned", '
+                    . 'points, cashback, "Uber One credits") are NOT items and NOT part of '
+                    . 'the bill — omit them entirely, even when they show an amount. '
+                    . 'Use null for anything unreadable.',
                 'images' => [base64_encode(file_get_contents($path))],
             ]],
         ], JSON_THROW_ON_ERROR);
@@ -452,7 +455,9 @@ final class ReceiptService
                         'text' => 'Itemize this receipt. All monetary values are integer minor units '
                             . 'of the receipt currency — cents for 2-decimal currencies, whole units '
                             . 'for zero-decimal ones (JPY, KRW, VND, CLP, ISK, HUF). Use null for '
-                            . 'anything unreadable. quantity may be fractional (weighed goods). '
+                            . 'anything unreadable. Loyalty/rewards lines ("credits earned", points, '
+                            . 'cashback) are NOT items and NOT part of the bill — omit them. '
+                            . 'quantity may be fractional (weighed goods). '
                             . 'confidence is "low" when items+tax+tip differ from the total by more '
                             . 'than 2%.'
                             . ($currencyHint !== ''

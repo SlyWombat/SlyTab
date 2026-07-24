@@ -449,6 +449,17 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
     api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
   }, []);
 
+  // Issue #22: closing with unsaved edits warns instead of discarding.
+  const dirty = displayName !== user.displayName
+    || currency !== user.defaultCurrency
+    || notifyLevel !== (user.notifyLevel ?? 'all')
+    || interac !== (user.paymentHandles.interacEmail ?? '')
+    || paypal !== (user.paymentHandles.paypalMe ?? '')
+    || venmo !== (user.paymentHandles.venmo ?? '');
+  function guardedClose() {
+    if (!dirty || window.confirm('Discard your unsaved profile changes?')) onClose();
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -470,7 +481,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   }
 
   return (
-    <Sheet title="Profile" onClose={onClose}>
+    <Sheet title="Profile" onClose={guardedClose}>
       <form onSubmit={submit}>
         {error && <div className="error" role="alert">{error}</div>}
         <label className="field"><span>Display name</span>

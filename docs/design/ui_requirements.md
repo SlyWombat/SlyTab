@@ -166,7 +166,13 @@ saving an edit never silently detaches a receipt.
 ### 2.6 Receipt scan flow (FR-4.x)
 
 1. **Capture** — camera with receipt-framing guides, torch toggle, gallery
-   pick. After capture: crop/rotate, `Use photo`.
+   pick. After capture: crop/rotate, `Use photo`. The photo's EXIF GPS
+   picks the likely local currency (issue #21 / FR-4.7): a receipt
+   photographed in Chile hints CLP no matter what the form currently
+   shows. Read client-side from the original bytes (shrinking strips
+   EXIF; screenshots have none) via `gpsFromJpeg` + `currencyForLocation`
+   in @slytab/core; the printed currency, when the parser can read one,
+   still wins.
 2. **Parsing** — indeterminate progress on a dimmed receipt thumbnail
    ("Reading your receipt…", typically 3–10s). Cancel returns to manual
    entry with photo attached. Parse failure → friendly error + `Enter
@@ -180,7 +186,12 @@ saving an edit never silently detaches a receipt.
    assignees). Unassigned items sit under a "Nobody yet" header; a
    `Split rest equally` shortcut clears the remainder. Tax + tip prorate
    automatically and are shown per-person in the live footer ("Dave
-   C$23.10 · Alice C$18.75") (FR-4.3).
+   C$23.10 · Alice C$18.75") (FR-4.3). Every row has an ✕ to **ignore**
+   a line that isn't part of the bill — loyalty credits, promo blurbs
+   the parser mistook for items (issue #23); ignored lines count toward
+   nothing, don't block `Continue`, and can be restored with ↩. The
+   math lives in @slytab/core (`receiptBill` / `assignedShares`), shared
+   by web and mobile and covered by the totals-invariant test suite.
 5. `Continue` → returns to the Add Expense sheet with amount, description
    (merchant), date, currency, and an exact-amounts split pre-filled;
    normal save applies.

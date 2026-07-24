@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, rescaleAmountString, type Category } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, type Category } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
@@ -440,11 +440,17 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     setError(null);
     fetchEta();
     try {
+      // Issue #21 (and #9 item 1): the photo's EXIF GPS knows what
+      // country the receipt is from — a better currency hint than the
+      // form's current pick. Must read the ORIGINAL bytes (shrinking
+      // strips EXIF); screenshots/PNGs just yield null.
+      const gps = gpsFromJpeg(await file.arrayBuffer());
+      const localCurrency = gps !== null ? currencyForLocation(gps.lat, gps.lon) : null;
       const r = await api.uploadReceipt(group.id, file, {
         onUploadProgress: (fraction) => setScan({ stage: 'upload', fraction }),
         onUploaded: () => setScan({ stage: 'read', startedAt: Date.now() }),
         signal: scanAbort.current.signal,
-      }, currency);
+      }, localCurrency ?? currency);
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -795,11 +801,13 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   const slipInput = useRef<HTMLInputElement>(null);
   const slipBusy = slipScan !== null;
 
-  const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
-  const billTotal = parsed.totalMinor
-    ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
-  const totalMinor = billTotal + (slip?.tipMinor ?? 0);
-  const extra = totalMinor - itemsSum; // tax + tip + any unparsed delta
+  // Issue #23: parsed lines that aren't part of the bill (loyalty
+  // credits, promo blurbs) can be ignored — they then count toward
+  // nothing and don't block Continue.
+  const [ignoredItems, setIgnoredItems] = useState<Set<number>>(new Set());
+  const { itemsSum, totalMinor, extraMinor: extra } =
+    receiptBill(parsed, ignoredItems, slip?.tipMinor ?? 0);
+  const billTotal = totalMinor - (slip?.tipMinor ?? 0);
 
   /** Issue #9: the card slip carries the final total with tip — scan it,
    *  take the difference over the bill as the tip, prorate like tax. */
@@ -836,9 +844,10 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       setSlipScan(null);
     }
   }
-  const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
+  const allAssigned = allItemsAssigned(parsed.items, assign, ignoredItems);
 
   function toggle(itemIndex: number, memberId: string) {
+    if (ignoredItems.has(itemIndex)) return;
     setAssign((prev) => {
       const next = { ...prev };
       const set = new Set(next[itemIndex] ?? []);
@@ -848,39 +857,36 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
     });
   }
 
+  function toggleIgnored(itemIndex: number) {
+    setIgnoredItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemIndex)) {
+        next.delete(itemIndex);
+      } else {
+        next.add(itemIndex);
+        setAssign((a) => ({ ...a, [itemIndex]: new Set() }));
+      }
+      return next;
+    });
+  }
+
   function splitRestEqually() {
     setAssign((prev) => {
       const next = { ...prev };
       parsed.items.forEach((_, i) => {
-        if ((next[i]?.size ?? 0) === 0) next[i] = new Set(members.map((m) => m.id));
+        if (!ignoredItems.has(i) && (next[i]?.size ?? 0) === 0) {
+          next[i] = new Set(members.map((m) => m.id));
+        }
       });
       return next;
     });
   }
 
-  /** Per-member totals: assigned items split equally per item, then the
-   *  tax/tip remainder prorated by item subtotal (largest-remainder). */
-  const perMember = useMemo(() => {
-    const out: Record<string, number> = {};
-    parsed.items.forEach((item, i) => {
-      const who = [...(assign[i] ?? [])].sort();
-      if (who.length === 0) return;
-      const split = computeSplit('equal', item.totalMinor, who.map((id) => ({ id })));
-      for (const [id, v] of Object.entries(split)) out[id] = (out[id] ?? 0) + v;
-    });
-    if (extra !== 0 && Object.keys(out).length > 0) {
-      const weights = Object.entries(out)
-        .filter(([, v]) => v > 0)
-        .map(([id, v]) => ({ id, shares: v }));
-      if (weights.length > 0) {
-        const prorated = computeSplit('shares', Math.abs(extra), weights);
-        for (const [id, v] of Object.entries(prorated)) {
-          out[id] = (out[id] ?? 0) + (extra > 0 ? v : -v);
-        }
-      }
-    }
-    return out;
-  }, [assign, parsed.items, extra]);
+  /** Shared math (@slytab/core): equal split per item, extra prorated. */
+  const perMember = useMemo(
+    () => assignedShares(parsed.items, assign, ignoredItems, extra),
+    [assign, parsed.items, ignoredItems, extra],
+  );
 
   return (
     <Sheet title="Assign items" onClose={onCancel}>
@@ -894,27 +900,38 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         total {minorToAmountString(totalMinor, rcur)}{parsed.currency ? ` ${parsed.currency}` : ''}
         {extra !== 0 && ` (incl. ${minorToAmountString(extra, rcur)} tax/tip, prorated)`}
       </p>
-      {parsed.items.map((item, i) => (
-        <div className="row" key={i} style={{ flexWrap: 'wrap' }}>
-          <div className="grow">
-            <div className="name">{item.name}</div>
-            <div className="meta">{item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}</div>
+      {parsed.items.map((item, i) => {
+        const off = ignoredItems.has(i);
+        return (
+          <div className="row" key={i} style={{ flexWrap: 'wrap', opacity: off ? 0.45 : 1 }}>
+            <div className="grow">
+              <div className="name" style={off ? { textDecoration: 'line-through' } : undefined}>{item.name}</div>
+              <div className="meta">
+                {item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}
+                {off && ' · ignored — not part of the bill'}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              {!off && members.map((m) => {
+                const on = assign[i]?.has(m.id) ?? false;
+                return (
+                  <button key={m.id} type="button" onClick={() => toggle(i, m.id)}
+                    aria-pressed={on}
+                    style={{ background: 'none', border: 'none', padding: 2, opacity: on ? 1 : 0.35,
+                      outline: on ? '2px solid var(--ss-brand)' : 'none', borderRadius: '50%' }}>
+                    <Badge id={m.id} name={m.displayName} sm />
+                  </button>
+                );
+              })}
+              <button type="button" className="btn sm" onClick={() => toggleIgnored(i)}
+                title={off ? 'Put this line back on the bill' : 'Not part of the bill (loyalty credit, promo) — ignore it'}
+                aria-label={off ? `Restore ${item.name}` : `Ignore ${item.name}`}>
+                {off ? '↩' : '✕'}
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {members.map((m) => {
-              const on = assign[i]?.has(m.id) ?? false;
-              return (
-                <button key={m.id} type="button" onClick={() => toggle(i, m.id)}
-                  aria-pressed={on}
-                  style={{ background: 'none', border: 'none', padding: 2, opacity: on ? 1 : 0.35,
-                    outline: on ? '2px solid var(--ss-brand)' : 'none', borderRadius: '50%' }}>
-                  <Badge id={m.id} name={m.displayName} sm />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       {!allAssigned && (
         <button type="button" className="btn block" onClick={splitRestEqually}>
           Split the rest equally

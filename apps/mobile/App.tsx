@@ -1,14 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
+  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, rescaleAmountString, bridgeMinor, minorUnitScale, tokens, type Category, type Currency } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, bridgeMinor, minorUnitScale, tokens, type Category, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -83,7 +83,13 @@ function SheetModal({ title, onClose, children }: {
         <Pressable style={s.sheetBack} onPress={onClose} />
         <View style={s.sheet}>
           <View style={s.grabber} />
-          <Text style={s.sheetTitle}>{title}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            <Text style={[s.sheetTitle, { flex: 1 }]}>{title}</Text>
+            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
+              hitSlop={10} style={{ padding: 4 }}>
+              <Text style={{ color: c.text2, fontSize: 16 }} maxFontSizeMultiplier={1.4}>✕</Text>
+            </Pressable>
+          </View>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
             {children}
           </ScrollView>
@@ -606,6 +612,21 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
     api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
   }, []);
 
+  // Issue #22: closing with unsaved edits warns instead of discarding.
+  const dirty = displayName !== user.displayName
+    || currency !== user.defaultCurrency
+    || notifyLevel !== (user.notifyLevel ?? 'all')
+    || interac !== (user.paymentHandles.interacEmail ?? '')
+    || paypal !== (user.paymentHandles.paypalMe ?? '')
+    || venmo !== (user.paymentHandles.venmo ?? '');
+  function guardedClose() {
+    if (!dirty) { onClose(); return; }
+    Alert.alert('Unsaved changes', 'Discard your unsaved profile changes?', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+    ]);
+  }
+
   async function save() {
     setBusy(true);
     setError(null);
@@ -629,7 +650,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   }
 
   return (
-    <SheetModal title="Profile" onClose={onClose}>
+    <SheetModal title="Profile" onClose={guardedClose}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
@@ -1509,17 +1530,31 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         if (!perm.granted) { setError('camera permission is needed to scan receipts'); return; }
       }
       const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+        ? await ImagePicker.launchCameraAsync({ quality: 0.8, exif: true })
+        : await ImagePicker.launchImageLibraryAsync({ quality: 0.8, exif: true });
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
+      // Issue #21 (and #9 item 1): the photo's EXIF GPS knows what
+      // country the receipt is from — a better currency hint than the
+      // form's current pick. Android reports signed degrees; iOS pairs
+      // positive degrees with N/S/E/W refs.
+      let localCurrency: string | null = null;
+      const exif = asset.exif as {
+        GPSLatitude?: number; GPSLongitude?: number;
+        GPSLatitudeRef?: string; GPSLongitudeRef?: string;
+      } | null | undefined;
+      if (typeof exif?.GPSLatitude === 'number' && typeof exif.GPSLongitude === 'number') {
+        const lat = exif.GPSLatitudeRef === 'S' ? -Math.abs(exif.GPSLatitude) : exif.GPSLatitude;
+        const lon = exif.GPSLongitudeRef === 'W' ? -Math.abs(exif.GPSLongitude) : exif.GPSLongitude;
+        localCurrency = currencyForLocation(lat, lon);
+      }
       setScanProg({ stage: 'upload', fraction: 0 });
       fetchEta();
       const small = await shrinkPhoto(asset.uri);
       const handle = uploadReceipt(group.id, small.uri, small.mime, {
         onUploadProgress: (fraction) => setScanProg({ stage: 'upload', fraction }),
         onUploaded: () => setScanProg({ stage: 'read', startedAt: Date.now() }),
-      }, currency);
+      }, localCurrency ?? currency);
       scanHandle.current = handle;
       const r = await handle.promise;
       setReceiptId(r.id);
@@ -1791,10 +1826,12 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   const slipHandle = useRef<{ cancel: () => void } | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
   const slipBusy = slipScan !== null;
-  const itemsSum = parsed.items.reduce((a, i) => a + i.totalMinor, 0);
-  const billTotal = parsed.totalMinor ?? itemsSum + (parsed.taxMinor ?? 0) + (parsed.tipMinor ?? 0);
-  const totalMinor = billTotal + (slip?.tipMinor ?? 0);
-  const extra = totalMinor - itemsSum;
+  // Issue #23: parsed lines that aren't part of the bill (loyalty
+  // credits, promo blurbs) can be ignored — they then count toward
+  // nothing and don't block Continue.
+  const [ignoredItems, setIgnoredItems] = useState<Set<number>>(new Set());
+  const { totalMinor, extraMinor: extra } = receiptBill(parsed, ignoredItems, slip?.tipMinor ?? 0);
+  const billTotal = totalMinor - (slip?.tipMinor ?? 0);
 
   // Issue #9: the card slip carries the final total with tip — scan it,
   // take the difference over the bill as the tip, prorate like tax.
@@ -1838,26 +1875,26 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       slipHandle.current = null;
     }
   }
-  const allAssigned = parsed.items.every((_, i) => (assign[i]?.size ?? 0) > 0);
+  const allAssigned = allItemsAssigned(parsed.items, assign, ignoredItems);
 
-  const perMember = useMemo(() => {
-    const out: Record<string, number> = {};
-    parsed.items.forEach((item, i) => {
-      const who = [...(assign[i] ?? [])].sort();
-      if (who.length === 0) return;
-      const split = computeSplit('equal', item.totalMinor, who.map((id) => ({ id })));
-      for (const [id, v] of Object.entries(split)) out[id] = (out[id] ?? 0) + v;
-    });
-    if (extra !== 0 && Object.keys(out).length > 0) {
-      const weights = Object.entries(out).filter(([, v]) => v > 0)
-        .map(([id, v]) => ({ id, shares: v }));
-      if (weights.length > 0) {
-        const prorated = computeSplit('shares', Math.abs(extra), weights);
-        for (const [id, v] of Object.entries(prorated)) out[id] = (out[id] ?? 0) + (extra > 0 ? v : -v);
+  function toggleIgnored(itemIndex: number) {
+    setIgnoredItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemIndex)) {
+        next.delete(itemIndex);
+      } else {
+        next.add(itemIndex);
+        setAssign((a) => ({ ...a, [itemIndex]: new Set() }));
       }
-    }
-    return out;
-  }, [assign, parsed.items, extra]);
+      return next;
+    });
+  }
+
+  /** Shared math (@slytab/core): equal split per item, extra prorated. */
+  const perMember = useMemo(
+    () => assignedShares(parsed.items, assign, ignoredItems, extra),
+    [assign, parsed.items, ignoredItems, extra],
+  );
 
   return (
     <SheetModal title="Assign items" onClose={onCancel}>
@@ -1866,39 +1903,53 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         {parsed.currency ? ` ${parsed.currency}` : ''}
         {extra !== 0 ? ` (incl. ${minorToAmountString(extra, rcur)} tax/tip, prorated)` : ''}
       </Text>
-      {parsed.items.map((item, i) => (
-        <View key={i} style={[s.row, { flexWrap: 'wrap' }]}>
-          <View style={{ flex: 1, minWidth: 120 }}>
-            <Text style={s.rowName}>{item.name}</Text>
-            <Text style={s.meta}>{item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}</Text>
+      {parsed.items.map((item, i) => {
+        const off = ignoredItems.has(i);
+        return (
+          <View key={i} style={[s.row, { flexWrap: 'wrap', opacity: off ? 0.45 : 1 }]}>
+            <View style={{ flex: 1, minWidth: 120 }}>
+              <Text style={[s.rowName, off && { textDecorationLine: 'line-through' }]}>{item.name}</Text>
+              <Text style={s.meta}>
+                {item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}
+                {off ? ' · ignored — not part of the bill' : ''}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+              {!off && members.map((m) => {
+                const on = assign[i]?.has(m.id) ?? false;
+                return (
+                  <Pressable key={m.id}
+                    onPress={() => setAssign((prev) => {
+                      const next = { ...prev };
+                      const set = new Set(next[i] ?? []);
+                      set.has(m.id) ? set.delete(m.id) : set.add(m.id);
+                      next[i] = set;
+                      return next;
+                    })}
+                    style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
+                      borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
+                    <Badge id={m.id} name={m.displayName} size={22} />
+                  </Pressable>
+                );
+              })}
+              <Pressable onPress={() => toggleIgnored(i)} hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={off ? `Restore ${item.name}` : `Ignore ${item.name}`}
+                style={{ padding: 4 }}>
+                <Text style={{ color: c.text2, fontSize: 15 }} maxFontSizeMultiplier={1.4}>{off ? '↩' : '✕'}</Text>
+              </Pressable>
+            </View>
           </View>
-          <View style={{ flexDirection: 'row', gap: 4 }}>
-            {members.map((m) => {
-              const on = assign[i]?.has(m.id) ?? false;
-              return (
-                <Pressable key={m.id}
-                  onPress={() => setAssign((prev) => {
-                    const next = { ...prev };
-                    const set = new Set(next[i] ?? []);
-                    set.has(m.id) ? set.delete(m.id) : set.add(m.id);
-                    next[i] = set;
-                    return next;
-                  })}
-                  style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
-                    borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
-                  <Badge id={m.id} name={m.displayName} size={22} />
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      ))}
+        );
+      })}
       {!allAssigned && (
         <Btn label="Split the rest equally"
           onPress={() => setAssign((prev) => {
             const next = { ...prev };
             parsed.items.forEach((_, i) => {
-              if ((next[i]?.size ?? 0) === 0) next[i] = new Set(members.map((m) => m.id));
+              if (!ignoredItems.has(i) && (next[i]?.size ?? 0) === 0) {
+                next[i] = new Set(members.map((m) => m.id));
+              }
             });
             return next;
           })} />
