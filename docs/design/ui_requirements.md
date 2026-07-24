@@ -135,6 +135,21 @@ Bottom sheet, optimized for a 10-second entry. Order:
 Editing an existing expense reuses the sheet, pre-filled; a footer notes
 "Edits are visible to the whole group" (FR-3.4).
 
+When the expense already has one or more scanned receipts (FR-4.4), the
+receipt row swaps to three actions:
+
+- **View receipt(s)** — full-screen viewer over the sheet; pager when a
+  bill + card slip are both attached; `New photo` and `Close` beneath.
+- **Rescan** — re-runs the parser on the *stored* photo server-side
+  (`POST /receipts/{id}/rescan`, same daily cost guard as scanning) and
+  drops into the normal review/assign flow (§2.6 steps 3–5). No
+  re-photographing — useful when the parser has improved or the first
+  read was wrong.
+- **New photo** — replaces the scan via the usual capture flow (§2.6).
+
+The sheet seeds its receipt links from the expense being edited, so
+saving an edit never silently detaches a receipt.
+
 ### 2.6 Receipt scan flow (FR-4.x)
 
 1. **Capture** — camera with receipt-framing guides, torch toggle, gallery

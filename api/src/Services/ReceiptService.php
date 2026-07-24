@@ -180,6 +180,68 @@ final class ReceiptService
     }
 
     /** @return array{path: string, mime: string, groupId: string} */
+    /**
+     * Re-run the parser on an already-stored receipt image (no re-upload:
+     * the photo is retained per issue #10). Updates the stored parse and
+     * returns the same shape as ingest().
+     *
+     * @return array<string,mixed>
+     */
+    public function rescan(string $receiptId, string $currencyHint = ''): array
+    {
+        $currencyHint = preg_match('/^[A-Z]{3}$/', $currencyHint) ? $currencyHint : '';
+        $stmt = $this->pdo->prepare('SELECT id, group_id, image_path FROM receipts WHERE id = ?');
+        $stmt->execute([$receiptId]);
+        $r = $stmt->fetch();
+        if (!$r) {
+            throw new ApiException('NOT_FOUND', 'receipt not found', 404);
+        }
+        $path = self::dataDir() . '/' . $r['image_path'];
+        if (!is_file($path)) {
+            throw new ApiException('NOT_FOUND', 'the stored receipt photo is missing', 404);
+        }
+        $ext = pathinfo($r['image_path'], PATHINFO_EXTENSION);
+        $mime = array_search($ext === 'jpg' ? 'jpg' : $ext, self::MIME_EXT, true) ?: 'image/jpeg';
+
+        $parsed = null;
+        $parseError = null;
+        $t0 = microtime(true);
+        try {
+            $parsed = $this->parse($path, $mime, $currencyHint);
+            @file_put_contents(
+                self::dataDir() . '/' . preg_replace('/\.[a-z]+$/', '.parse.json', $r['image_path']),
+                json_encode($parsed, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR),
+            );
+            $this->pdo->prepare('UPDATE receipts SET parsed = ? WHERE id = ?')
+                ->execute([json_encode($parsed, JSON_THROW_ON_ERROR), $receiptId]);
+        } catch (\Throwable $e) {
+            $parseError = $e instanceof ApiException
+                ? $e->getMessage()
+                : (str_contains($e->getMessage(), 'unreachable')
+                    ? 'the receipt reader is offline right now — try Rescan later'
+                    : 'could not read this receipt');
+            error_log('receipt rescan failed: ' . $e->getMessage());
+        }
+        $this->recordMetrics([
+            'receipt_id' => $receiptId,
+            'group_id' => $r['group_id'],
+            'upload_bytes' => (int) (filesize($path) ?: 0),
+            'normalized_bytes' => (int) (filesize($path) ?: 0),
+            'normalize_ms' => 0,
+            'engine' => $this->engineName(),
+            'parse_ms' => (int) round((microtime(true) - $t0) * 1000),
+            'outcome' => $parsed !== null ? 'rescanned' : 'rescan_failed',
+            'confidence' => $parsed['confidence'] ?? null,
+            'error' => $parseError,
+        ]);
+
+        $out = ['id' => $receiptId, 'groupId' => $r['group_id'], 'parsed' => $parsed];
+        if ($parseError !== null) {
+            $out['parseError'] = $parseError;
+        }
+        return $out;
+    }
+
     public function imageFile(string $receiptId): array
     {
         $stmt = $this->pdo->prepare('SELECT group_id, image_path FROM receipts WHERE id = ?');

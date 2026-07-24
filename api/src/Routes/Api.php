@@ -398,6 +398,14 @@ final class Api
                     $hint = strtoupper((string) (($rq->getParsedBody() ?? [])['currencyHint'] ?? ''));
                     return Http::json($rs->withStatus(201), $receipts->ingest($a['id'], $userId, $file, $hint));
                 });
+                $p->post('/receipts/{id}/rescan', function (Request $rq, Response $rs, array $a) use ($groups, $receipts, $limiter): Response {
+                    $userId = Http::user($rq)['id'];
+                    $img = $receipts->imageFile($a['id']);
+                    $groups->assertMember($img['groupId'], $userId);
+                    $limiter->guard('receipts', $userId, 20, 86400); // same FR-4.5 cost guard as ingest
+                    $hint = strtoupper((string) (($rq->getParsedBody() ?? [])['currencyHint'] ?? ''));
+                    return Http::json($rs, $receipts->rescan($a['id'], $hint));
+                });
                 $p->get('/receipts/{id}/image', function (Request $rq, Response $rs, array $a) use ($groups, $receipts): Response {
                     $img = $receipts->imageFile($a['id']);
                     $groups->assertMember($img['groupId'], Http::user($rq)['id']);

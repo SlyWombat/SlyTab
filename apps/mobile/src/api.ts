@@ -38,6 +38,9 @@ export interface Expense {
   id: string; groupId: string; description: string; amountMinor: number;
   currency: string; fxRate: number | null; expenseDate: string;
   category: string; payers: Participant[]; shares: Participant[];
+  receiptId: string | null;
+  /** All linked receipts (bill + card slip …), primary first. */
+  receiptIds: string[];
 }
 export interface Transfer { from: string; to: string; amountMinor: number }
 export interface Balances {
@@ -106,6 +109,14 @@ export interface ParsedReceipt {
 }
 export interface ReceiptResult {
   id: string; groupId: string; parsed: ParsedReceipt | null; parseError?: string;
+}
+
+/** Receipt image needs the Bearer token — RN <Image> supports headers. */
+export function receiptImageSource(receiptId: string): { uri: string; headers: Record<string, string> } {
+  return {
+    uri: `${BASE}/receipts/${receiptId}/image`,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  };
 }
 
 /** Progress/cancel hooks for long uploads on slow connections (issue #9). */
@@ -224,6 +235,10 @@ export const api = {
   addFriend: (email: string) => req<Group>('POST', '/friends', { email }),
   registerPushToken: (token: string) => req<{ ok: true }>('POST', '/me/push-tokens', { token }),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  /** Re-run the parser on the stored photo — no re-photographing. */
+  rescanReceipt: (receiptId: string, currencyHint?: string) =>
+    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,
+      currencyHint ? { currencyHint } : {}),
   fxRate: (base: string, quote: string) =>
     req<{ date: string; base: string; quote: string; rate: number }>(
       'GET', `/rates?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`),

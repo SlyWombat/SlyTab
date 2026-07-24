@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Linking, Modal, Platform,
+  ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,7 +10,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
 import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, rescaleAmountString, bridgeMinor, minorUnitScale, tokens, type Category, type Currency } from '@slytab/core';
 import {
-  api, ApiFailure, setToken, uploadReceipt,
+  api, ApiFailure, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
@@ -1326,8 +1326,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
-  const [receiptId, setReceiptId] = useState<string | null>(null);
-  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
+  // Seed from the expense being edited so a previously scanned receipt
+  // stays linked on save and can be viewed/rescanned here.
+  const [receiptId, setReceiptId] = useState<string | null>(editing?.receiptId ?? null);
+  const [viewingReceipt, setViewingReceipt] = useState<number | null>(null); // index into linked receipts
+  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>(
+    editing ? (editing.receiptIds ?? []).filter((id) => id !== editing.receiptId) : [],
+  );
   const [scanProg, setScanProg] = useState<ScanStage | null>(null);
   const scanHandle = useRef<{ cancel: () => void } | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
@@ -1410,6 +1415,28 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     }
   }
 
+  /** Re-run the parser on the stored photo — no re-photographing. */
+  async function rescan() {
+    if (receiptId === null) return;
+    setScanProg({ stage: 'read', startedAt: Date.now() });
+    setError(null);
+    fetchEta();
+    try {
+      const r = await api.rescanReceipt(receiptId, currency);
+      if (r.parsed === null) {
+        setError(r.parseError ?? 'could not read this receipt');
+      } else {
+        const cur = r.parsed.currency && CURRENCIES.includes(r.parsed.currency as never)
+          ? r.parsed.currency : currency;
+        setAssigning(normalizeParsedReceipt(r.parsed, cur));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setScanProg(null);
+    }
+  }
+
   async function save() {
     if (shares === null) return;
     setError(null);
@@ -1473,9 +1500,20 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           </Pressable>
         ))}
       </View>
+      {receiptId !== null && (
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Btn label={`🧾 View receipt${extraReceiptIds.length > 0 ? 's' : ''}`}
+              disabled={scanBusy} onPress={() => setViewingReceipt(0)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Btn label="↻ Rescan" disabled={scanBusy} onPress={() => void rescan()} />
+          </View>
+        </View>
+      )}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
-          <Btn label={scanBusy ? 'Reading…' : receiptId ? 'Rescan receipt' : '📷 Scan receipt'}
+          <Btn label={scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}
             disabled={scanBusy} onPress={() => void scan(true)} />
         </View>
         <View style={{ flex: 1 }}>
@@ -1559,6 +1597,34 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         </>
       )}
       {scanProg !== null && <BusyOverlay scan={scanProg} onCancel={() => scanHandle.current?.cancel()} />}
+      {viewingReceipt !== null && (() => {
+        const ids = [receiptId, ...extraReceiptIds].filter((x): x is string => x !== null);
+        if (ids.length === 0) return null;
+        const idx = ((viewingReceipt % ids.length) + ids.length) % ids.length;
+        return (
+          <Modal transparent animationType="fade" onRequestClose={() => setViewingReceipt(null)}>
+            <Pressable style={{ flex: 1, backgroundColor: 'rgba(8,12,22,0.92)',
+              alignItems: 'center', justifyContent: 'center', gap: 12 }}
+              onPress={() => setViewingReceipt(null)}>
+              <Image source={receiptImageSource(ids[idx]!)} resizeMode="contain"
+                style={{ width: '92%', height: '76%', borderRadius: 10 }}
+                accessibilityLabel="Receipt photo" />
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                {ids.length > 1 && (
+                  <>
+                    <Btn small label="‹" onPress={() => setViewingReceipt(idx - 1)} />
+                    <Text style={{ color: c.text2, fontSize: 13 }} maxFontSizeMultiplier={1.4}>
+                      {idx + 1} / {ids.length}
+                    </Text>
+                    <Btn small label="›" onPress={() => setViewingReceipt(idx + 1)} />
+                  </>
+                )}
+                <Btn small label="Close" onPress={() => setViewingReceipt(null)} />
+              </View>
+            </Pressable>
+          </Modal>
+        );
+      })()}
       {assigning !== null && (
         <AssignItemsSheet parsed={assigning} group={group} members={group.members} user={user}
           onCancel={() => setAssigning(null)}

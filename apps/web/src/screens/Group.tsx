@@ -415,8 +415,13 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [fxOverride, setFxOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [needsRate, setNeedsRate] = useState(false);
-  const [receiptId, setReceiptId] = useState<string | null>(null);
-  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>([]);
+  // Seed from the expense being edited so a previously scanned receipt
+  // stays linked on save and can be viewed/rescanned here.
+  const [receiptId, setReceiptId] = useState<string | null>(editing?.receiptId ?? null);
+  const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>(
+    editing ? (editing.receiptIds ?? []).filter((id) => id !== editing.receiptId) : [],
+  );
+  const [viewing, setViewing] = useState<{ ids: string[]; idx: number; url: string | null } | null>(null);
   const [scan, setScan] = useState<ScanStage | null>(null);
   const scanAbort = useRef<AbortController | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
@@ -458,6 +463,52 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     } finally {
       setScan(null);
     }
+  }
+
+  /** Re-run the parser on the stored photo — no re-photographing. */
+  async function onRescan() {
+    if (receiptId === null) return;
+    setScan({ stage: 'read', startedAt: Date.now() });
+    setError(null);
+    fetchEta();
+    try {
+      const r = await api.rescanReceipt(receiptId, currency);
+      if (r.parsed === null) {
+        setError(r.parseError ?? 'could not read this receipt');
+      } else {
+        const cur = r.parsed.currency && /^[A-Z]{3}$/.test(r.parsed.currency)
+          ? r.parsed.currency : currency;
+        setAssigning(normalizeParsedReceipt(r.parsed, cur));
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setScan(null);
+    }
+  }
+
+  async function openReceiptView(idx: number) {
+    const ids = [receiptId, ...extraReceiptIds].filter((x): x is string => x !== null);
+    if (ids.length === 0) return;
+    const i = ((idx % ids.length) + ids.length) % ids.length;
+    setViewing((v) => {
+      if (v?.url) URL.revokeObjectURL(v.url);
+      return { ids, idx: i, url: null };
+    });
+    try {
+      const url = await api.receiptImageUrl(ids[i]!);
+      setViewing((v) => (v === null ? v : { ...v, url }));
+    } catch (err) {
+      setViewing(null);
+      setError((err as Error).message);
+    }
+  }
+
+  function closeReceiptView() {
+    setViewing((v) => {
+      if (v?.url) URL.revokeObjectURL(v.url);
+      return null;
+    });
   }
 
   function applyAssignment(result: {
@@ -624,11 +675,23 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             remaining: {minorToAmountString(remaining, currency)}
           </p>
         )}
+        {receiptId !== null && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy}
+              onClick={() => void openReceiptView(0)}>
+              🧾 View receipt{extraReceiptIds.length > 0 ? 's' : ''}
+            </button>
+            <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy}
+              onClick={() => void onRescan()}>
+              ↻ Rescan
+            </button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button type="button" className="btn" disabled={scanBusy}
             style={{ flex: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             onClick={() => fileInput.current?.click()}>
-            {scanBusy ? 'Reading…' : receiptId ? 'Rescan ✓' : '📷 Scan receipt'}
+            {scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}
           </button>
           <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>
             {editing ? 'Save changes' : 'Save expense'}
@@ -679,6 +742,33 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
           onCancel={() => setAssigning(null)} onDone={applyAssignment} />
       )}
       {scan !== null && <BusyOverlay scan={scan} onCancel={() => scanAbort.current?.abort()} />}
+      {viewing !== null && (
+        <div role="dialog" aria-label="Receipt photo" style={{
+          position: 'fixed', inset: 0, zIndex: 70, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 10,
+          background: 'rgba(8, 12, 22, 0.9)',
+        }} onClick={closeReceiptView}>
+          {viewing.url === null
+            ? <p className="muted">Loading photo…</p>
+            : <img src={viewing.url} alt="Receipt"
+                style={{ maxWidth: '92vw', maxHeight: '78vh', borderRadius: 10, objectFit: 'contain' }}
+                onClick={(e) => e.stopPropagation()} />}
+          <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+            {viewing.ids.length > 1 && (
+              <>
+                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx - 1)}>‹</button>
+                <span className="muted" style={{ alignSelf: 'center', fontSize: '0.8125rem' }}>
+                  {viewing.idx + 1} / {viewing.ids.length}
+                </span>
+                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx + 1)}>›</button>
+              </>
+            )}
+            <button type="button" className="btn sm"
+              onClick={() => { closeReceiptView(); fileInput.current?.click(); }}>📷 New photo</button>
+            <button type="button" className="btn sm" onClick={closeReceiptView}>Close</button>
+          </div>
+        </div>
+      )}
     </Sheet>
   );
 }

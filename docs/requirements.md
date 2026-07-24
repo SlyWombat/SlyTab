@@ -92,6 +92,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   later. Images are stored server-side, scoped to the group.
 - **FR-4.5 (SHOULD)** Cost guard: per-user daily scan cap (default 50) so a
   runaway client can't burn API budget.
+- **FR-4.6 (MUST)** A previously scanned expense offers *View receipt* and
+  *Rescan* from its detail/edit view. Rescan re-parses the stored photo
+  server-side (no re-photographing) and feeds the normal review flow;
+  it shares the FR-4.5 cost guard.
 
 ### 2.5 Multi-currency
 

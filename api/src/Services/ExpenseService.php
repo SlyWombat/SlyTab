@@ -398,6 +398,14 @@ final class ExpenseService
         $shares->execute([$e['id']]);
         $shareRows = $shares->fetchAll();
 
+        // All linked receipts (bill + card slip …), primary first, so the
+        // client can offer view/rescan on a previously scanned expense.
+        $receipts = $this->pdo->prepare(
+            'SELECT id FROM receipts WHERE expense_id = ? ORDER BY (id = ?) DESC, created_at',
+        );
+        $receipts->execute([$e['id'], $e['receipt_id'] ?? '']);
+        $receiptIds = array_column($receipts->fetchAll(), 'id');
+
         return [
             'id' => $e['id'],
             'groupId' => $e['group_id'],
@@ -410,6 +418,7 @@ final class ExpenseService
             'category' => $e['category'],
             'notes' => $e['notes'],
             'receiptId' => $e['receipt_id'],
+            'receiptIds' => $receiptIds,
             'createdBy' => $e['created_by'],
             'createdAt' => $e['created_at'],
             'updatedAt' => $e['updated_at'],

@@ -65,6 +65,9 @@ export interface Expense {
   splitMethod: string;
   payers: Participant[];
   shares: Participant[];
+  receiptId: string | null;
+  /** All linked receipts (bill + card slip …), primary first. */
+  receiptIds: string[];
 }
 
 export interface Transfer {
@@ -286,6 +289,19 @@ export const api = {
       currencyHint ? { currencyHint } : {});
   },
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  /** Re-run the parser on the stored photo — no re-photographing. */
+  rescanReceipt: (receiptId: string, currencyHint?: string) =>
+    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,
+      currencyHint ? { currencyHint } : {}),
+  /** Receipt image needs the Bearer token — fetch to an object URL. */
+  receiptImageUrl: async (receiptId: string): Promise<string> => {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/receipts/${receiptId}/image`, { headers });
+    if (!res.ok) throw new ApiFailure({ code: 'NOT_FOUND', message: 'could not load the receipt photo' }, res.status);
+    return URL.createObjectURL(await res.blob());
+  },
   fxRate: (base: string, quote: string) =>
     req<{ date: string; base: string; quote: string; rate: number }>(
       'GET', `/rates?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`),
