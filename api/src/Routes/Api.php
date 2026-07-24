@@ -93,7 +93,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -156,7 +156,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
@@ -325,6 +325,22 @@ final class Api
                 });
 
                 // receipts
+                $p->get('/receipts/eta', function (Request $rq, Response $rs) use ($pdo): Response {
+                    // Historical timing (issue #9): estimate from the last
+                    // 20 successful parses instead of a static guess.
+                    $stmt = $pdo->query(
+                        "SELECT parse_ms FROM receipt_metrics WHERE outcome = 'parsed'
+                         ORDER BY id DESC LIMIT 20",
+                    );
+                    $ms = array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
+                    sort($ms);
+                    $n = count($ms);
+                    return Http::json($rs, [
+                        'samples' => $n,
+                        'typicalMs' => $n > 0 ? $ms[intdiv($n, 2)] : 15000,
+                        'slowMs' => $n > 0 ? $ms[min($n - 1, (int) floor($n * 0.9))] : 40000,
+                    ]);
+                });
                 $p->post('/groups/{id}/receipts', function (Request $rq, Response $rs, array $a) use ($groups, $receipts, $limiter): Response {
                     $userId = Http::user($rq)['id'];
                     $limiter->guard('receipts', $userId, 20, 86400); // FR-4.5 cost guard
@@ -334,7 +350,8 @@ final class Api
                     if ($file === null) {
                         throw new ApiException('VALIDATION', "multipart field 'image' is required");
                     }
-                    return Http::json($rs->withStatus(201), $receipts->ingest($a['id'], $userId, $file));
+                    $hint = strtoupper((string) (($rq->getParsedBody() ?? [])['currencyHint'] ?? ''));
+                    return Http::json($rs->withStatus(201), $receipts->ingest($a['id'], $userId, $file, $hint));
                 });
                 $p->get('/receipts/{id}/image', function (Request $rq, Response $rs, array $a) use ($groups, $receipts): Response {
                     $img = $receipts->imageFile($a['id']);

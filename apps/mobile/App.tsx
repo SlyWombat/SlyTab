@@ -893,6 +893,11 @@ type ScanStage =
   | { stage: 'upload'; fraction: number }
   | { stage: 'read'; startedAt: number };
 
+let etaCache: { typicalMs: number; slowMs: number } | null = null;
+function fetchEta(): void {
+  api.receiptEta().then((e) => { if (e.samples > 0) etaCache = e; }).catch(() => {});
+}
+
 /** Staged scan progress (issue #9): upload % → reading with elapsed time. */
 /**
  * Searchable currency list with full names (user feedback: a wall of
@@ -1013,7 +1018,11 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
         ) : (
           <Text style={s.body}>
             Reading the receipt… {elapsed}s{'  '}
-            <Text style={{ color: c.text2 }}>(usually 5–15s)</Text>
+            <Text style={{ color: c.text2 }}>
+              {etaCache !== null && elapsed * 1000 > etaCache.slowMs
+                ? '(taking longer than usual — still working)'
+                : `(usually ~${Math.max(1, Math.round((etaCache?.typicalMs ?? 15000) / 1000))}s)`}
+            </Text>
           </Text>
         )}
         {onCancel && <Btn small label="Cancel" onPress={onCancel} />}
@@ -1086,11 +1095,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
       setScanProg({ stage: 'upload', fraction: 0 });
+      fetchEta();
       const small = await shrinkPhoto(asset.uri);
       const handle = uploadReceipt(group.id, small.uri, small.mime, {
         onUploadProgress: (fraction) => setScanProg({ stage: 'upload', fraction }),
         onUploaded: () => setScanProg({ stage: 'read', startedAt: Date.now() }),
-      });
+      }, currency);
       scanHandle.current = handle;
       const r = await handle.promise;
       setReceiptId(r.id);
@@ -1282,11 +1292,12 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       const asset = result.assets?.[0];
       if (result.canceled || !asset) return;
       setSlipScan({ stage: 'upload', fraction: 0 });
+      fetchEta();
       const small = await shrinkPhoto(asset.uri);
       const handle = uploadReceipt(group.id, small.uri, small.mime, {
         onUploadProgress: (fraction) => setSlipScan({ stage: 'upload', fraction }),
         onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
-      });
+      }, rcur);
       slipHandle.current = handle;
       const r = await handle.promise;
       const slipTotal = r.parsed?.totalMinor ?? null;

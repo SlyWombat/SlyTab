@@ -115,7 +115,7 @@ export interface UploadHandle {
  * task (RN fetch cannot report upload progress). The caller shrinks the
  * image first — see shrinkPhoto in App.tsx.
  */
-export function uploadReceipt(groupId: string, uri: string, mime: string, hooks: UploadHooks = {}): UploadHandle {
+export function uploadReceipt(groupId: string, uri: string, mime: string, hooks: UploadHooks = {}, currencyHint?: string): UploadHandle {
   const FileSystem = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -129,7 +129,7 @@ export function uploadReceipt(groupId: string, uri: string, mime: string, hooks:
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       fieldName: 'image',
       mimeType: mime,
-      parameters: {},
+      parameters: currencyHint ? { currencyHint } : {},
     },
     ({ totalBytesSent, totalBytesExpectedToSend }) => {
       if (totalBytesExpectedToSend > 0) {
@@ -200,6 +200,7 @@ export const api = {
   splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number,
     mapping: Record<string, string | { email: string; name: string }>) =>
     req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
+  receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   listSessions: () => req<{ items: Session[] }>('GET', '/me/sessions'),
   revokeSession: (id: string) => req<{ ok: true }>('DELETE', `/me/sessions/${id}`),
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),

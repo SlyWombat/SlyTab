@@ -195,10 +195,12 @@ export interface UploadHooks {
  * XHR-based upload: fetch() cannot report upload progress. Rejects with
  * code CANCELED on abort and NETWORK on connection failure.
  */
-function uploadWithProgress<T>(path: string, field: string, blob: Blob, filename: string, hooks: UploadHooks): Promise<T> {
+function uploadWithProgress<T>(path: string, field: string, blob: Blob, filename: string, hooks: UploadHooks,
+  extra: Record<string, string> = {}): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const fd = new FormData();
     fd.append(field, blob, filename);
+    for (const [k, v] of Object.entries(extra)) fd.append(k, v);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BASE}${path}`);
     const token = getToken();
@@ -269,10 +271,12 @@ export const api = {
   me: () => req<User>('GET', '/me'),
   patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles'>>) =>
     req<User>('PATCH', '/me', data),
-  uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}) => {
+  uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}, currencyHint?: string) => {
     const { blob, name } = await shrinkImage(file);
-    return uploadWithProgress<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', blob, name, hooks);
+    return uploadWithProgress<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', blob, name, hooks,
+      currencyHint ? { currencyHint } : {});
   },
+  receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   inspectSplitwise: (groupId: string, file: File) =>
     upload<{
       members: string[]; expenseRows: number; paymentRows: number;

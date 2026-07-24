@@ -11,6 +11,14 @@ export type ScanStage =
   | { stage: 'upload'; fraction: number }
   | { stage: 'read'; startedAt: number };
 
+export interface ScanEta { typicalMs: number; slowMs: number }
+
+/** Cached historical estimate (issue #9: "look at historical timing"). */
+let etaCache: ScanEta | null = null;
+export function fetchEta(): void {
+  api.receiptEta().then((e) => { if (e.samples > 0) etaCache = e; }).catch(() => {});
+}
+
 /** Staged scan progress (issue #9): upload % → reading with elapsed time. */
 function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => void }) {
   const [, tick] = useState(0);
@@ -39,7 +47,12 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
         </>
       ) : (
         <div style={{ fontSize: 14, color: 'var(--ss-text)' }}>
-          Reading the receipt… {elapsed}s <span style={{ color: 'var(--ss-text-2)' }}>(usually 5–15s)</span>
+          Reading the receipt… {elapsed}s{' '}
+          <span style={{ color: 'var(--ss-text-2)' }}>
+            {etaCache !== null && elapsed * 1000 > etaCache.slowMs
+              ? '(taking longer than usual — still working)'
+              : `(usually ~${Math.max(1, Math.round((etaCache?.typicalMs ?? 15000) / 1000))}s)`}
+          </span>
         </div>
       )}
       {onCancel && <button type="button" className="btn sm" onClick={onCancel}>Cancel</button>}
@@ -306,12 +319,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     setScan({ stage: 'upload', fraction: 0 });
     scanAbort.current = new AbortController();
     setError(null);
+    fetchEta();
     try {
       const r = await api.uploadReceipt(group.id, file, {
         onUploadProgress: (fraction) => setScan({ stage: 'upload', fraction }),
         onUploaded: () => setScan({ stage: 'read', startedAt: Date.now() }),
         signal: scanAbort.current.signal,
-      });
+      }, currency);
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -522,6 +536,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   }) => void;
 }) {
   const [assign, setAssign] = useState<Record<number, Set<string>>>({});
+  const rcur = parsed.currency && /^[A-Z]{3}$/.test(parsed.currency) ? parsed.currency : group.homeCurrency;
   const [slip, setSlip] = useState<{ tipMinor: number; receiptId: string } | null>(null);
   const [slipScan, setSlipScan] = useState<ScanStage | null>(null);
   const slipAbort = useRef<AbortController | null>(null);
@@ -541,12 +556,13 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
     setSlipScan({ stage: 'upload', fraction: 0 });
     slipAbort.current = new AbortController();
     setSlipError(null);
+    fetchEta();
     try {
       const r = await api.uploadReceipt(group.id, file, {
         onUploadProgress: (fraction) => setSlipScan({ stage: 'upload', fraction }),
         onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
         signal: slipAbort.current.signal,
-      });
+      }, rcur);
       const slipTotal = r.parsed?.totalMinor ?? null;
       if (slipTotal === null) {
         setSlipError('could not read a total on that slip — you can still adjust the amount after Continue');
@@ -621,14 +637,14 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       )}
       <p className="muted" style={{ paddingBottom: 8 }}>
         {parsed.merchant ?? 'Receipt'}{parsed.date ? ` · ${parsed.date}` : ''} ·
-        total {(totalMinor / 100).toFixed(2)}{parsed.currency ? ` ${parsed.currency}` : ''}
-        {extra !== 0 && ` (incl. ${(extra / 100).toFixed(2)} tax/tip, prorated)`}
+        total {minorToAmountString(totalMinor, rcur)}{parsed.currency ? ` ${parsed.currency}` : ''}
+        {extra !== 0 && ` (incl. ${minorToAmountString(extra, rcur)} tax/tip, prorated)`}
       </p>
       {parsed.items.map((item, i) => (
         <div className="row" key={i} style={{ flexWrap: 'wrap' }}>
           <div className="grow">
             <div className="name">{item.name}</div>
-            <div className="meta">{item.quantity !== 1 ? `${item.quantity} × ` : ''}{(item.totalMinor / 100).toFixed(2)}</div>
+            <div className="meta">{item.quantity !== 1 ? `${item.quantity} × ` : ''}{minorToAmountString(item.totalMinor, rcur)}</div>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {members.map((m) => {
@@ -654,7 +670,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={slipBusy}
         onClick={() => slipInput.current?.click()}>
         {slip !== null
-          ? `Tip from card slip: ${(slip.tipMinor / 100).toFixed(2)} ✓ — rescan`
+          ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`
           : slipBusy ? 'Reading the card slip…' : 'Scan card slip (adds the tip)'}
       </button>
       <input ref={slipInput} type="file" accept="image/jpeg,image/png,image/webp"
@@ -663,7 +679,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       <p className="muted" style={{ padding: '10px 2px' }}>
         {members
           .filter((m) => (perMember[m.id] ?? 0) !== 0)
-          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${((perMember[m.id] ?? 0) / 100).toFixed(2)}`)
+          .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${minorToAmountString(perMember[m.id] ?? 0, rcur)}`)
           .join(' · ') || 'Tap items, then people.'}
       </p>
       <button type="button" className="btn primary block" disabled={!allAssigned}

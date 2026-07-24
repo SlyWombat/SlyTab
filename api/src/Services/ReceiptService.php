@@ -26,8 +26,9 @@ final class ReceiptService
     public function __construct(private readonly PDO $pdo) {}
 
     /** @return array<string,mixed> receipt row incl. parsed data or parseError */
-    public function ingest(string $groupId, string $userId, UploadedFileInterface $file): array
+    public function ingest(string $groupId, string $userId, UploadedFileInterface $file, string $currencyHint = ''): array
     {
+        $currencyHint = preg_match('/^[A-Z]{3}$/', $currencyHint) ? $currencyHint : '';
         if ($file->getError() !== UPLOAD_ERR_OK) {
             throw new ApiException('VALIDATION', 'image upload failed');
         }
@@ -57,7 +58,7 @@ final class ReceiptService
         $parseError = null;
         $t1 = microtime(true);
         try {
-            $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime);
+            $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime, $currencyHint);
             // Issue #10: keep the raw parse for repeat testing (data dir only).
             @file_put_contents(
                 self::dataDir() . '/' . preg_replace('/\.[a-z]+$/', '.parse.json', $relPath),
@@ -200,14 +201,14 @@ final class ReceiptService
      *
      * @return array<string,mixed>
      */
-    private function parse(string $path, string $mime): array
+    private function parse(string $path, string $mime, string $currencyHint = ''): array
     {
         $engine = Env::get('RECEIPT_ENGINE', 'auto');
         $localUrl = Env::get('LOCAL_LLM_URL');
         $claudeKey = Env::get('ANTHROPIC_API_KEY');
 
         if ($engine === 'local' || ($engine === 'auto' && $localUrl !== '')) {
-            return $this->parseLocal($path, $mime, $localUrl);
+            return $this->parseLocal($path, $mime, $localUrl, $currencyHint);
         }
         if ($engine === 'claude' || ($engine === 'auto' && $claudeKey !== '')) {
             return $this->parseClaude($path, $mime, $claudeKey);
@@ -222,7 +223,7 @@ final class ReceiptService
      *
      * @return array<string,mixed>
      */
-    private function parseLocal(string $path, string $mime, string $baseUrl): array
+    private function parseLocal(string $path, string $mime, string $baseUrl, string $currencyHint = ''): array
     {
         $body = json_encode([
             'model' => Env::get('LOCAL_LLM_MODEL', 'qwen2.5vl:7b'),
@@ -238,8 +239,12 @@ final class ReceiptService
                     . 'four thousand two hundred forty pesos (output 4240), and "12,50" '
                     . 'means twelve and a half (output 12.5). quantity is the item count '
                     . '(default 1; may be fractional for weighed goods). date is '
-                    . 'YYYY-MM-DD; currency is the 3-letter code. Use null for anything '
-                    . 'unreadable.',
+                    . 'YYYY-MM-DD; currency is the 3-letter code'
+                    . ($currencyHint !== ''
+                        ? " (if the symbol is ambiguous, e.g. just '\$', the buyer expects {$currencyHint})"
+                        : '')
+                    . '. A "suggested tip"/"Tip 10%"/"propina sugerida" line printed near '
+                    . 'the total is tip, never tax. Use null for anything unreadable.',
                 'images' => [base64_encode(file_get_contents($path))],
             ]],
         ], JSON_THROW_ON_ERROR);
@@ -266,6 +271,9 @@ final class ReceiptService
         $doc = json_decode($resp['message']['content'], true, 16, JSON_THROW_ON_ERROR);
 
         $currency = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
+        if ($currency === null && $currencyHint !== '') {
+            $currency = $currencyHint; // model saw only "$" — trust the buyer's context
+        }
         $scale = \SlyTab\Support\Money::scale($currency ?? 'XXX');
         $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * $scale) : null;
         $items = [];
@@ -306,9 +314,13 @@ final class ReceiptService
         if ($p['items'] === [] || $p['totalMinor'] === null || $p['totalMinor'] <= 0) {
             return 'low';
         }
-        $sum = array_sum(array_column($p['items'], 'totalMinor'))
-            + ($p['taxMinor'] ?? 0) + ($p['tipMinor'] ?? 0);
-        $delta = abs($sum - $p['totalMinor']) / $p['totalMinor'];
+        $base = array_sum(array_column($p['items'], 'totalMinor')) + ($p['taxMinor'] ?? 0);
+        // Pre-cuenta receipts print a suggested tip that is NOT in the
+        // total — score whichever interpretation reconciles better.
+        $delta = min(
+            abs($base + ($p['tipMinor'] ?? 0) - $p['totalMinor']),
+            abs($base - $p['totalMinor']),
+        ) / $p['totalMinor'];
         return $delta <= 0.0001 ? 'high' : ($delta <= 0.02 ? 'medium' : 'low');
     }
 
