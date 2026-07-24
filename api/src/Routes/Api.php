@@ -189,7 +189,9 @@ final class Api
                 // Report a bug (profile page): comment + optional screenshot.
                 $p->post('/bugs', function (Request $rq, Response $rs) use ($bugs, $limiter): Response {
                     $userId = Http::user($rq)['id'];
-                    $limiter->guard('bugs', $userId, 10, 86400);
+                    // 50/day matches the other upload caps — 10 proved too
+                    // tight for an active testing day ("too many attempts").
+                    $limiter->guard('bugs', $userId, 50, 86400);
                     $body = $rq->getParsedBody() ?? [];
                     return Http::json($rs->withStatus(201), $bugs->report(
                         $userId,
