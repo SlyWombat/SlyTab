@@ -303,6 +303,25 @@ export const api = {
       currencyHint ? { currencyHint } : {});
   },
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  /** Report a bug from the profile page: comment + optional screenshot. */
+  reportBug: async (message: string, image?: File | null): Promise<{ id: string; status: string }> => {
+    const fd = new FormData();
+    fd.append('message', message);
+    fd.append('context', `web ${navigator.userAgent}`.slice(0, 500));
+    if (image) fd.append('image', image);
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/bugs`, { method: 'POST', headers, body: fd });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ApiFailure(
+        (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'could not send the report' },
+        res.status,
+      );
+    }
+    return json as { id: string; status: string };
+  },
   /** Re-run the parser on the stored photo — no re-photographing. */
   rescanReceipt: (receiptId: string, currencyHint?: string) =>
     req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,

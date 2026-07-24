@@ -374,6 +374,60 @@ function deviceName(label: string): string {
   return label || 'Unknown device';
 }
 
+/** Report a bug (profile page): comment + optional screenshot. */
+function BugReportSection() {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [image, setImage] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (sent) {
+    return (
+      <p className="muted" style={{ padding: '8px 2px' }}>
+        Thanks — your report is in. We read every one. 🐛✓
+      </p>
+    );
+  }
+  if (!open) {
+    return (
+      <button type="button" className="btn block" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>
+        🐛 Report a bug
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 8, border: '1px solid var(--ss-outline)', borderRadius: 12, padding: 12 }}>
+      {error && <div className="error" role="alert">{error}</div>}
+      <label className="field"><span>What went wrong?</span>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3}
+          maxLength={2000} placeholder="What did you do, what did you expect, what happened instead?" />
+      </label>
+      <label className="field"><span>Screenshot (optional)</span>
+        <input type="file" accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn" style={{ flex: 1 }} disabled={busy}
+          onClick={() => { setOpen(false); setError(null); }}>Cancel</button>
+        <button type="button" className="btn primary" style={{ flex: 1 }}
+          disabled={busy || message.trim() === ''}
+          onClick={() => {
+            setBusy(true);
+            setError(null);
+            api.reportBug(message.trim(), image)
+              .then(() => setSent(true))
+              .catch((e) => setError((e as Error).message))
+              .finally(() => setBusy(false));
+          }}>
+          {busy ? 'Sending…' : 'Send report'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   user: User;
   onClose: () => void;
@@ -468,6 +522,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           ))}
         </>
       )}
+      <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
       {!deleting ? (
         <button className="btn block" style={{ marginTop: 8, color: 'var(--ss-owe)' }}

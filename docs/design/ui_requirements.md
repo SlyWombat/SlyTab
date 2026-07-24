@@ -223,8 +223,10 @@ badge.
 
 Sections: account (name, avatar, email, change password), payment handles,
 default currency, theme (System / Dark / Light), notifications (per-category
-toggles, off by default per FR-8.2), sessions/devices (revoke), export my
-data (FR-9.2), sign out, delete account (typed confirmation, explains
+toggles, off by default per FR-8.2), sessions/devices (revoke), **report a
+bug** (FR-10.1: inline form — "what went wrong?" textarea + optional
+screenshot attach; confirmation reads "Thanks — your report is in"), export
+my data (FR-9.2), sign out, delete account (typed confirmation, explains
 anonymization per FR-1.5). Footer: version + git SHA, privacy policy link,
 "Made by Electric RV".
 

@@ -54,12 +54,21 @@ final class Api
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
         $apple = new AppleAuthService($pdo, $auth);
+        $bugs = new \SlyTab\Services\BugReportService($pdo);
 
         $ip = static fn(Request $rq): string =>
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
 
         // ---- admin (cron + deploy hooks, guarded by MIGRATE_TOKEN) ----
-        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx): void {
+        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs): void {
+            // Bug-report review (profile-page reports): comment + screenshot together.
+            $g->get('/bugs', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, ['items' => $bugs->listRecent()]));
+            $g->get('/bugs/{id}/image', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
+                $img = $bugs->imageFile($a['id']);
+                $rs->getBody()->write(file_get_contents($img['path']));
+                return $rs->withHeader('Content-Type', $img['mime']);
+            });
             $g->post('/migrate', function (Request $rq, Response $rs) use ($pdo): Response {
                 $ran = (new Migrator($pdo))->migrate();
                 return Http::json($rs, ['applied' => $ran]);
@@ -95,7 +104,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo, $notify,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo, $notify, $bugs,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -158,8 +167,20 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify, $bugs,
             ): void {
+                // Report a bug (profile page): comment + optional screenshot.
+                $p->post('/bugs', function (Request $rq, Response $rs) use ($bugs, $limiter): Response {
+                    $userId = Http::user($rq)['id'];
+                    $limiter->guard('bugs', $userId, 10, 86400);
+                    $body = $rq->getParsedBody() ?? [];
+                    return Http::json($rs->withStatus(201), $bugs->report(
+                        $userId,
+                        (string) ($body['message'] ?? ''),
+                        (string) ($body['context'] ?? ''),
+                        $rq->getUploadedFiles()['image'] ?? null,
+                    ));
+                });
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
                     $auth->logout(Http::user($rq)['sessionId']);

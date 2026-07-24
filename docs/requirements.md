@@ -152,6 +152,15 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-9.2 (SHOULD)** JSON export of everything a user can see (data
   portability / PIPEDA access requests).
 
+### 2.10 Feedback
+
+- **FR-10.1 (MUST)** Any signed-in user can report a bug from their
+  profile page: a free-text comment plus an optional screenshot. Reports
+  are stored server-side (screenshot alongside the comment, like receipt
+  images) and reviewable together via the token-guarded internal API;
+  the owner is notified by email when configured (`BUG_REPORT_EMAIL`).
+  Rate-limited (10/day/user) like other upload endpoints.
+
 ## 3. Non-functional requirements
 
 - **NFR-1 Privacy.** No analytics/telemetry SDKs anywhere (family

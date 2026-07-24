@@ -4,6 +4,8 @@
  * one-function change here when persistence lands.
  */
 
+import { Platform } from 'react-native';
+
 const BASE = 'https://electricrv.ca/slytab/api/v1';
 
 let token: string | null = null;
@@ -249,6 +251,31 @@ export const api = {
   addFriend: (email: string) => req<Group>('POST', '/friends', { email }),
   registerPushToken: (token: string) => req<{ ok: true }>('POST', '/me/push-tokens', { token }),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  /** Report a bug from the profile page: comment + optional screenshot. */
+  reportBug: async (message: string, image?: { uri: string; mime: string } | null): Promise<{ id: string; status: string }> => {
+    const fd = new FormData();
+    fd.append('message', message);
+    fd.append('context', `mobile ${Platform.OS}`.slice(0, 500));
+    if (image) {
+      // React Native FormData file part: { uri, name, type }.
+      fd.append('image', {
+        uri: image.uri,
+        name: `screenshot.${image.mime === 'image/png' ? 'png' : 'jpg'}`,
+        type: image.mime,
+      } as unknown as Blob);
+    }
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/bugs`, { method: 'POST', headers, body: fd });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ApiFailure(
+        (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'could not send the report' },
+        res.status,
+      );
+    }
+    return json as { id: string; status: string };
+  },
   /** Re-run the parser on the stored photo — no re-photographing. */
   rescanReceipt: (receiptId: string, currencyHint?: string) =>
     req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,

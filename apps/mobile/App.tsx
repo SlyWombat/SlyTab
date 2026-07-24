@@ -527,6 +527,66 @@ function deviceName(label: string): string {
   return label || 'Unknown device';
 }
 
+/** Report a bug (profile page): comment + optional screenshot. */
+function BugReportSection() {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [image, setImage] = useState<{ uri: string; mime: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (sent) {
+    return (
+      <Text style={[s.meta, { textAlign: 'center', paddingVertical: 8 }]}>
+        Thanks — your report is in. We read every one. 🐛✓
+      </Text>
+    );
+  }
+  if (!open) {
+    return (
+      <>
+        <Btn label="🐛 Report a bug" onPress={() => setOpen(true)} />
+        <View style={{ height: 8 }} />
+      </>
+    );
+  }
+  return (
+    <View style={{ borderColor: c.outline, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 }}>
+      {error && <Text style={s.error}>{error}</Text>}
+      <Field label="What went wrong?" value={message} onChangeText={setMessage}
+        multiline numberOfLines={3} maxLength={2000}
+        placeholder="What did you do, what did you expect, what happened instead?" />
+      <Btn small label={image === null ? '🖼 Attach a screenshot (optional)' : 'Screenshot attached ✓ (tap to change)'}
+        onPress={() => {
+          void ImagePicker.launchImageLibraryAsync({ quality: 0.9 }).then((r) => {
+            const asset = r.assets?.[0];
+            if (!r.canceled && asset) {
+              setImage({ uri: asset.uri, mime: asset.mimeType ?? 'image/jpeg' });
+            }
+          });
+        }} />
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Btn label="Cancel" disabled={busy} onPress={() => { setOpen(false); setError(null); }} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Btn primary label={busy ? 'Sending…' : 'Send report'}
+            disabled={busy || message.trim() === ''}
+            onPress={() => {
+              setBusy(true);
+              setError(null);
+              api.reportBug(message.trim(), image)
+                .then(() => setSent(true))
+                .catch((e) => setError((e as Error).message))
+                .finally(() => setBusy(false));
+            }} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   user: User; onClose: () => void; onSaved: (u: User) => void; onSignOut: () => void;
 }) {
@@ -614,6 +674,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </>
       )}
       <View style={{ height: 8 }} />
+      <BugReportSection />
       <Btn label="Sign out" onPress={onSignOut} />
       <View style={{ height: 8 }} />
       {!deleting ? (
