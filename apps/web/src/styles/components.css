@@ -96,6 +96,19 @@ button.row:hover { background: var(--ss-surface-2); }
 .fab.wide span { font-weight: 400; font-size: 1.125rem; }
 .fab:disabled { opacity: 0.55; }
 
+/* Home cards (issue #20 design pass): the emoji sits in a proper tile,
+   and per-person balances read as ledger lines under the group name. */
+.tile { width: 44px; height: 44px; border-radius: 12px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; font-size: 1.375rem;
+  background: var(--ss-surface-2); border: 1px solid var(--ss-outline);
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', var(--ss-font-body); }
+.pairline { font-size: 0.75rem; color: var(--ss-text-2); line-height: 1.5; }
+.pairline b { font: 600 0.75rem var(--ss-font-mono); font-variant-numeric: tabular-nums; }
+.hero .split { display: flex; gap: 14px; padding-top: 4px; font-size: 0.8125rem;
+  color: var(--ss-text-2); }
+.hero .split b { font: 600 0.8125rem var(--ss-font-mono); font-variant-numeric: tabular-nums; }
+.sect .count { color: var(--ss-text-3); }
+
 .center { min-height: 100vh; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: var(--ss-space-4);
   padding: var(--ss-space-6); text-align: center; }

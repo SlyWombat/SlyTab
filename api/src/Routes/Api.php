@@ -206,24 +206,50 @@ final class Api
                     $home = $user['defaultCurrency'];
                     $items = [];
                     $totalMinor = 0;
+                    $owedMinor = 0;   // sum of positive nets, in $home
+                    $oweMinor = 0;    // sum of negative nets, in $home (positive number)
                     $converted = false;
                     $excluded = [];
                     foreach ($groups->listForUser($userId) as $group) {
-                        $net = $balances->netFor($group['id'], $userId);
+                        $b = $balances->forGroup($group['id']);
+                        $net = $b['net'][$userId] ?? 0;
+                        // Per-person context for the home cards: who owes me /
+                        // whom I owe inside this group, biggest first.
+                        $myPairs = [];
+                        foreach ($b['pairwise'] as $pw) {
+                            if ($pw['to'] === $userId) {
+                                $myPairs[] = ['userId' => $pw['from'], 'amountMinor' => $pw['amountMinor']];
+                            } elseif ($pw['from'] === $userId) {
+                                $myPairs[] = ['userId' => $pw['to'], 'amountMinor' => -$pw['amountMinor']];
+                            }
+                        }
+                        usort($myPairs, static fn(array $x, array $y): int => abs($y['amountMinor']) <=> abs($x['amountMinor']));
                         $items[] = [
                             'group' => $group,
                             'netMinor' => $net,
                             'currency' => $group['homeCurrency'],
+                            'myPairs' => $myPairs,
                         ];
+                        $inHome = null;
                         if ($group['homeCurrency'] === $home) {
-                            $totalMinor += $net;
+                            $inHome = $net;
                         } elseif ($net !== 0) {
                             try {
                                 $rate = $fx->rateFor(gmdate('Y-m-d'), $group['homeCurrency'], $home);
-                                $totalMinor += \SlyTab\Support\Money::convert($net, $rate, $group['homeCurrency'], $home);
+                                $inHome = \SlyTab\Support\Money::convert($net, $rate, $group['homeCurrency'], $home);
                                 $converted = true;
                             } catch (ApiException) {
                                 $excluded[] = $group['homeCurrency']; // no rate — leave out rather than lie
+                            }
+                        } else {
+                            $inHome = 0;
+                        }
+                        if ($inHome !== null) {
+                            $totalMinor += $inHome;
+                            if ($inHome > 0) {
+                                $owedMinor += $inHome;
+                            } else {
+                                $oweMinor += -$inHome;
                             }
                         }
                     }
@@ -232,6 +258,8 @@ final class Api
                         'pendingSettlements' => $settlements->pendingFor($userId),
                         'total' => [
                             'minor' => $totalMinor,
+                            'owedMinor' => $owedMinor,
+                            'oweMinor' => $oweMinor,
                             'currency' => $home,
                             'approximate' => $converted,
                             'excluded' => array_values(array_unique($excluded)),

@@ -118,9 +118,23 @@ export interface Session {
   id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean;
 }
 export interface HomeBalances {
-  items: { group: Group; netMinor: number; currency: string }[];
+  items: {
+    group: Group;
+    netMinor: number;
+    currency: string;
+    /** Per-person balances vs me in this group (group home currency), biggest first. Positive = they owe me. */
+    myPairs: { userId: string; amountMinor: number }[];
+  }[];
   pendingSettlements: Settlement[];
-  total: { minor: number; currency: string; approximate: boolean; excluded: string[] };
+  total: {
+    minor: number;
+    /** What others owe me / what I owe, both in my home currency. */
+    owedMinor: number;
+    oweMinor: number;
+    currency: string;
+    approximate: boolean;
+    excluded: string[];
+  };
 }
 
 export function getToken(): string | null {

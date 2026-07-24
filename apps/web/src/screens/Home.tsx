@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI } from '@slytab/core';
+import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
 import { api, type Group, type HomeBalances, type Session, type User } from '../api';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
@@ -33,6 +33,10 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
 
   const total = data?.total ?? null;
   const incoming = (data?.pendingSettlements ?? []).filter((s) => s.toUserId === user.id);
+  const friends = (data?.items ?? []).filter((i) => i.group.isDirect);
+  const liveGroups = (data?.items ?? []).filter((i) => !i.group.isDirect && !i.group.archivedAt);
+  const archivedGroups = (data?.items ?? []).filter((i) => !i.group.isDirect && i.group.archivedAt);
+  const [showArchived, setShowArchived] = useState(false);
 
   function rememberGroup(id: string) {
     try { localStorage.setItem(LAST_GROUP_KEY, id); } catch { /* private mode */ }
@@ -113,7 +117,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         <div className="cap">Your balance</div>
         <div className="big">
           {total === null ? '…' : (
-            total.minor === 0
+            total.owedMinor === 0 && total.oweMinor === 0
               ? <span style={{ color: 'var(--ss-text-2)' }}>All settled up ✓</span>
               : <>
                   {total.approximate && <span style={{ color: 'var(--ss-text-2)', fontWeight: 400 }}>≈ </span>}
@@ -121,6 +125,18 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                 </>
           )}
         </div>
+        {total !== null && (total.owedMinor > 0 || total.oweMinor > 0) && (
+          <div className="split">
+            {total.owedMinor > 0 && (
+              <span>you're owed <b style={{ color: 'var(--ss-owed)' }}>
+                {formatMinor(total.owedMinor, total.currency)}</b></span>
+            )}
+            {total.oweMinor > 0 && (
+              <span>you owe <b style={{ color: 'var(--ss-owe)' }}>
+                {formatMinor(total.oweMinor, total.currency)}</b></span>
+            )}
+          </div>
+        )}
         <div className="sub">
           {total === null ? 'Loading'
             : `Across ${data!.items.length} group${data!.items.length === 1 ? '' : 's'}`
@@ -148,10 +164,10 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         </>
       )}
 
-      {(data?.items ?? []).some((i) => i.group.isDirect) && (
+      {friends.length > 0 && (
         <>
-          <div className="sect">Friends</div>
-          {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
+          <div className="sect">Friends <span className="count">· {friends.length}</span></div>
+          {friends.map(({ group, netMinor, currency }) => {
             const other = group.members.find((m) => m.id !== user.id);
             return (
               <button className="row" key={group.id} onClick={() => openGroup(group.id)}>
@@ -172,29 +188,22 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
           })}
         </>
       )}
-      <div className="sect">Groups</div>
+      <div className="sect">Groups {liveGroups.length > 0 && <span className="count">· {liveGroups.length}</span>}</div>
       {data !== null && data.items.length === 0 && (
         <p className="muted" style={{ padding: '8px 4px' }}>
           No expenses yet. Start a group and invite your people.
         </p>
       )}
-      {(data?.items ?? []).filter((i) => !i.group.isDirect).map(({ group, netMinor, currency }) => (
-        <button className="row" key={group.id} onClick={() => openGroup(group.id)}>
-          <span style={{ fontSize: '1.375rem' }} aria-hidden>{group.emoji || '👥'}</span>
-          <div className="grow">
-            <div className="name">{group.name}{group.archivedAt ? ' (archived)' : ''}</div>
-            <div className="meta">{group.members.map((m) => m.displayName).join(', ')}</div>
-          </div>
-          <div className="right">
-            {netMinor === 0
-              ? <span className="muted">settled ✓</span>
-              : <>
-                  <Amount minor={netMinor} currency={currency} signed />
-                  <span className="dir">{netMinor > 0 ? 'you are owed' : 'you owe'}</span>
-                </>}
-          </div>
-        </button>
-      ))}
+      {liveGroups.map((item) => <GroupCard key={item.group.id} item={item} userId={user.id} onOpen={openGroup} />)}
+      {archivedGroups.length > 0 && (
+        showArchived
+          ? archivedGroups.map((item) => <GroupCard key={item.group.id} item={item} userId={user.id} onOpen={openGroup} />)
+          : (
+            <button className="btn sm" style={{ marginTop: 4 }} onClick={() => setShowArchived(true)}>
+              Show {archivedGroups.length} archived group{archivedGroups.length === 1 ? '' : 's'}
+            </button>
+          )
+      )}
 
       <div style={{ display: 'flex', gap: 8, padding: '10px 0 80px' }}>
         <button className="btn sm" onClick={() => setCreating(true)}>New group</button>
@@ -253,7 +262,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                     onClick={() => startQuickAdd(group)}>
                     {group.isDirect
                       ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
-                      : <span style={{ fontSize: '1.375rem' }} aria-hidden>{group.emoji || '👥'}</span>}
+                      : <span className="tile" aria-hidden>{group.emoji || '👥'}</span>}
                     <div className="grow">
                       <div className="name">{group.isDirect ? other?.displayName ?? 'Friend' : group.name}</div>
                       {!group.isDirect && (
@@ -288,6 +297,63 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Home group card (issue #20 design pass): emoji tile, group name, and
+ * up to two per-person ledger lines ("Jon owes you US$180.50") so the
+ * card answers "who owes whom" without opening the group.
+ */
+function GroupCard({ item, userId, onOpen }: {
+  item: HomeBalances['items'][number];
+  userId: string;
+  onOpen: (groupId: string) => void;
+}) {
+  const { group, netMinor, currency, myPairs } = item;
+  const pairs = myPairs ?? [];
+  const nameOf = (id: string) =>
+    group.members.find((m) => m.id === id)?.displayName?.split(' ')[0] ?? 'Former member';
+  const others = group.members.filter((m) => m.id !== userId);
+  return (
+    <button className="row" onClick={() => onOpen(group.id)}>
+      <span className="tile" aria-hidden>{group.emoji || '👥'}</span>
+      <div className="grow">
+        <div className="name">{group.name}{group.archivedAt ? ' (archived)' : ''}</div>
+        {pairs.length === 0 ? (
+          <div className="pairline">
+            {others.length > 0
+              ? <>all square with {others.map((m) => m.displayName.split(' ')[0]).join(', ')} ✓</>
+              : 'just you so far — invite your people'}
+          </div>
+        ) : (
+          <>
+            {pairs.slice(0, 2).map((p) => (
+              <div className="pairline" key={p.userId}>
+                {p.amountMinor > 0
+                  ? <>{nameOf(p.userId)} owes you <b style={{ color: 'var(--ss-owed)' }}>
+                      {formatMinor(p.amountMinor, currency)}</b></>
+                  : <>you owe {nameOf(p.userId)} <b style={{ color: 'var(--ss-owe)' }}>
+                      {formatMinor(-p.amountMinor, currency)}</b></>}
+              </div>
+            ))}
+            {pairs.length > 2 && (
+              <div className="pairline" style={{ color: 'var(--ss-text-3)' }}>
+                plus {pairs.length - 2} more balance{pairs.length - 2 === 1 ? '' : 's'}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="right">
+        {netMinor === 0
+          ? <span className="muted">settled ✓</span>
+          : <>
+              <Amount minor={netMinor} currency={currency} signed />
+              <span className="dir">{netMinor > 0 ? 'you are owed' : 'you owe'}</span>
+            </>}
+      </div>
+    </button>
   );
 }
 

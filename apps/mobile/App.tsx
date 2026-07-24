@@ -232,6 +232,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{ group: Group; lastCurrency?: string } | null>(null);
   const [quickBusy, setQuickBusy] = useState<string | null>(null);
   const [lastGroupId, setLastGroupId] = useState<string | null>(null);
@@ -305,17 +306,34 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
 
       <View style={s.hero}>
         <Text style={s.cap}>YOUR BALANCE</Text>
-        {total === null ? <ActivityIndicator color={c.brand} /> : total.minor === 0
-          ? <Text style={{ color: c.text2, fontSize: 26, fontWeight: '600' }}>All settled up ✓</Text>
-          : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {total.approximate && <Text style={{ color: c.text2, fontSize: 22 }}>≈</Text>}
-              <Amount minor={total.minor} currency={total.currency} signed size={30} />
-            </View>
-          )}
+        {total === null ? <ActivityIndicator color={c.brand} />
+          : total.owedMinor === 0 && total.oweMinor === 0
+            ? <Text style={{ color: c.text2, fontSize: 26, fontWeight: '600' }}>All settled up ✓</Text>
+            : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {total.approximate && <Text style={{ color: c.text2, fontSize: 22 }}>≈</Text>}
+                <Amount minor={total.minor} currency={total.currency} signed size={30} />
+              </View>
+            )}
+        {total !== null && (total.owedMinor > 0 || total.oweMinor > 0) && (
+          <View style={{ flexDirection: 'row', gap: 14 }}>
+            {total.owedMinor > 0 && (
+              <Text style={s.pairline} maxFontSizeMultiplier={1.5}>
+                you're owed <Text style={[s.pairAmt, { color: c.owed }]}>
+                  {formatMinor(total.owedMinor, total.currency)}</Text>
+              </Text>
+            )}
+            {total.oweMinor > 0 && (
+              <Text style={s.pairline} maxFontSizeMultiplier={1.5}>
+                you owe <Text style={[s.pairAmt, { color: c.owe }]}>
+                  {formatMinor(total.oweMinor, total.currency)}</Text>
+              </Text>
+            )}
+          </View>
+        )}
         <Text style={s.meta}>
           {data === null ? 'Loading'
-            : `Across ${data.items.length} groups`
+            : `Across ${data.items.length} group${data.items.length === 1 ? '' : 's'}`
               + (total?.approximate ? ` · in ${total.currency} at today's rate` : '')
               + (total !== null && total.excluded.length > 0 ? ` · no rate for ${total.excluded.join(', ')}` : '')}
         </Text>
@@ -331,13 +349,16 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       ))}
 
       <FlatList
-        data={(data?.items ?? []).filter((i) => !i.group.isDirect)}
+        data={[
+          ...(data?.items ?? []).filter((i) => !i.group.isDirect && !i.group.archivedAt),
+          ...(showArchived ? (data?.items ?? []).filter((i) => !i.group.isDirect && i.group.archivedAt) : []),
+        ]}
         keyExtractor={(i) => i.group.id}
         onRefresh={reload}
         refreshing={false}
         ListHeaderComponent={(data?.items ?? []).some((i) => i.group.isDirect) ? (
           <View>
-            <Text style={s.cap}>FRIENDS</Text>
+            <Text style={s.cap}>FRIENDS · {(data?.items ?? []).filter((i) => i.group.isDirect).length}</Text>
             {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
               const other = group.members.find((m) => m.id !== user.id);
               return (
@@ -353,22 +374,68 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                 </Pressable>
               );
             })}
-            <Text style={s.cap}>GROUPS</Text>
+            <Text style={s.cap}>
+              GROUPS{(() => { const n = (data?.items ?? []).filter((i) => !i.group.isDirect && !i.group.archivedAt).length; return n > 0 ? ` · ${n}` : ''; })()}
+            </Text>
           </View>
         ) : null}
         ListEmptyComponent={data ? <Text style={s.meta}>No groups yet — create one.</Text> : null}
-        renderItem={({ item }) => (
-          <Pressable style={s.row} onPress={() => openGroup(item.group.id)}>
-            <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.rowName}>{item.group.name}</Text>
-              <Text style={s.meta}>{item.group.members.map((m) => m.displayName).join(', ')}</Text>
-            </View>
-            {item.netMinor === 0
-              ? <Text style={s.meta}>settled ✓</Text>
-              : <Amount minor={item.netMinor} currency={item.currency} signed />}
-          </Pressable>
-        )}
+        ListFooterComponent={(() => {
+          const archived = (data?.items ?? []).filter((i) => !i.group.isDirect && i.group.archivedAt);
+          if (archived.length === 0 || showArchived) return null;
+          return (
+            <Btn small label={`Show ${archived.length} archived group${archived.length === 1 ? '' : 's'}`}
+              onPress={() => setShowArchived(true)} />
+          );
+        })()}
+        renderItem={({ item }) => {
+          const pairs = item.myPairs ?? [];
+          const firstName = (id: string) =>
+            item.group.members.find((m) => m.id === id)?.displayName?.split(' ')[0] ?? 'Former member';
+          const others = item.group.members.filter((m) => m.id !== user.id);
+          return (
+            <Pressable style={s.row} onPress={() => openGroup(item.group.id)}>
+              <View style={s.tile}>
+                <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowName}>{item.group.name}{item.group.archivedAt ? ' (archived)' : ''}</Text>
+                {pairs.length === 0 ? (
+                  <Text style={s.pairline} maxFontSizeMultiplier={1.5}>
+                    {others.length > 0
+                      ? `all square with ${others.map((m) => m.displayName.split(' ')[0]).join(', ')} ✓`
+                      : 'just you so far — invite your people'}
+                  </Text>
+                ) : (
+                  <View>
+                    {pairs.slice(0, 2).map((p) => (
+                      <Text style={s.pairline} key={p.userId} maxFontSizeMultiplier={1.5}>
+                        {p.amountMinor > 0
+                          ? <>{firstName(p.userId)} owes you <Text style={[s.pairAmt, { color: c.owed }]}>
+                              {formatMinor(p.amountMinor, item.currency)}</Text></>
+                          : <>you owe {firstName(p.userId)} <Text style={[s.pairAmt, { color: c.owe }]}>
+                              {formatMinor(-p.amountMinor, item.currency)}</Text></>}
+                      </Text>
+                    ))}
+                    {pairs.length > 2 && (
+                      <Text style={[s.pairline, { color: c.text3 }]} maxFontSizeMultiplier={1.5}>
+                        plus {pairs.length - 2} more balance{pairs.length - 2 === 1 ? '' : 's'}
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+              {item.netMinor === 0
+                ? <Text style={s.meta}>settled ✓</Text>
+                : (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Amount minor={item.netMinor} currency={item.currency} signed />
+                    <Text style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
+                  </View>
+                )}
+            </Pressable>
+          );
+        }}
       />
 
       <Pressable style={[s.fab, s.fabWide]} onPress={onAddExpense} disabled={data === null}
@@ -403,7 +470,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                     onPress={() => startQuickAdd(group)}>
                     {group.isDirect
                       ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
-                      : <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>}
+                      : <View style={s.tile}><Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text></View>}
                     <View style={{ flex: 1 }}>
                       <Text style={s.rowName}>
                         {group.isDirect ? other?.displayName ?? 'Friend' : group.name}
@@ -1867,6 +1934,13 @@ const s = StyleSheet.create({
     borderRadius: 12, padding: 12, marginBottom: 8,
   },
   rowName: { color: c.text, fontSize: 14, fontWeight: '600' },
+  // Home cards (issue #20 design pass)
+  tile: {
+    width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.surface2, borderColor: c.outline, borderWidth: 1,
+  },
+  pairline: { color: c.text2, fontSize: 12, lineHeight: 18 },
+  pairAmt: { fontVariant: ['tabular-nums'], fontSize: 12, fontWeight: '600' },
   badge: { alignItems: 'center', justifyContent: 'center' },
   badgeText: { color: '#0c1220', fontWeight: '600', fontSize: 12 },
   btn: {

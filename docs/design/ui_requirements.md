@@ -41,16 +41,29 @@ later" skip. One screen, not a carousel.
 
 The answer to "where do I stand?" — and the fastest way to add an expense.
 
-- Hero: total net position across all groups (`--ss-type-hero`, count-up
-  animation): "You're owed C$142.10" (green) / "You owe C$36.00" (amber) /
-  "All settled up ✓". If multiple currencies can't be merged, show home-
-  currency total with a "+ 2 other currencies" disclosure.
-- Below: BalancePill list of *people* (direct groups first, then per-group
-  nets), sorted by absolute amount, settled people collapsed under "Settled
-  up (4)".
-- Row tap → that person/group's detail. Hero tap → "Who owes whom" breakdown.
+- Hero: total net position across all groups in the *user's* home
+  currency, mono tabular (Ledger principle 1), with a plain-language
+  split line underneath when anything is outstanding: "you're owed
+  **C$182.00** · you owe **C$36.00**" — owed green, owe amber, both
+  served by `/me/balances` (`total.owedMinor` / `total.oweMinor`).
+  "All settled up ✓" only when both sides are zero (a zero *net* with
+  offsetting balances still shows the split). Tertiary line: "Across N
+  groups · converted to CAD at today's rate".
+- Sections carry counts ("Friends · 2", "Groups · 3"). Friends (direct
+  groups) list first as people rows; groups render as **cards**: the
+  emoji in a 44px rounded tile (`--ss-surface-2`, emoji font fallback),
+  group name, and up to two per-person ledger lines — "Jon owes you
+  **US$481.30**" / "you owe Vijay **US$12.00**" (first names, amounts
+  mono + direction-coloured), then "plus N more balances". The card
+  answers *who owes whom* without opening the group
+  (`items[].myPairs` on `/me/balances`, biggest first). A group with no
+  outstanding pairs reads "all square with Jon, Vijay ✓"; a one-member
+  group prompts "just you so far — invite your people".
+- Archived groups are hidden behind a "Show N archived groups" toggle
+  (declutter; they're read-only anyway).
+- Row tap → that person/group's detail.
 - Pull-to-refresh (mobile) / auto-refetch on focus (web).
-- Empty state: "No expenses yet. Start a group or add your first expense."
+- Empty state: "No expenses yet. Start a group and invite your people."
 
 **Quick add expense (issue #20).** Adding an expense is the everyday action;
 creating a group is rare. Home therefore leads with a labelled
