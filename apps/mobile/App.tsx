@@ -30,7 +30,7 @@ function badgeColor(id: string): string {
 function Badge({ id, name, size = 30 }: { id: string; name: string; size?: number }) {
   return (
     <View style={[s.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: badgeColor(id) }]}>
-      <Text style={s.badgeText}>{name.slice(0, 1).toUpperCase()}</Text>
+      <Text style={s.badgeText} maxFontSizeMultiplier={1.1}>{name.slice(0, 1).toUpperCase()}</Text>
     </View>
   );
 }
@@ -42,7 +42,7 @@ function Amount({ minor, currency, signed = false, size = 14 }: {
   const text = signed
     ? `${minor >= 0 ? '+' : '−'}${formatMinor(Math.abs(minor), currency)}`
     : formatMinor(minor, currency);
-  return <Text style={{ color, fontSize: size, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{text}</Text>;
+  return <Text style={{ color, fontSize: size, fontVariant: ['tabular-nums'], fontWeight: '600' }} maxFontSizeMultiplier={1.5}>{text}</Text>;
 }
 
 function Btn({ label, onPress, primary = false, disabled = false, small = false }: {
@@ -330,7 +330,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       />
 
       <Pressable style={s.fab} onPress={() => setCreating(true)}>
-        <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }}>+</Text>
+        <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }} maxFontSizeMultiplier={1}>+</Text>
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 10 }}>
         <Btn small label="Split with a friend" onPress={() => setAddingFriend(true)} />
@@ -674,7 +674,7 @@ function GroupScreen({ groupId, user, onBack }: {
       <View style={s.tabs}>
         {(['expenses', 'balances', 'totals', 'activity'] as const).map((t) => (
           <Pressable key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
-            <Text style={[s.tabText, tab === t && { color: c.text }]}>
+            <Text style={[s.tabText, tab === t && { color: c.text }]} maxFontSizeMultiplier={1.3}>
               {t === 'expenses' ? 'Expenses' : t === 'balances' ? 'Balances' : t === 'totals' ? 'Totals' : 'Activity'}
             </Text>
           </Pressable>
@@ -843,7 +843,7 @@ function GroupScreen({ groupId, user, onBack }: {
 
       {group.archivedAt === null && (
         <Pressable style={s.fab} onPress={() => setAdding(true)}>
-          <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }}>+</Text>
+          <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }} maxFontSizeMultiplier={1}>+</Text>
         </Pressable>
       )}
       {adding && (

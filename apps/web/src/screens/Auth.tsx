@@ -75,7 +75,7 @@ function GoogleButton({ onSignedIn, onError }: {
   if (clientId === null) return null;
   return (
     <>
-      <div className="muted" style={{ fontSize: 12, margin: '10px 0 6px' }}>or</div>
+      <div className="muted" style={{ fontSize: '0.75rem', margin: '10px 0 6px' }}>or</div>
       <div ref={host} style={{ minHeight: 44 }} />
     </>
   );
@@ -204,7 +204,7 @@ export function Auth({ onSignedIn, joinPending }: {
   return (
     <div className="center">
       <Mark size={56} />
-      <h1 style={{ font: '600 32px/1.2 var(--ss-font-display)', letterSpacing: '-0.02em' }}>
+      <h1 style={{ font: '600 2rem/1.2 var(--ss-font-display)', letterSpacing: '-0.02em' }}>
         Sly<span style={{ color: 'var(--ss-text-2)' }}>Tab</span>
       </h1>
       <p style={{ color: 'var(--ss-text-2)', maxWidth: '36ch' }}>
@@ -214,7 +214,7 @@ export function Auth({ onSignedIn, joinPending }: {
 
       <form onSubmit={submit} style={{ width: 'min(340px, 100%)', textAlign: 'left' }}>
         {error && <div className="error" role="alert">{error}</div>}
-        {notice && <div className="hero" style={{ fontSize: 13, padding: 12 }}>{notice}</div>}
+        {notice && <div className="hero" style={{ fontSize: '0.8125rem', padding: 12 }}>{notice}</div>}
         {mode === 'create' && (
           <label className="field"><span>Your name</span>
             <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required maxLength={80} />
@@ -260,7 +260,7 @@ export function Auth({ onSignedIn, joinPending }: {
           </svg>
           Get the Android app
         </a>
-        <span className="muted" style={{ fontSize: 12 }}>Direct download (APK) — same account as the web app</span>
+        <span className="muted" style={{ fontSize: '0.75rem' }}>Direct download (APK) — same account as the web app</span>
       </div>
     </div>
   );

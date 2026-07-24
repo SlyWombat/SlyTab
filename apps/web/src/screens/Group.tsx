@@ -37,7 +37,7 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
       <div style={{ animation: 'ss-spin 1.2s linear infinite', lineHeight: 0 }}><Mark size={44} /></div>
       {scan.stage === 'upload' ? (
         <>
-          <div style={{ fontSize: 14, color: 'var(--ss-text)' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--ss-text)' }}>
             Uploading photo… {Math.round(scan.fraction * 100)}%
           </div>
           <div style={{ width: 200, height: 6, borderRadius: 3, background: 'var(--ss-surface-2)' }}>
@@ -46,7 +46,7 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 14, color: 'var(--ss-text)' }}>
+        <div style={{ fontSize: '0.875rem', color: 'var(--ss-text)' }}>
           Reading the receipt… {elapsed}s{' '}
           <span style={{ color: 'var(--ss-text-2)' }}>
             {etaCache !== null && elapsed * 1000 > etaCache.slowMs
@@ -137,15 +137,15 @@ export function GroupScreen({ groupId, user, onBack }: {
     <div className="shell">
       <div className="header">
         <button className="btn sm" onClick={onBack}>‹</button>
-        <span style={{ fontSize: 24 }} aria-hidden>{group.emoji || '👥'}</span>
+        <span style={{ fontSize: '1.5rem' }} aria-hidden>{group.emoji || '👥'}</span>
         <button onClick={() => { if (!group.isDirect) setSettingsOpen(true); }} title={group.isDirect ? undefined : 'Group settings'}
           style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0,
             cursor: group.isDirect ? 'default' : 'pointer', minWidth: 0, flex: '0 1 auto' }}>
-          <h1 style={{ fontSize: 19 }}>
+          <h1 style={{ fontSize: '1.1875rem' }}>
             {group.isDirect
               ? group.members.find((m) => m.id !== user.id)?.displayName ?? 'Friend'
               : group.name}
-            {!group.isDirect && <span className="muted" style={{ fontSize: 12 }}> ✎</span>}
+            {!group.isDirect && <span className="muted" style={{ fontSize: '0.75rem' }}> ✎</span>}
           </h1>
           <div className="muted">
             {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} members · ${group.homeCurrency}`}
@@ -154,7 +154,7 @@ export function GroupScreen({ groupId, user, onBack }: {
         <div className="spacer" />
         <div style={{ textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {myNet === 0 ? <span className="muted">settled ✓</span> : <Amount minor={myNet} currency={group.homeCurrency} signed size={16} />}
-          <div className="muted" style={{ fontSize: 10.5 }}>your net</div>
+          <div className="muted" style={{ fontSize: '0.65625rem' }}>your net</div>
         </div>
       </div>
 
@@ -174,7 +174,7 @@ export function GroupScreen({ groupId, user, onBack }: {
               placeholder="Search expenses…"
               style={{ flex: 1, minWidth: 140, background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
                 border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '8px 12px',
-                font: '400 13.5px var(--ss-font-body)' }} />
+                font: '400 0.84375rem var(--ss-font-body)' }} />
             {CATEGORIES.map((cat) => (
               <button key={cat} type="button" className="btn sm"
                 onClick={() => setCatFilter(catFilter === cat ? '' : cat)}
@@ -185,7 +185,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           </div>
           {lastDeleted !== null && (
             <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
-              <div className="grow" style={{ fontSize: 13 }}>Deleted "{lastDeleted.description}"</div>
+              <div className="grow" style={{ fontSize: '0.8125rem' }}>Deleted "{lastDeleted.description}"</div>
               <button className="btn sm" onClick={() => {
                 api.restoreExpense(lastDeleted.id).then(() => { setLastDeleted(null); reload(); })
                   .catch((err) => setError(err.message));
@@ -235,7 +235,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           {(feed ?? []).map((ev) => (
             <div className="row" key={ev.id}>
               <Badge id={ev.userId} name={nameOf(ev.userId)} sm />
-              <div className="grow" style={{ fontSize: 13 }}>
+              <div className="grow" style={{ fontSize: '0.8125rem' }}>
                 <b>{ev.userId === user.id ? 'You' : nameOf(ev.userId)}</b>{' '}
                 {activityText(ev)}
                 <div className="meta">{ev.createdAt}</div>
@@ -257,7 +257,7 @@ export function GroupScreen({ groupId, user, onBack }: {
               <div className="sect">By month</div>
               {totals.byMonth.map((m) => (
                 <div className="row" key={m.month}>
-                  <div className="grow" style={{ fontSize: 13.5 }}>{m.month}</div>
+                  <div className="grow" style={{ fontSize: '0.84375rem' }}>{m.month}</div>
                   <Amount minor={m.minor} currency={group.homeCurrency} />
                 </div>
               ))}
@@ -266,7 +266,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           <div className="sect">By category</div>
           {totals.byCategory.map((cat) => (
             <div className="row" key={cat.category}>
-              <div className="grow" style={{ fontSize: 13.5 }}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</div>
+              <div className="grow" style={{ fontSize: '0.84375rem' }}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</div>
               <Amount minor={cat.minor} currency={group.homeCurrency} />
             </div>
           ))}
@@ -274,7 +274,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           {totals.byPayer.map((pr) => (
             <div className="row" key={pr.userId}>
               <Badge id={pr.userId} name={nameOf(pr.userId)} sm />
-              <div className="grow" style={{ fontSize: 13.5 }}>{pr.userId === user.id ? 'You' : nameOf(pr.userId)}</div>
+              <div className="grow" style={{ fontSize: '0.84375rem' }}>{pr.userId === user.id ? 'You' : nameOf(pr.userId)}</div>
               <Amount minor={pr.minor} currency={group.homeCurrency} />
             </div>
           ))}
@@ -282,7 +282,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           {totals.byShare.map((sh) => (
             <div className="row" key={sh.userId}>
               <Badge id={sh.userId} name={nameOf(sh.userId)} sm />
-              <div className="grow" style={{ fontSize: 13.5 }}>{sh.userId === user.id ? 'You' : nameOf(sh.userId)}</div>
+              <div className="grow" style={{ fontSize: '0.84375rem' }}>{sh.userId === user.id ? 'You' : nameOf(sh.userId)}</div>
               <Amount minor={sh.minor} currency={group.homeCurrency} />
             </div>
           ))}
@@ -307,7 +307,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           {balances.plan.map((tr, i) => (
             <div className="row" key={i}>
               <Badge id={tr.from} name={nameOf(tr.from)} sm />
-              <div className="grow" style={{ fontSize: 13.5 }}>
+              <div className="grow" style={{ fontSize: '0.84375rem' }}>
                 {tr.from === user.id ? 'You' : nameOf(tr.from)} → {tr.to === user.id ? 'you' : nameOf(tr.to)}{' '}
                 <b><Amount minor={tr.amountMinor} currency={group.homeCurrency} /></b>
               </div>
@@ -570,7 +570,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             <Badge id={m.id} name={m.displayName} sm />
             {m.id === user.id ? 'You' : m.displayName}
             {mode === 'equal'
-              ? <span className="amount muted" style={{ marginLeft: 'auto', fontSize: 13 }}>
+              ? <span className="amount muted" style={{ marginLeft: 'auto', fontSize: '0.8125rem' }}>
                   {shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}
                 </span>
               : <label className="field amt-in" style={{ margin: 0 }}>
@@ -598,7 +598,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           <div style={{ marginTop: 10 }}>
             <div className="sect" style={{ paddingLeft: 0 }}>Comments</div>
             {(comments ?? []).map((cm) => (
-              <div key={cm.id} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 13 }}>
+              <div key={cm.id} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: '0.8125rem' }}>
                 <Badge id={cm.userId} name={group.members.find((m) => m.id === cm.userId)?.displayName ?? '?'} sm />
                 <div>
                   <b>{cm.userId === user.id ? 'You' : group.members.find((m) => m.id === cm.userId)?.displayName ?? 'Former member'}</b>{' '}
@@ -612,7 +612,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 placeholder="Add a comment…" maxLength={1000}
                 style={{ flex: 1, background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
                   border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '8px 12px',
-                  font: '400 13.5px var(--ss-font-body)' }} />
+                  font: '400 0.84375rem var(--ss-font-body)' }} />
               <button type="button" className="btn sm" disabled={commentText.trim() === ''}
                 onClick={() => {
                   api.addComment(editing.id, commentText.trim())
@@ -854,7 +854,7 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {GROUP_EMOJI_IMPORT.map((e) => (
               <button type="button" key={e} onClick={() => setEmoji(e === emoji ? '' : e)}
-                style={{ fontSize: 20, padding: 4, background: 'none', borderRadius: 8,
+                style={{ fontSize: '1.25rem', padding: 4, background: 'none', borderRadius: 8,
                   border: e === emoji ? '2px solid var(--ss-brand)' : '2px solid transparent' }}>
                 {e}
               </button>
@@ -912,7 +912,7 @@ function InviteSheet({ groupId, onClose }: { groupId: string; onClose: () => voi
       <div className="sect" style={{ paddingLeft: 0 }}>Or share the link</div>
       {link === null ? <p className="muted">Creating link…</p> : (
         <>
-          <p style={{ fontSize: 13, wordBreak: 'break-all', background: 'var(--ss-surface-2)', padding: 12, borderRadius: 10 }}>{link}</p>
+          <p style={{ fontSize: '0.8125rem', wordBreak: 'break-all', background: 'var(--ss-surface-2)', padding: 12, borderRadius: 10 }}>{link}</p>
           <p className="muted" style={{ padding: '8px 0' }}>Anyone with this link can join for 7 days.</p>
           <button className="btn primary block" onClick={() => {
             navigator.clipboard.writeText(link).then(() => setCopied(true));
@@ -1034,13 +1034,13 @@ function ImportSheet({ group, onClose, onDone }: {
 
       {result !== null ? (
         <>
-          <p style={{ fontSize: 14, paddingBottom: 8 }}>
+          <p style={{ fontSize: '0.875rem', paddingBottom: 8 }}>
             Imported <b>{result.imported.expenses}</b> expenses and{' '}
             <b>{result.imported.settlements}</b> settlements
             {result.imported.skipped > 0 && <> · {result.imported.skipped} personal expenses skipped</>}.
           </p>
           {(result.invited ?? []).length > 0 && (
-            <p className="muted" style={{ fontSize: 13, paddingBottom: 8 }}>
+            <p className="muted" style={{ fontSize: '0.8125rem', paddingBottom: 8 }}>
               Invitations sent to {result.invited!.join(', ')} — their share of the
               history is saved and appears under their name the moment they join.
             </p>
@@ -1049,7 +1049,7 @@ function ImportSheet({ group, onClose, onDone }: {
             <div className="error">
               {result.errors.length} rows could not be imported:
               <ul style={{ paddingLeft: 18 }}>
-                {result.errors.slice(0, 5).map((e, i) => <li key={i} style={{ fontSize: 12 }}>{e}</li>)}
+                {result.errors.slice(0, 5).map((e, i) => <li key={i} style={{ fontSize: '0.75rem' }}>{e}</li>)}
               </ul>
             </div>
           )}
@@ -1066,12 +1066,12 @@ function ImportSheet({ group, onClose, onDone }: {
               <p className="muted" style={{ padding: '8px 0' }}>
                 To connect your Splitwise account, get a one-time code:
               </p>
-              <ol className="muted" style={{ fontSize: 13, paddingLeft: 20, paddingBottom: 8, lineHeight: 1.7 }}>
+              <ol className="muted" style={{ fontSize: '0.8125rem', paddingLeft: 20, paddingBottom: 8, lineHeight: 1.7 }}>
                 <li>In a browser, sign in at <b>secure.splitwise.com/apps</b></li>
                 <li>Choose <b>Register your application</b> — the name can be anything (e.g. "SlyTab")</li>
                 <li>Copy the long code Splitwise shows (labelled "API key") and paste it below</li>
               </ol>
-              <p className="muted" style={{ fontSize: 12, paddingBottom: 8 }}>
+              <p className="muted" style={{ fontSize: '0.75rem', paddingBottom: 8 }}>
                 SlyTab uses the code once to read your groups — it is never stored.
               </p>
               <label className="field"><span>Splitwise code</span>

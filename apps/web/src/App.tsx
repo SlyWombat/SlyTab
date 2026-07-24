@@ -44,7 +44,7 @@ function ResetScreen({ token, onDone }: { token: string; onDone: () => void }) {
   return (
     <div className="center">
       <Mark size={48} />
-      <h1 style={{ font: '600 26px var(--ss-font-display)' }}>Choose a new password</h1>
+      <h1 style={{ font: '600 1.625rem var(--ss-font-display)' }}>Choose a new password</h1>
       {done ? (
         <>
           <p style={{ color: 'var(--ss-text-2)' }}>Password updated. Sign in with it now.</p>

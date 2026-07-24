@@ -22,7 +22,7 @@ body {
 body {
   background: var(--ss-bg);
   color: var(--ss-text);
-  font: 400 15px/1.47 var(--ss-font-body);
+  font: 400 0.9375rem/1.47 var(--ss-font-body);
   -webkit-font-smoothing: antialiased;
 }
 

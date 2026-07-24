@@ -26,7 +26,7 @@ export function Amount({
     ? `${minor >= 0 ? '+' : '−'}${formatMinor(Math.abs(minor), currency)}`
     : formatMinor(minor, currency);
   const label = signed ? (minor >= 0 ? `you are owed ${text}` : `you owe ${text}`) : text;
-  return <span className={cls} style={{ fontSize: size }} aria-label={label}>{text}</span>;
+  return <span className={cls} style={{ fontSize: `${size / 16}rem` }} aria-label={label}>{text}</span>;
 }
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -94,7 +94,7 @@ export function CurrencyMultiPicker({ selected, onChange, exclude }: {
         placeholder="Search — e.g. peso, CLP, dollar…"
         style={{ width: '100%', background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
           border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '9px 12px',
-          font: '400 14px var(--ss-font-body)', marginBottom: 6 }} />
+          font: '400 0.875rem var(--ss-font-body)', marginBottom: 6 }} />
       <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--ss-outline)',
         borderRadius: 10 }}>
         {options.map((c) => {
@@ -105,7 +105,7 @@ export function CurrencyMultiPicker({ selected, onChange, exclude }: {
               style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                 background: on ? 'var(--ss-surface-2)' : 'none', border: 'none',
                 padding: '9px 12px', color: 'var(--ss-text)', textAlign: 'left',
-                font: '400 13.5px var(--ss-font-body)', cursor: 'pointer' }}>
+                font: '400 0.84375rem var(--ss-font-body)', cursor: 'pointer' }}>
               <span style={{ width: 16, color: 'var(--ss-brand)' }}>{on ? '✓' : ''}</span>
               <b style={{ width: 42, fontFamily: 'var(--ss-font-mono)' }}>{c}</b>
               <span style={{ color: 'var(--ss-text-2)' }}>{CURRENCY_NAMES[c]}</span>
@@ -113,7 +113,7 @@ export function CurrencyMultiPicker({ selected, onChange, exclude }: {
           );
         })}
         {options.length === 0 && (
-          <div style={{ padding: 12, color: 'var(--ss-text-3)', fontSize: 13 }}>No matches.</div>
+          <div style={{ padding: 12, color: 'var(--ss-text-3)', fontSize: '0.8125rem' }}>No matches.</div>
         )}
       </div>
     </div>

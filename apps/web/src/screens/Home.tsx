@@ -42,7 +42,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
 
       {user.emailVerifiedAt === null && (
         <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
-          <div className="grow" style={{ fontSize: 13 }}>
+          <div className="grow" style={{ fontSize: '0.8125rem' }}>
             {verifySent
               ? <>Confirmation email sent to <b>{user.email}</b> — check your inbox and junk folder.</>
               : <>Confirm your email — press Resend to get a link at <b>{user.email}</b>.</>}
@@ -80,7 +80,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
           <div className="sect">Waiting for your confirmation</div>
           {incoming.map((s) => (
             <div className="row" key={s.id}>
-              <div className="grow" style={{ fontSize: 13.5 }}>
+              <div className="grow" style={{ fontSize: '0.84375rem' }}>
                 Payment of <b><Amount minor={s.amountMinor} currency={s.currency} /></b> sent to you
               </div>
               <button className="btn primary sm" onClick={() => api.confirmSettlement(s.id).then(reload)}>
@@ -126,7 +126,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       )}
       {(data?.items ?? []).filter((i) => !i.group.isDirect).map(({ group, netMinor, currency }) => (
         <button className="row" key={group.id} onClick={() => onOpenGroup(group.id)}>
-          <span style={{ fontSize: 22 }} aria-hidden>{group.emoji || '👥'}</span>
+          <span style={{ fontSize: '1.375rem' }} aria-hidden>{group.emoji || '👥'}</span>
           <div className="grow">
             <div className="name">{group.name}{group.archivedAt ? ' (archived)' : ''}</div>
             <div className="meta">{group.members.map((m) => m.displayName).join(', ')}</div>
@@ -280,7 +280,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           {sessions.map((sess) => (
             <div className="row" key={sess.id}>
               <div className="grow">
-                <div className="name" style={{ fontSize: 13.5 }}>
+                <div className="name" style={{ fontSize: '0.84375rem' }}>
                   {deviceName(sess.deviceLabel)}{sess.current && <span className="muted"> · this device</span>}
                 </div>
                 <div className="meta">last active {ago(sess.lastSeenAt)}</div>
@@ -304,7 +304,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </button>
       ) : (
         <div style={{ marginTop: 8, border: '1px solid var(--ss-owe)', borderRadius: 12, padding: 12 }}>
-          <p style={{ fontSize: 13, paddingBottom: 8 }}>
+          <p style={{ fontSize: '0.8125rem', paddingBottom: 8 }}>
             This signs you out everywhere and anonymizes you as "Deleted user"
             in shared groups (past expenses stay so nobody's balance changes).
             It cannot be undone. Type your email to confirm.
@@ -366,7 +366,7 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {GROUP_EMOJI.map((e) => (
               <button type="button" key={e} onClick={() => setEmoji(e === emoji ? '' : e)}
-                style={{ fontSize: 20, padding: 4, background: 'none', borderRadius: 8,
+                style={{ fontSize: '1.25rem', padding: 4, background: 'none', borderRadius: 8,
                   border: e === emoji ? '2px solid var(--ss-brand)' : '2px solid transparent' }}>
                 {e}
               </button>
