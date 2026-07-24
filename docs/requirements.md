@@ -70,6 +70,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-3.6 (SHOULD)** Recurring expenses (rent, subscriptions): template +
   monthly auto-post.
 - **FR-3.7 (MAY)** Expense comments.
+- **FR-3.8 (MUST)** Adding an expense is the primary action on the home
+  screen: one tap opens the Add Expense sheet directly (single group) or a
+  group picker defaulting to the most recently used group. Group creation
+  is secondary to expense entry (issue #20).
 
 ### 2.4 Receipt scanning (OCR)
 

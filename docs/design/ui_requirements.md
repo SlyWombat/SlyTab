@@ -10,9 +10,10 @@ column (lists) and modal sheets. Differences are called out per screen.
 ## 1. Navigation shell
 
 Mobile: bottom tab bar with four tabs — **Home**, **Groups**, **Activity**,
-**Profile** — plus a floating **+** FAB (add expense) on Home and Group
-screens. Web: left sidebar with the same four destinations; FAB becomes a
-persistent "New expense" button in the header.
+**Profile** — plus a floating add-expense FAB on Home and Group screens
+(labelled `＋ Add expense` on Home, see §2.2; bare `+` inside a group).
+Web: left sidebar with the same four destinations; the same FAB pattern
+applies (plus the `n` shortcut, §3).
 
 Deep links: `slytab://join/<token>` (and
 `electricrv.ca/slytab/join/<token>`) → Join Group screen;
@@ -38,7 +39,7 @@ later" skip. One screen, not a carousel.
 
 ### 2.2 Home
 
-The answer to "where do I stand?".
+The answer to "where do I stand?" — and the fastest way to add an expense.
 
 - Hero: total net position across all groups (`--ss-type-hero`, count-up
   animation): "You're owed C$142.10" (green) / "You owe C$36.00" (amber) /
@@ -50,6 +51,24 @@ The answer to "where do I stand?".
 - Row tap → that person/group's detail. Hero tap → "Who owes whom" breakdown.
 - Pull-to-refresh (mobile) / auto-refetch on focus (web).
 - Empty state: "No expenses yet. Start a group or add your first expense."
+
+**Quick add expense (issue #20).** Adding an expense is the everyday action;
+creating a group is rare. Home therefore leads with a labelled
+`＋ Add expense` pill FAB (not a bare `+`, and not group creation):
+
+- One active (non-archived) group → straight into that group's Add Expense
+  sheet (§2.5). No intermediate taps.
+- Several groups → a "Where did this expense happen?" picker sheet listing
+  friends and groups, with the most recently used group pinned first and
+  tagged "recent" (remembered per device: `slytab.lastGroup` in
+  localStorage / secure store, updated on group open and quick add).
+- The sheet opens pre-set to the chosen group's last-used currency (same
+  mid-trip behaviour as adding from inside the group).
+- No groups yet → the picker explains and offers `New group` /
+  `Split with a friend` as the primary actions.
+- Group creation stays available but secondary: a small `New group` button
+  in the footer beside `Split with a friend`.
+- Web keyboard: `n` opens quick add (§3 web parity).
 
 ### 2.3 Groups list
 

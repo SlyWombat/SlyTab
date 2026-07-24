@@ -217,6 +217,10 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   );
 }
 
+// Quick-add remembers where you last added an expense (per device) so the
+// picker defaults to the group you're living in right now (issue #20).
+const LAST_GROUP_KEY = 'slytab.lastGroup';
+
 function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   user: User; onOpenGroup: (id: string) => void; onSignOut: () => void;
   onUserUpdated: (u: User) => void;
@@ -227,14 +231,52 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [addingFriend, setAddingFriend] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [quickAdd, setQuickAdd] = useState<{ group: Group; lastCurrency?: string } | null>(null);
+  const [quickBusy, setQuickBusy] = useState<string | null>(null);
+  const [lastGroupId, setLastGroupId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
   }, []);
   useEffect(reload, [reload, user.defaultCurrency]);
+  useEffect(() => {
+    SecureStore.getItemAsync(LAST_GROUP_KEY).then(setLastGroupId).catch(() => {});
+  }, []);
 
   const total = data?.total ?? null;
   const incoming = (data?.pendingSettlements ?? []).filter((p) => p.toUserId === user.id);
+
+  function rememberGroup(id: string) {
+    setLastGroupId(id);
+    SecureStore.setItemAsync(LAST_GROUP_KEY, id).catch(() => {});
+  }
+  function openGroup(id: string) {
+    rememberGroup(id);
+    onOpenGroup(id);
+  }
+
+  // Archived groups are read-only, so they can't take new expenses.
+  const activeItems = (data?.items ?? []).filter((i) => !i.group.archivedAt);
+  const pickerItems = [...activeItems].sort((a, b) =>
+    Number(b.group.id === lastGroupId) - Number(a.group.id === lastGroupId));
+
+  // Add expense in one tap: single group goes straight to the sheet, else
+  // ask which group (most recently used first). The sheet opens in the
+  // group's last-used currency — same mid-trip behaviour as in the group.
+  function startQuickAdd(group: Group) {
+    setQuickBusy(group.id);
+    rememberGroup(group.id);
+    api.expenses(group.id)
+      .then((r) => setQuickAdd({ group, lastCurrency: r.items[0]?.currency }))
+      .catch(() => setQuickAdd({ group }))
+      .finally(() => { setQuickBusy(null); setPicking(false); });
+  }
+  function onAddExpense() {
+    const only = activeItems.length === 1 ? activeItems[0] : undefined;
+    if (only !== undefined) startQuickAdd(only.group);
+    else setPicking(true); // includes the no-groups case (picker explains)
+  }
 
   return (
     <View style={s.screen}>
@@ -299,7 +341,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
             {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
               const other = group.members.find((m) => m.id !== user.id);
               return (
-                <Pressable style={s.row} key={group.id} onPress={() => onOpenGroup(group.id)}>
+                <Pressable style={s.row} key={group.id} onPress={() => openGroup(group.id)}>
                   <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
                   <Text style={[s.rowName, { flex: 1 }]}>{other?.displayName ?? 'Friend'}</Text>
                   {netMinor === 0 ? <Text style={s.meta}>settled ✓</Text> : (
@@ -316,7 +358,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         ) : null}
         ListEmptyComponent={data ? <Text style={s.meta}>No groups yet — create one.</Text> : null}
         renderItem={({ item }) => (
-          <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
+          <Pressable style={s.row} onPress={() => openGroup(item.group.id)}>
             <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
             <View style={{ flex: 1 }}>
               <Text style={s.rowName}>{item.group.name}</Text>
@@ -329,20 +371,70 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         )}
       />
 
-      <Pressable style={s.fab} onPress={() => setCreating(true)}>
-        <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }} maxFontSizeMultiplier={1}>+</Text>
+      <Pressable style={[s.fab, s.fabWide]} onPress={onAddExpense} disabled={data === null}
+        accessibilityRole="button" accessibilityLabel="Add expense">
+        <Text style={{ color: '#fff', fontSize: 18 }} maxFontSizeMultiplier={1.3}>＋</Text>
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={1.3}>Add expense</Text>
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 10 }}>
+        <Btn small label="New group" onPress={() => setCreating(true)} />
         <Btn small label="Split with a friend" onPress={() => setAddingFriend(true)} />
       </View>
+      {picking && (
+        <SheetModal title="Add an expense" onClose={() => setPicking(false)}>
+          {pickerItems.length === 0 ? (
+            <View>
+              <Text style={[s.body, { color: c.text2, marginBottom: 12 }]}>
+                Every expense lives in a group or a one-on-one tab — start
+                one and you're seconds away from splitting.
+              </Text>
+              <Btn primary label="New group"
+                onPress={() => { setPicking(false); setCreating(true); }} />
+              <Btn label="Split with a friend"
+                onPress={() => { setPicking(false); setAddingFriend(true); }} />
+            </View>
+          ) : (
+            <View>
+              <Text style={[s.meta, { marginBottom: 8 }]}>Where did this expense happen?</Text>
+              {pickerItems.map(({ group }) => {
+                const other = group.isDirect ? group.members.find((m) => m.id !== user.id) : undefined;
+                return (
+                  <Pressable style={s.row} key={group.id} disabled={quickBusy !== null}
+                    onPress={() => startQuickAdd(group)}>
+                    {group.isDirect
+                      ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
+                      : <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>}
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.rowName}>
+                        {group.isDirect ? other?.displayName ?? 'Friend' : group.name}
+                      </Text>
+                      {!group.isDirect && (
+                        <Text style={s.meta}>{group.members.map((m) => m.displayName).join(', ')}</Text>
+                      )}
+                    </View>
+                    {quickBusy === group.id
+                      ? <ActivityIndicator color={c.brand} />
+                      : group.id === lastGroupId && <Text style={s.meta}>recent</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </SheetModal>
+      )}
+      {quickAdd !== null && (
+        <AddExpenseSheet group={quickAdd.group} user={user} lastCurrency={quickAdd.lastCurrency}
+          onClose={() => setQuickAdd(null)}
+          onSaved={() => { setQuickAdd(null); reload(); }} />
+      )}
       {addingFriend && (
         <AddFriendSheet onClose={() => setAddingFriend(false)}
-          onCreated={(id) => { setAddingFriend(false); onOpenGroup(id); }} />
+          onCreated={(id) => { setAddingFriend(false); openGroup(id); }} />
       )}
       {creating && (
         <CreateGroupSheet defaultCurrency={user.defaultCurrency}
           onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); onOpenGroup(id); }} />
+          onCreated={(id) => { setCreating(false); openGroup(id); }} />
       )}
       {profileOpen && (
         <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
@@ -1744,4 +1836,6 @@ const s = StyleSheet.create({
     position: 'absolute', right: 18, bottom: 26, width: 56, height: 56, borderRadius: 28,
     backgroundColor: c.brand, alignItems: 'center', justifyContent: 'center', elevation: 6,
   },
+  // Labelled variant — the primary "Add expense" action on Home (issue #20).
+  fabWide: { width: 'auto', paddingHorizontal: 20, flexDirection: 'row', gap: 7 },
 });

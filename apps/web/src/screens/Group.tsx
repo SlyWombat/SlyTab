@@ -387,8 +387,9 @@ export function GroupScreen({ groupId, user, onBack }: {
 }
 
 // ---- Add expense (ui_requirements §2.5, split math from @slytab/core) ----
+// Exported so Home can open it directly for the quick-add flow (issue #20).
 
-function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted, lastCurrency }: {
+export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted, lastCurrency }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {

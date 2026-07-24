@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, GROUP_EMOJI } from '@slytab/core';
-import { api, type HomeBalances, type Session, type User } from '../api';
+import { api, type Group, type HomeBalances, type Session, type User } from '../api';
+import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
+
+// Quick-add remembers where you last added an expense (per device) so the
+// picker defaults to the group you're living in right now (issue #20).
+const LAST_GROUP_KEY = 'slytab.lastGroup';
 
 export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   user: User;
@@ -17,6 +22,9 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [friendBusy, setFriendBusy] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [quickAdd, setQuickAdd] = useState<{ group: Group; lastCurrency?: string } | null>(null);
+  const [quickBusy, setQuickBusy] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
@@ -25,6 +33,52 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
 
   const total = data?.total ?? null;
   const incoming = (data?.pendingSettlements ?? []).filter((s) => s.toUserId === user.id);
+
+  function rememberGroup(id: string) {
+    try { localStorage.setItem(LAST_GROUP_KEY, id); } catch { /* private mode */ }
+  }
+  function openGroup(id: string) {
+    rememberGroup(id);
+    onOpenGroup(id);
+  }
+
+  // Archived groups are read-only, so they can't take new expenses.
+  const activeItems = (data?.items ?? []).filter((i) => !i.group.archivedAt);
+  const lastGroupId = (() => {
+    try { return localStorage.getItem(LAST_GROUP_KEY); } catch { return null; }
+  })();
+  const pickerItems = [...activeItems].sort((a, b) =>
+    Number(b.group.id === lastGroupId) - Number(a.group.id === lastGroupId));
+
+  // Add expense in one tap: single group goes straight to the sheet, else
+  // ask which group (most recently used first). The sheet opens in the
+  // group's last-used currency — same mid-trip behaviour as in the group.
+  const startQuickAdd = useCallback((group: Group) => {
+    setQuickBusy(group.id);
+    rememberGroup(group.id);
+    api.expenses(group.id)
+      .then((r) => setQuickAdd({ group, lastCurrency: r.items[0]?.currency }))
+      .catch(() => setQuickAdd({ group }))
+      .finally(() => { setQuickBusy(null); setPicking(false); });
+  }, []);
+  const onAddExpense = useCallback(() => {
+    const only = activeItems.length === 1 ? activeItems[0] : undefined;
+    if (only !== undefined) startQuickAdd(only.group);
+    else setPicking(true); // includes the no-groups case (picker explains)
+  }, [activeItems, startQuickAdd]);
+
+  // ui_requirements §3: `n` = new expense on web.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (picking || quickAdd !== null || creating || addingFriend || profileOpen || data === null) return;
+      onAddExpense();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picking, quickAdd, creating, addingFriend, profileOpen, data, onAddExpense]);
 
   return (
     <div className="shell">
@@ -100,7 +154,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
           {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
             const other = group.members.find((m) => m.id !== user.id);
             return (
-              <button className="row" key={group.id} onClick={() => onOpenGroup(group.id)}>
+              <button className="row" key={group.id} onClick={() => openGroup(group.id)}>
                 <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
                 <div className="grow">
                   <div className="name">{other?.displayName ?? 'Friend'}</div>
@@ -125,7 +179,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         </p>
       )}
       {(data?.items ?? []).filter((i) => !i.group.isDirect).map(({ group, netMinor, currency }) => (
-        <button className="row" key={group.id} onClick={() => onOpenGroup(group.id)}>
+        <button className="row" key={group.id} onClick={() => openGroup(group.id)}>
           <span style={{ fontSize: '1.375rem' }} aria-hidden>{group.emoji || '👥'}</span>
           <div className="grow">
             <div className="name">{group.name}{group.archivedAt ? ' (archived)' : ''}</div>
@@ -143,6 +197,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       ))}
 
       <div style={{ display: 'flex', gap: 8, padding: '10px 0 80px' }}>
+        <button className="btn sm" onClick={() => setCreating(true)}>New group</button>
         <button className="btn sm" onClick={() => setAddingFriend(true)}>Split with a friend</button>
       </div>
       {addingFriend && (
@@ -155,7 +210,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
             e.preventDefault();
             setFriendBusy(true);
             api.addFriend(friendEmail.trim())
-              .then((g) => { setAddingFriend(false); setFriendEmail(''); onOpenGroup(g.id); })
+              .then((g) => { setAddingFriend(false); setFriendEmail(''); openGroup(g.id); })
               .catch((err) => setError((err as Error).message))
               .finally(() => setFriendBusy(false));
           }}>
@@ -169,7 +224,58 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
           </form>
         </Sheet>
       )}
-      <button className="fab" aria-label="New group" onClick={() => setCreating(true)}>+</button>
+      <button className="fab wide" onClick={onAddExpense} disabled={data === null}>
+        <span aria-hidden>＋</span> Add expense
+      </button>
+      {picking && (
+        <Sheet title="Add an expense" onClose={() => setPicking(false)}>
+          {pickerItems.length === 0 ? (
+            <>
+              <p className="muted" style={{ paddingBottom: 10 }}>
+                Every expense lives in a group or a one-on-one tab — start
+                one and you're seconds away from splitting.
+              </p>
+              <button className="btn primary block" onClick={() => { setPicking(false); setCreating(true); }}>
+                New group
+              </button>
+              <button className="btn block" style={{ marginTop: 8 }}
+                onClick={() => { setPicking(false); setAddingFriend(true); }}>
+                Split with a friend
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ paddingBottom: 8 }}>Where did this expense happen?</p>
+              {pickerItems.map(({ group }) => {
+                const other = group.isDirect ? group.members.find((m) => m.id !== user.id) : undefined;
+                return (
+                  <button className="row" key={group.id} disabled={quickBusy !== null}
+                    onClick={() => startQuickAdd(group)}>
+                    {group.isDirect
+                      ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
+                      : <span style={{ fontSize: '1.375rem' }} aria-hidden>{group.emoji || '👥'}</span>}
+                    <div className="grow">
+                      <div className="name">{group.isDirect ? other?.displayName ?? 'Friend' : group.name}</div>
+                      {!group.isDirect && (
+                        <div className="meta">{group.members.map((m) => m.displayName).join(', ')}</div>
+                      )}
+                    </div>
+                    <div className="right">
+                      {quickBusy === group.id ? <span className="muted">…</span>
+                        : group.id === lastGroupId && <span className="muted">recent</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </Sheet>
+      )}
+      {quickAdd !== null && (
+        <AddExpenseSheet group={quickAdd.group} user={user} lastCurrency={quickAdd.lastCurrency}
+          onClose={() => setQuickAdd(null)}
+          onSaved={() => { setQuickAdd(null); reload(); }} />
+      )}
       {profileOpen && (
         <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
           onSaved={(u) => { onUserUpdated(u); setProfileOpen(false); }} />
@@ -178,7 +284,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         <CreateGroupSheet
           defaultCurrency={user.defaultCurrency}
           onClose={() => setCreating(false)}
-          onCreated={(id) => { setCreating(false); onOpenGroup(id); }}
+          onCreated={(id) => { setCreating(false); openGroup(id); }}
         />
       )}
     </div>

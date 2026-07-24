@@ -89,6 +89,12 @@ button.row:hover { background: var(--ss-surface-2); }
   width: 56px; height: 56px; border-radius: 50%; border: none;
   background: var(--ss-brand); color: #fff; font: 300 1.875rem/3.375rem var(--ss-font-body);
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.35); }
+/* Labelled variant — the primary "Add expense" action on Home (issue #20). */
+.fab.wide { display: inline-flex; align-items: center; gap: 7px;
+  width: auto; padding: 0 20px; border-radius: 28px;
+  font: 600 0.9375rem var(--ss-font-body); }
+.fab.wide span { font-weight: 400; font-size: 1.125rem; }
+.fab:disabled { opacity: 0.55; }
 
 .center { min-height: 100vh; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: var(--ss-space-4);
