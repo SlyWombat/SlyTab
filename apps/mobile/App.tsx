@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, parseAmount, tokens, type Category, type Currency } from '@slytab/core';
+import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, rescaleAmountString, bridgeMinor, minorUnitScale, tokens, type Category, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -626,6 +626,17 @@ function GroupScreen({ groupId, user, onBack }: {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
+  // Today's group-home → user-home rate, for the fine print under each
+  // expense (the user thinks in their own currency, not the group's).
+  const [homeRate, setHomeRate] = useState<number | null>(null);
+
+  const groupHome = group?.homeCurrency;
+  useEffect(() => {
+    if (groupHome === undefined || user.defaultCurrency === groupHome) return;
+    api.fxRate(groupHome, user.defaultCurrency)
+      .then((r) => setHomeRate(r.rate))
+      .catch(() => setHomeRate(null)); // fall back to group-home display
+  }, [groupHome, user.defaultCurrency]);
 
   const reload = useCallback(() => {
     api.group(groupId).then(setGroup).catch(() => {});
@@ -723,9 +734,21 @@ function GroupScreen({ groupId, user, onBack }: {
                   <Text style={s.meta}>
                     {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid{' '}
                     {formatMinor(e.amountMinor, e.currency)} · {e.expenseDate}
-                    {e.fxRate !== null
-                      ? ` · ≈ ${formatMinor(convertAcrossMinor(e.amountMinor, e.fxRate, e.currency, group.homeCurrency), group.homeCurrency)}`
-                      : ''}
+                    {(() => {
+                      // Fine print: the expense's value in the viewer's own
+                      // home currency, falling back to the group home value
+                      // when no cross rate is available.
+                      const inGroupHome = e.fxRate !== null
+                        ? convertAcrossMinor(e.amountMinor, e.fxRate, e.currency, group.homeCurrency)
+                        : (e.currency === group.homeCurrency ? e.amountMinor : null);
+                      if (inGroupHome === null) return '';
+                      if (user.defaultCurrency !== group.homeCurrency && homeRate !== null
+                        && e.currency !== user.defaultCurrency) {
+                        const inUserHome = convertAcrossMinor(inGroupHome, homeRate, group.homeCurrency, user.defaultCurrency);
+                        return ` · ≈ ${formatMinor(inUserHome, user.defaultCurrency)}`;
+                      }
+                      return e.fxRate !== null ? ` · ≈ ${formatMinor(inGroupHome, group.homeCurrency)}` : '';
+                    })()}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -1231,6 +1254,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = parseAmount(amountStr, currency);
 
+  // Keep the number the user sees when the picker moves between
+  // currencies of different scales: "950000.00" reparsed as CLP would
+  // become 95,000,000 pesos.
+  function switchCurrency(next: string) {
+    setAmountStr((s) => rescaleAmountString(s, currency, next));
+    setExactShares((m) => m === null ? null : Object.fromEntries(
+      Object.entries(m).map(([id, v]) => [id, bridgeMinor(v, minorUnitScale(currency), next)]),
+    ));
+    setCurrency(next);
+  }
+
   useEffect(() => {
     if (editing) api.comments(editing.id).then((r) => setComments(r.items)).catch(() => {});
   }, [editing]);
@@ -1267,7 +1301,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
       } else {
-        setAssigning(r.parsed);
+        // Pin the parse to a definite currency before any math on it: a
+        // parse without one is scaled at 100, which is 100x off for
+        // zero-decimal currencies (the 95,000,000-peso Boragó).
+        const cur = r.parsed.currency && CURRENCIES.includes(r.parsed.currency as never)
+          ? r.parsed.currency : currency;
+        setAssigning(normalizeParsedReceipt(r.parsed, cur));
       }
     } catch (e) {
       if (!(e instanceof ApiFailure && e.error.code === 'CANCELED')) {
@@ -1312,7 +1351,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         keyboardType="decimal-pad" placeholder="0.00" />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: allCurrencies ? 8 : 12 }}>
         {[...new Set([group.homeCurrency, ...group.currencies, currency])].map((cur) => (
-          <Pressable key={cur} onPress={() => setCurrency(cur)}
+          <Pressable key={cur} onPress={() => switchCurrency(cur)}
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
               backgroundColor: currency === cur ? c.brand : c.surface2 }}>
             <Text style={{ color: currency === cur ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
@@ -1325,7 +1364,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       </View>
       {allCurrencies && (
         <CurrencySearchList selected={[currency]}
-          onPick={(cur) => { setCurrency(cur); setAllCurrencies(false); }} />
+          onPick={(cur) => { switchCurrency(cur); setAllCurrencies(false); }} />
       )}
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
       <Field label="Notes (optional)" value={notes} onChangeText={setNotes}
@@ -1490,7 +1529,10 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
       }, rcur);
       slipHandle.current = handle;
       const r = await handle.promise;
-      const slipTotal = r.parsed?.totalMinor ?? null;
+      // Slip amounts arrive in the slip parse's own scale — bridge to the
+      // bill's currency before comparing totals.
+      const slipTotal = r.parsed === null ? null
+        : normalizeParsedReceipt(r.parsed, rcur).totalMinor;
       if (slipTotal === null) {
         setSlipError('could not read a total on that slip — you can adjust the amount after Continue');
         return;

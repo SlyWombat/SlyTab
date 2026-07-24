@@ -211,7 +211,7 @@ final class ReceiptService
             return $this->parseLocal($path, $mime, $localUrl, $currencyHint);
         }
         if ($engine === 'claude' || ($engine === 'auto' && $claudeKey !== '')) {
-            return $this->parseClaude($path, $mime, $claudeKey);
+            return $this->parseClaude($path, $mime, $claudeKey, $currencyHint);
         }
         throw new ApiException('RECEIPT_PARSING_UNAVAILABLE', 'receipt scanning is not configured on this server', 503);
     }
@@ -293,6 +293,10 @@ final class ReceiptService
             'merchant' => is_string($doc['merchant'] ?? null) ? mb_substr($doc['merchant'], 0, 120) : null,
             'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($doc['date'] ?? '')) ? $doc['date'] : null,
             'currency' => $currency,
+            // The scale the *Minor fields are written in. With no currency
+            // this is a guess (100) — clients MUST rescale via this field
+            // once a currency is known (the Boragó 100x bug).
+            'scale' => $scale,
             'items' => $items,
             'subtotalMinor' => $toMinor($doc['subtotal'] ?? null),
             'taxMinor' => $toMinor($doc['tax'] ?? null),
@@ -360,7 +364,7 @@ final class ReceiptService
      *
      * @return array<string,mixed>
      */
-    private function parseClaude(string $path, string $mime, string $apiKey): array
+    private function parseClaude(string $path, string $mime, string $apiKey, string $currencyHint = ''): array
     {
         if ($apiKey === '') {
             throw new ApiException('RECEIPT_PARSING_UNAVAILABLE', 'receipt scanning is not configured on this server', 503);
@@ -384,9 +388,14 @@ final class ReceiptService
                     [
                         'type' => 'text',
                         'text' => 'Itemize this receipt. All monetary values are integer minor units '
-                            . '(cents) of the receipt currency. Use null for anything unreadable. '
-                            . 'quantity may be fractional (weighed goods). confidence is "low" when '
-                            . 'items+tax+tip differ from the total by more than 2%.',
+                            . 'of the receipt currency — cents for 2-decimal currencies, whole units '
+                            . 'for zero-decimal ones (JPY, KRW, VND, CLP, ISK, HUF). Use null for '
+                            . 'anything unreadable. quantity may be fractional (weighed goods). '
+                            . 'confidence is "low" when items+tax+tip differ from the total by more '
+                            . 'than 2%.'
+                            . ($currencyHint !== ''
+                                ? " If the currency symbol is ambiguous (e.g. just '\$'), the buyer expects {$currencyHint}."
+                                : ''),
                     ],
                 ],
             ]],
@@ -403,7 +412,14 @@ final class ReceiptService
         }
         foreach ($message->content as $block) {
             if ($block->type === 'text') {
-                return json_decode($block->text, true, 16, JSON_THROW_ON_ERROR);
+                $doc = json_decode($block->text, true, 16, JSON_THROW_ON_ERROR);
+                $currency = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
+                if ($currency === null && $currencyHint !== '') {
+                    $currency = $currencyHint;
+                }
+                $doc['currency'] = $currency;
+                $doc['scale'] = \SlyTab\Support\Money::scale($currency ?? 'XXX');
+                return $doc;
             }
         }
         throw new \RuntimeException('no text block in Claude response');

@@ -158,6 +158,8 @@ export interface ParsedReceipt {
   merchant: string | null;
   date: string | null;
   currency: string | null;
+  /** Minor-unit scale of the *Minor fields; older parses omit it. */
+  scale?: number | null;
   items: ReceiptItem[];
   subtotalMinor: number | null;
   taxMinor: number | null;
@@ -284,6 +286,9 @@ export const api = {
       currencyHint ? { currencyHint } : {});
   },
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  fxRate: (base: string, quote: string) =>
+    req<{ date: string; base: string; quote: string; rate: number }>(
+      'GET', `/rates?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`),
   inspectSplitwise: (groupId: string, file: File) =>
     upload<{
       members: string[]; expenseRows: number; paymentRows: number;

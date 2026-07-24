@@ -98,6 +98,8 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 export interface ReceiptItem { name: string; quantity: number; totalMinor: number }
 export interface ParsedReceipt {
   merchant: string | null; date: string | null; currency: string | null;
+  /** Minor-unit scale of the *Minor fields; older parses omit it. */
+  scale?: number | null;
   items: ReceiptItem[]; subtotalMinor: number | null; taxMinor: number | null;
   tipMinor: number | null; totalMinor: number | null;
   confidence: 'high' | 'medium' | 'low';
@@ -222,6 +224,9 @@ export const api = {
   addFriend: (email: string) => req<Group>('POST', '/friends', { email }),
   registerPushToken: (token: string) => req<{ ok: true }>('POST', '/me/push-tokens', { token }),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
+  fxRate: (base: string, quote: string) =>
+    req<{ date: string; base: string; quote: string; rate: number }>(
+      'GET', `/rates?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`),
   listSessions: () => req<{ items: Session[] }>('GET', '/me/sessions'),
   revokeSession: (id: string) => req<{ ok: true }>('DELETE', `/me/sessions/${id}`),
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),
