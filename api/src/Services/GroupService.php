@@ -194,6 +194,56 @@ final class GroupService
      * @return array{token:string, expiresAt:string, emailed:bool}
      */
     /**
+     * Issue #12 (Friends): find or create the 1:1 direct "group" between
+     * the caller and the person behind an email. Direct groups have
+     * is_direct=1 and no name of their own — clients display the other
+     * member's name.
+     *
+     * @return array<string,mixed> the direct group
+     */
+    public function directGroup(string $userId, string $email, string $homeCurrency): array
+    {
+        if (!preg_match(self::CURRENCY_RE, $homeCurrency)) {
+            throw new ApiException('VALIDATION', 'home currency must be a 3-letter code');
+        }
+        $email = strtolower(trim($email));
+        $me = $this->pdo->prepare('SELECT email FROM users WHERE id = ?');
+        $me->execute([$userId]);
+        if ($me->fetchColumn() === $email) {
+            throw new ApiException('VALIDATION', "that's your own email — invite a friend");
+        }
+        $other = $this->pdo->prepare('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL');
+        $other->execute([$email]);
+        $otherId = $other->fetchColumn();
+
+        if ($otherId !== false) {
+            // Existing 1:1 group with exactly these two members?
+            $stmt = $this->pdo->prepare(
+                'SELECT g.id FROM `groups` g
+                 JOIN memberships m1 ON m1.group_id = g.id AND m1.user_id = ? AND m1.left_at IS NULL
+                 JOIN memberships m2 ON m2.group_id = g.id AND m2.user_id = ? AND m2.left_at IS NULL
+                 WHERE g.is_direct = 1',
+            );
+            $stmt->execute([$userId, $otherId]);
+            $existing = $stmt->fetchColumn();
+            if ($existing !== false) {
+                return $this->get((string) $existing);
+            }
+        }
+
+        $id = Ulid::generate();
+        $this->pdo->prepare(
+            'INSERT INTO `groups` (id, name, emoji, home_currency, is_direct, created_by)
+             VALUES (?, ?, ?, ?, 1, ?)',
+        )->execute([$id, '', '', $homeCurrency, $userId]);
+        $this->pdo->prepare('INSERT INTO memberships (group_id, user_id) VALUES (?, ?)')
+            ->execute([$id, $userId]);
+        $this->activity->record($id, $userId, 'created', 'group', $id);
+        $this->addMemberByEmail($id, $userId, $email);
+        return $this->get($id);
+    }
+
+    /**
      * Issue #2: bring someone into the group before they have an account.
      * If the email already belongs to a member, nothing to do; an existing
      * non-member gets added directly (and emailed); an unknown email gets

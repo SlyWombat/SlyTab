@@ -22,6 +22,7 @@ use SlyTab\Services\GoogleAuthService;
 use SlyTab\Services\GroupService;
 use SlyTab\Services\ImportService;
 use SlyTab\Services\Mailer;
+use SlyTab\Services\NotificationService;
 use SlyTab\Services\PasswordResetService;
 use SlyTab\Services\RateLimiter;
 use SlyTab\Services\ReceiptService;
@@ -49,6 +50,7 @@ final class Api
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
         $swApi = new SplitwiseApiImportService($pdo, $groups, $expenses, $activity);
+        $notify = new NotificationService($pdo);
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
         $apple = new AppleAuthService($pdo, $auth);
@@ -93,7 +95,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo, $notify,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -156,7 +158,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify,
             ): void {
                 // account & sessions
                 $p->post('/auth/logout', function (Request $rq, Response $rs) use ($auth): Response {
@@ -177,6 +179,10 @@ final class Api
                 $p->post('/me/verify-request', function (Request $rq, Response $rs) use ($verifier, $limiter): Response {
                     $limiter->guard('verify', Http::user($rq)['id'], 5, 3600);
                     $verifier->request(Http::user($rq)['id']);
+                    return Http::json($rs, ['ok' => true]);
+                });
+                $p->post('/me/push-tokens', function (Request $rq, Response $rs) use ($notify): Response {
+                    $notify->registerToken(Http::user($rq)['id'], Http::str(Http::body($rq), 'token'));
                     return Http::json($rs, ['ok' => true]);
                 });
                 $p->get('/me/sessions', function (Request $rq, Response $rs) use ($auth): Response {
@@ -259,8 +265,22 @@ final class Api
                     $invite = $groups->createInvite($a['id'], Http::user($rq)['id'], $email);
                     return Http::json($rs->withStatus(201), $invite + ['path' => "/join/{$invite['token']}"]);
                 });
-                $p->post('/join/{token}', fn(Request $rq, Response $rs, array $a): Response =>
-                    Http::json($rs, $groups->join($a['token'], Http::user($rq)['id'])));
+                $p->post('/join/{token}', function (Request $rq, Response $rs, array $a) use ($groups, $notify): Response {
+                    $me = Http::user($rq);
+                    $g2 = $groups->join($a['token'], $me['id']);
+                    $notify->notifyGroup($g2['id'], $me['id'], 'joined',
+                        "{$me['displayName']} joined", $g2['name'] !== '' ? $g2['name'] : 'your shared expenses');
+                    return Http::json($rs, $g2);
+                });
+                // Issue #12: 1:1 splitting without a formal group.
+                $p->post('/friends', function (Request $rq, Response $rs) use ($groups): Response {
+                    $me = Http::user($rq);
+                    $b = Http::body($rq);
+                    return Http::json($rs->withStatus(201), $groups->directGroup(
+                        $me['id'], Http::str($b, 'email'),
+                        strtoupper(Http::str($b, 'homeCurrency', $me['defaultCurrency'] ?? 'CAD')),
+                    ));
+                });
                 $p->post('/groups/{id}/leave', function (Request $rq, Response $rs, array $a) use ($groups, $balances): Response {
                     $userId = Http::user($rq)['id'];
                     $groups->assertMember($a['id'], $userId);
@@ -280,12 +300,18 @@ final class Api
                 $p->get('/groups/{id}/expenses', function (Request $rq, Response $rs, array $a) use ($groups, $expenses): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     $q = $rq->getQueryParams();
-                    return Http::json($rs, $expenses->listForGroup($a['id'], $q['cursor'] ?? null));
+                    $filters = array_intersect_key($q, array_flip(['q', 'category', 'member', 'from', 'to']));
+                    return Http::json($rs, $expenses->listForGroup($a['id'], $q['cursor'] ?? null, 30, $filters));
                 });
-                $p->post('/groups/{id}/expenses', function (Request $rq, Response $rs, array $a) use ($groups, $expenses): Response {
-                    $userId = Http::user($rq)['id'];
-                    $groups->assertMember($a['id'], $userId);
-                    return Http::json($rs->withStatus(201), $expenses->create($a['id'], $userId, Http::body($rq)));
+                $p->post('/groups/{id}/expenses', function (Request $rq, Response $rs, array $a) use ($groups, $expenses, $notify): Response {
+                    $me = Http::user($rq);
+                    $groups->assertMember($a['id'], $me['id']);
+                    $e = $expenses->create($a['id'], $me['id'], Http::body($rq));
+                    $scale = \SlyTab\Support\Money::scale($e['currency']);
+                    $amountText = number_format($e['amountMinor'] / $scale, $scale === 1 ? 0 : 2) . ' ' . $e['currency'];
+                    $notify->notifyGroup($a['id'], $me['id'], 'expense_added',
+                        "{$me['displayName']} added an expense", "{$e['description']} — {$amountText}");
+                    return Http::json($rs->withStatus(201), $e);
                 });
                 $p->get('/expenses/{id}', function (Request $rq, Response $rs, array $a) use ($groups, $expenses): Response {
                     $e = $expenses->get($a['id']);
@@ -300,6 +326,16 @@ final class Api
                 });
                 $p->post('/expenses/{id}/restore', fn(Request $rq, Response $rs, array $a): Response =>
                     Http::json($rs, $expenses->restore($a['id'], Http::user($rq)['id'])));
+                $p->get('/expenses/{id}/comments', fn(Request $rq, Response $rs, array $a): Response =>
+                    Http::json($rs, ['items' => $expenses->comments($a['id'], Http::user($rq)['id'])]));
+                $p->post('/expenses/{id}/comments', function (Request $rq, Response $rs, array $a) use ($expenses, $notify): Response {
+                    $me = Http::user($rq);
+                    $comment = $expenses->addComment($a['id'], $me['id'], Http::str(Http::body($rq), 'body'));
+                    $e = $expenses->get($a['id']);
+                    $notify->notifyGroup($e['groupId'], $me['id'], 'comment',
+                        "{$me['displayName']} commented", "{$e['description']}: {$comment['body']}");
+                    return Http::json($rs->withStatus(201), $comment);
+                });
 
                 // balances
                 $p->get('/groups/{id}/balances', function (Request $rq, Response $rs, array $a) use ($groups, $balances): Response {
@@ -312,13 +348,22 @@ final class Api
                 });
 
                 // settlements
-                $p->post('/groups/{id}/settlements', function (Request $rq, Response $rs, array $a) use ($groups, $settlements): Response {
-                    $userId = Http::user($rq)['id'];
-                    $groups->assertMember($a['id'], $userId);
-                    return Http::json($rs->withStatus(201), $settlements->create($a['id'], $userId, Http::body($rq)));
+                $p->post('/groups/{id}/settlements', function (Request $rq, Response $rs, array $a) use ($groups, $settlements, $notify): Response {
+                    $me = Http::user($rq);
+                    $groups->assertMember($a['id'], $me['id']);
+                    $st = $settlements->create($a['id'], $me['id'], Http::body($rq));
+                    $notify->notifyGroup($a['id'], $me['id'], 'settlement_in',
+                        "{$me['displayName']} sent you a payment",
+                        'Confirm it in SlyTab when it arrives.', [$st['toUserId']]);
+                    return Http::json($rs->withStatus(201), $st);
                 });
-                $p->post('/settlements/{id}/confirm', fn(Request $rq, Response $rs, array $a): Response =>
-                    Http::json($rs, $settlements->confirm($a['id'], Http::user($rq)['id'])));
+                $p->post('/settlements/{id}/confirm', function (Request $rq, Response $rs, array $a) use ($settlements, $notify): Response {
+                    $me = Http::user($rq);
+                    $st = $settlements->confirm($a['id'], $me['id']);
+                    $notify->notifyGroup($st['groupId'], $me['id'], 'settlement_confirmed',
+                        'Payment confirmed ✓', "{$me['displayName']} received your payment.", [$st['fromUserId']]);
+                    return Http::json($rs, $st);
+                });
                 $p->delete('/settlements/{id}', function (Request $rq, Response $rs, array $a) use ($settlements): Response {
                     $settlements->delete($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, ['ok' => true]);

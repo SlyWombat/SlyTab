@@ -23,6 +23,7 @@ export interface User {
   email: string;
   emailVerifiedAt: string | null;
   displayName: string;
+  notifyLevel?: 'all' | 'important' | 'none';
   avatar: string;
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
@@ -104,6 +105,12 @@ export interface ImportResult {
   invited?: string[];
   errors: string[];
 }
+export interface ActivityItem {
+  id: string; userId: string; verb: string; entityType: string; entityId: string;
+  diff: Record<string, unknown> | null; createdAt: string;
+}
+export interface Comment { id: string; userId: string; body: string; createdAt: string }
+export interface ExpenseFilters { q?: string; category?: string; member?: string; from?: string; to?: string }
 export interface Session {
   id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean;
 }
@@ -269,7 +276,7 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     req<{ ok: true }>('POST', '/auth/reset', { token, password }),
   me: () => req<User>('GET', '/me'),
-  patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles'>>) =>
+  patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles' | 'notifyLevel'>>) =>
     req<User>('PATCH', '/me', data),
   uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}, currencyHint?: string) => {
     const { blob, name } = await shrinkImage(file);
@@ -310,9 +317,14 @@ export const api = {
   resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (token: string) => req<Group>('POST', `/join/${token}`),
 
-  expenses: (groupId: string, cursor?: string) =>
-    req<{ items: Expense[]; nextCursor: string | null }>(
-      'GET', `/groups/${groupId}/expenses${cursor ? `?cursor=${cursor}` : ''}`),
+  expenses: (groupId: string, filters: ExpenseFilters = {}, cursor?: string) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) qs.set(k, v);
+    if (cursor) qs.set('cursor', cursor);
+    const q = qs.toString();
+    return req<{ items: Expense[]; nextCursor: string | null }>(
+      'GET', `/groups/${groupId}/expenses${q ? `?${q}` : ''}`);
+  },
   addExpense: (groupId: string, data: object) => req<Expense>('POST', `/groups/${groupId}/expenses`, data),
   updateExpense: (id: string, data: object) => req<Expense>('PATCH', `/expenses/${id}`, data),
   deleteExpense: (id: string) => req<{ ok: true }>('DELETE', `/expenses/${id}`),
@@ -324,6 +336,13 @@ export const api = {
   splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number,
     mapping: Record<string, string | { email: string; name: string }>) =>
     req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
+  activity: (groupId: string, cursor?: string) =>
+    req<{ items: ActivityItem[]; nextCursor: string | null }>(
+      'GET', `/groups/${groupId}/activity${cursor ? `?cursor=${cursor}` : ''}`),
+  comments: (expenseId: string) => req<{ items: Comment[] }>('GET', `/expenses/${expenseId}/comments`),
+  addComment: (expenseId: string, body: string) =>
+    req<Comment>('POST', `/expenses/${expenseId}/comments`, { body }),
+  addFriend: (email: string) => req<Group>('POST', '/friends', { email }),
   listSessions: () => req<{ items: Session[] }>('GET', '/me/sessions'),
   revokeSession: (id: string) => req<{ ok: true }>('DELETE', `/me/sessions/${id}`),
 

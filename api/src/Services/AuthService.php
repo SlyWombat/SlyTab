@@ -89,7 +89,7 @@ final class AuthService
     {
         $stmt = $this->pdo->prepare(
             'SELECT s.id AS session_id, s.expires_at, s.revoked_at, u.id, u.email, u.email_verified_at, u.display_name,
-                    u.avatar, u.default_currency, u.payment_handles, u.deleted_at
+                    u.avatar, u.default_currency, u.payment_handles, u.notify_level, u.deleted_at
              FROM sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = ?',
         );
@@ -148,7 +148,7 @@ final class AuthService
     public function userById(string $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles
+            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles, notify_level
              FROM users WHERE id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$id]);
@@ -187,6 +187,14 @@ final class AuthService
         if (array_key_exists('paymentHandles', $data)) {
             $sets[] = 'payment_handles = ?';
             $args[] = json_encode(self::validateHandles($data['paymentHandles']), JSON_THROW_ON_ERROR);
+        }
+        if (array_key_exists('notifyLevel', $data)) {
+            $level = (string) $data['notifyLevel'];
+            if (!in_array($level, ['all', 'important', 'none'], true)) {
+                throw new ApiException('VALIDATION', 'notifyLevel must be all, important, or none');
+            }
+            $sets[] = 'notify_level = ?';
+            $args[] = $level;
         }
         if ($sets !== []) {
             $args[] = $userId;
@@ -311,6 +319,7 @@ final class AuthService
             'avatar' => $row['avatar'],
             'defaultCurrency' => $row['default_currency'],
             'paymentHandles' => json_decode($row['payment_handles'] ?: '{}', true),
+            'notifyLevel' => $row['notify_level'] ?? 'all',
         ];
     }
 }

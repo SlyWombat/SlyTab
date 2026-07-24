@@ -3,7 +3,7 @@ import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCI
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
-  type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
+  type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
@@ -60,14 +60,39 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
   );
 }
 
+/** Human phrasing for the activity feed (issue #16). */
+function activityText(ev: ActivityItem): string {
+  const d = (ev.diff ?? {}) as { description?: string; amount?: number; currency?: string; source?: string };
+  const what = d.description ? `"${d.description}"` : `a ${ev.entityType}`;
+  switch (ev.verb) {
+    case 'created': return 'started the group';
+    case 'joined': return 'joined the group';
+    case 'left': return 'left the group';
+    case 'added': return ev.entityType === 'member' ? 'added a member' : `added ${what}`;
+    case 'edited': return ev.entityType === 'group' ? 'updated the group settings' : `edited ${what}`;
+    case 'deleted': return `deleted ${what}`;
+    case 'restored': return `restored ${what}`;
+    case 'settled': return 'recorded a payment';
+    case 'confirmed': return 'confirmed a payment';
+    case 'declined': return "couldn't find a payment (declined)";
+    case 'imported': return `imported from Splitwise${d.source === 'splitwise-api' ? '' : ' (CSV)'}`;
+    case 'commented': return `commented on ${what}`;
+    default: return `${ev.verb} ${what}`;
+  }
+}
+
 export function GroupScreen({ groupId, user, onBack }: {
   groupId: string;
   user: User;
   onBack: () => void;
 }) {
   const [group, setGroup] = useState<Group | null>(null);
-  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals' | 'activity'>('expenses');
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [feed, setFeed] = useState<ActivityItem[] | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [totals, setTotals] = useState<GroupTotals | null>(null);
   const [adding, setAdding] = useState(false);
@@ -81,11 +106,21 @@ export function GroupScreen({ groupId, user, onBack }: {
 
   const reload = useCallback(() => {
     api.group(groupId).then(setGroup).catch((e) => setError(e.message));
-    api.expenses(groupId).then((r) => setExpenses(r.items)).catch(() => {});
     api.balances(groupId).then(setBalances).catch(() => {});
     api.groupTotals(groupId).then(setTotals).catch(() => {});
+    api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
+
+  // Expenses refetch when search/filter change (server-side, debounced).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api.expenses(groupId, { q: search, category: catFilter })
+        .then((r) => { setExpenses(r.items); setNextCursor(r.nextCursor); })
+        .catch(() => {});
+    }, search !== '' ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [groupId, search, catFilter, group, feed]);
 
   const memberById = useMemo(
     () => new Map((group?.members ?? []).map((m) => [m.id, m])),
@@ -103,10 +138,18 @@ export function GroupScreen({ groupId, user, onBack }: {
       <div className="header">
         <button className="btn sm" onClick={onBack}>‹</button>
         <span style={{ fontSize: 24 }} aria-hidden>{group.emoji || '👥'}</span>
-        <button onClick={() => setSettingsOpen(true)} title="Group settings"
-          style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer', minWidth: 0, flex: '0 1 auto' }}>
-          <h1 style={{ fontSize: 19 }}>{group.name} <span className="muted" style={{ fontSize: 12 }}>✎</span></h1>
-          <div className="muted">{group.members.length} members · {group.homeCurrency}</div>
+        <button onClick={() => { if (!group.isDirect) setSettingsOpen(true); }} title={group.isDirect ? undefined : 'Group settings'}
+          style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0,
+            cursor: group.isDirect ? 'default' : 'pointer', minWidth: 0, flex: '0 1 auto' }}>
+          <h1 style={{ fontSize: 19 }}>
+            {group.isDirect
+              ? group.members.find((m) => m.id !== user.id)?.displayName ?? 'Friend'
+              : group.name}
+            {!group.isDirect && <span className="muted" style={{ fontSize: 12 }}> ✎</span>}
+          </h1>
+          <div className="muted">
+            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} members · ${group.homeCurrency}`}
+          </div>
         </button>
         <div className="spacer" />
         <div style={{ textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -121,10 +164,25 @@ export function GroupScreen({ groupId, user, onBack }: {
         <button role="tab" aria-selected={tab === 'expenses'} className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
         <button role="tab" aria-selected={tab === 'balances'} className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
         <button role="tab" aria-selected={tab === 'totals'} className={tab === 'totals' ? 'on' : ''} onClick={() => setTab('totals')}>Totals</button>
+        <button role="tab" aria-selected={tab === 'activity'} className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>Activity</button>
       </div>
 
       {tab === 'expenses' && (
         <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 8 }}>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search expenses…"
+              style={{ flex: 1, minWidth: 140, background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
+                border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '8px 12px',
+                font: '400 13.5px var(--ss-font-body)' }} />
+            {CATEGORIES.map((cat) => (
+              <button key={cat} type="button" className="btn sm"
+                onClick={() => setCatFilter(catFilter === cat ? '' : cat)}
+                style={catFilter === cat ? { background: 'var(--ss-brand)', color: '#fff' } : {}}>
+                {CATEGORY_LABELS[cat]}
+              </button>
+            ))}
+          </div>
           {lastDeleted !== null && (
             <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
               <div className="grow" style={{ fontSize: 13 }}>Deleted "{lastDeleted.description}"</div>
@@ -161,6 +219,29 @@ export function GroupScreen({ groupId, user, onBack }: {
               </button>
             );
           })}
+          {nextCursor !== null && (
+            <button type="button" className="btn block" onClick={() => {
+              api.expenses(groupId, { q: search, category: catFilter }, nextCursor)
+                .then((r) => { setExpenses([...expenses, ...r.items]); setNextCursor(r.nextCursor); })
+                .catch(() => {});
+            }}>Show older expenses</button>
+          )}
+        </>
+      )}
+
+      {tab === 'activity' && (
+        <>
+          {(feed ?? []).length === 0 && <p className="muted" style={{ padding: 8 }}>Nothing yet.</p>}
+          {(feed ?? []).map((ev) => (
+            <div className="row" key={ev.id}>
+              <Badge id={ev.userId} name={nameOf(ev.userId)} sm />
+              <div className="grow" style={{ fontSize: 13 }}>
+                <b>{ev.userId === user.id ? 'You' : nameOf(ev.userId)}</b>{' '}
+                {activityText(ev)}
+                <div className="meta">{ev.createdAt}</div>
+              </div>
+            </div>
+          ))}
         </>
       )}
 
@@ -241,7 +322,7 @@ export function GroupScreen({ groupId, user, onBack }: {
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '16px 84px 90px 0' }}>
-        <button className="btn sm" onClick={() => setInviting(true)}>Invite</button>
+        {!group.isDirect && <button className="btn sm" onClick={() => setInviting(true)}>Invite</button>}
         <a className="btn sm" style={{ textDecoration: 'none', lineHeight: '32px' }}
           href={`${import.meta.env.BASE_URL}api/v1/groups/${group.id}/export.csv`}>Export CSV</a>
         {group.archivedAt === null && (
@@ -287,6 +368,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
+  const [notes, setNotes] = useState((editing as (Expense & { notes?: string | null }) | null)?.notes ?? '');
+  const [comments, setComments] = useState<Comment[] | null>(null);
+  const [commentText, setCommentText] = useState('');
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   // New expenses start in whatever currency the group used last — mid-trip
   // you keep paying in the local currency (user feedback).
@@ -314,6 +398,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const scanBusy = scan !== null;
 
   const amountMinor = parseAmount(amountStr, currency);
+
+  useEffect(() => {
+    if (editing) api.comments(editing.id).then((r) => setComments(r.items)).catch(() => {});
+  }, [editing]);
 
   async function onScanFile(file: File) {
     setScan({ stage: 'upload', fraction: 0 });
@@ -395,6 +483,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         splitMethod: mode === 'equal' ? 'equal' : 'exact',
         payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
+        ...(notes.trim() !== '' ? { notes: notes.trim() } : {}),
         ...(fxOverride !== '' ? { fxRateOverride: parseFloat(fxOverride) } : {}),
         ...(receiptId !== null || extraReceiptIds.length > 0
           ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
@@ -440,6 +529,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         )}
         <label className="field"><span>Description</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} required maxLength={200} placeholder="Groceries" />
+        </label>
+        <label className="field"><span>Notes (optional)</span>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000}
+            placeholder="e.g. includes the corkage fee" />
         </label>
         <div style={{ display: 'flex', gap: 8 }}>
           <label className="field" style={{ flex: 1 }}><span>Date</span>
@@ -501,6 +594,34 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             {editing ? 'Save changes' : 'Save expense'}
           </button>
         </div>
+        {editing && (
+          <div style={{ marginTop: 10 }}>
+            <div className="sect" style={{ paddingLeft: 0 }}>Comments</div>
+            {(comments ?? []).map((cm) => (
+              <div key={cm.id} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                <Badge id={cm.userId} name={group.members.find((m) => m.id === cm.userId)?.displayName ?? '?'} sm />
+                <div>
+                  <b>{cm.userId === user.id ? 'You' : group.members.find((m) => m.id === cm.userId)?.displayName ?? 'Former member'}</b>{' '}
+                  {cm.body}
+                  <div className="meta">{cm.createdAt}</div>
+                </div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={commentText} onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment…" maxLength={1000}
+                style={{ flex: 1, background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
+                  border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '8px 12px',
+                  font: '400 13.5px var(--ss-font-body)' }} />
+              <button type="button" className="btn sm" disabled={commentText.trim() === ''}
+                onClick={() => {
+                  api.addComment(editing.id, commentText.trim())
+                    .then((cm) => { setComments([...(comments ?? []), cm]); setCommentText(''); })
+                    .catch((err) => setError((err as Error).message));
+                }}>Send</button>
+            </div>
+          </div>
+        )}
         {editing && onDeleted && (
           <button type="button" className="btn block" style={{ marginTop: 8, color: 'var(--ss-owe)' }}
             onClick={() => {

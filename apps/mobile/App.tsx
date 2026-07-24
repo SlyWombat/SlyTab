@@ -7,11 +7,12 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as Notifications from 'expo-notifications';
 import { CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI, minorToAmountString, parseAmount, tokens, type Category, type Currency } from '@slytab/core';
 import {
   api, ApiFailure, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
-  type Session, type SplitwiseGroup,
+  type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
 } from './src/api';
 
@@ -126,6 +127,19 @@ export default function App() {
     SecureStore.setItemAsync(TOKEN_KEY, t).catch(() => {});
   }
 
+  // Issue #3: register for push once signed in (best-effort).
+  useEffect(() => {
+    if (user === null) return;
+    (async () => {
+      try {
+        const perm = await Notifications.requestPermissionsAsync();
+        if (!perm.granted) return;
+        const tok = await Notifications.getExpoPushTokenAsync();
+        await api.registerPushToken(tok.data);
+      } catch { /* no push on this device — fine */ }
+    })();
+  }, [user]);
+
   return (
     <View style={s.app}>
       {restoring ? (
@@ -210,6 +224,7 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [creating, setCreating] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [addingFriend, setAddingFriend] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -274,10 +289,31 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       ))}
 
       <FlatList
-        data={data?.items ?? []}
+        data={(data?.items ?? []).filter((i) => !i.group.isDirect)}
         keyExtractor={(i) => i.group.id}
         onRefresh={reload}
         refreshing={false}
+        ListHeaderComponent={(data?.items ?? []).some((i) => i.group.isDirect) ? (
+          <View>
+            <Text style={s.cap}>FRIENDS</Text>
+            {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
+              const other = group.members.find((m) => m.id !== user.id);
+              return (
+                <Pressable style={s.row} key={group.id} onPress={() => onOpenGroup(group.id)}>
+                  <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
+                  <Text style={[s.rowName, { flex: 1 }]}>{other?.displayName ?? 'Friend'}</Text>
+                  {netMinor === 0 ? <Text style={s.meta}>settled ✓</Text> : (
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Amount minor={netMinor} currency={currency} signed />
+                      <Text style={s.meta}>{netMinor > 0 ? 'owes you' : 'you owe'}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+            <Text style={s.cap}>GROUPS</Text>
+          </View>
+        ) : null}
         ListEmptyComponent={data ? <Text style={s.meta}>No groups yet — create one.</Text> : null}
         renderItem={({ item }) => (
           <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
@@ -296,6 +332,13 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       <Pressable style={s.fab} onPress={() => setCreating(true)}>
         <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }}>+</Text>
       </Pressable>
+      <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 10 }}>
+        <Btn small label="Split with a friend" onPress={() => setAddingFriend(true)} />
+      </View>
+      {addingFriend && (
+        <AddFriendSheet onClose={() => setAddingFriend(false)}
+          onCreated={(id) => { setAddingFriend(false); onOpenGroup(id); }} />
+      )}
       {creating && (
         <CreateGroupSheet defaultCurrency={user.defaultCurrency}
           onClose={() => setCreating(false)}
@@ -332,6 +375,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   const [currency, setCurrency] = useState(user.defaultCurrency);
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
+  const [notifyLevel, setNotifyLevel] = useState<'all' | 'important' | 'none'>(user.notifyLevel ?? 'all');
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
@@ -350,6 +394,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
       const updated = await api.patchMe({
         displayName: displayName.trim(),
         defaultCurrency: currency,
+        notifyLevel,
         paymentHandles: {
           ...(interac ? { interacEmail: interac } : {}),
           ...(paypal ? { paypalMe: paypal } : {}),
@@ -370,6 +415,16 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
         value={currency} onChange={setCurrency} />
+      <Text style={s.fieldLabel}>Notifications</Text>
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+        {([['all', 'Everything'], ['important', 'Important only'], ['none', 'Nothing']] as const).map(([v, label]) => (
+          <Pressable key={v} onPress={() => setNotifyLevel(v)}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: notifyLevel === v ? c.brand : c.surface2 }}>
+            <Text style={{ color: notifyLevel === v ? '#fff' : c.text2, fontSize: 12.5 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Text style={s.fieldLabel}>How people pay you</Text>
       <Field label="Interac e-Transfer email" value={interac} onChangeText={setInterac}
         keyboardType="email-address" placeholder="you@example.com" />
@@ -468,6 +523,33 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
   );
 }
 
+function AddFriendSheet({ onClose, onCreated }: {
+  onClose: () => void; onCreated: (groupId: string) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <SheetModal title="Split with a friend" onClose={onClose}>
+      {error && <Text style={s.error}>{error}</Text>}
+      <Text style={[s.meta, { marginBottom: 10 }]}>
+        One-on-one expenses, no group needed. If they're not on SlyTab yet
+        we'll email an invite — anything you add is waiting when they join.
+      </Text>
+      <Field label="Their email" value={email} onChangeText={setEmail}
+        keyboardType="email-address" autoCapitalize="none" placeholder="friend@example.com" />
+      <Btn primary label={busy ? '…' : 'Start splitting'} disabled={busy || email.trim() === ''}
+        onPress={() => {
+          setBusy(true);
+          api.addFriend(email.trim())
+            .then((g) => onCreated(g.id))
+            .catch((e) => setError((e as Error).message))
+            .finally(() => setBusy(false));
+        }} />
+    </SheetModal>
+  );
+}
+
 function GroupSettingsSheet({ group, onClose, onSaved }: {
   group: Group; onClose: () => void; onSaved: () => void;
 }) {
@@ -505,11 +587,35 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
   );
 }
 
+/** Human phrasing for the activity feed (issue #16). */
+function activityText(ev: ActivityItem): string {
+  const d = (ev.diff ?? {}) as { description?: string; source?: string };
+  const what = d.description ? `"${d.description}"` : `a ${ev.entityType}`;
+  switch (ev.verb) {
+    case 'created': return 'started the group';
+    case 'joined': return 'joined the group';
+    case 'left': return 'left the group';
+    case 'added': return ev.entityType === 'member' ? 'added a member' : `added ${what}`;
+    case 'edited': return ev.entityType === 'group' ? 'updated the group settings' : `edited ${what}`;
+    case 'deleted': return `deleted ${what}`;
+    case 'restored': return `restored ${what}`;
+    case 'settled': return 'recorded a payment';
+    case 'confirmed': return 'confirmed a payment';
+    case 'declined': return "couldn't find a payment (declined)";
+    case 'imported': return 'imported from Splitwise';
+    case 'commented': return `commented on ${what}`;
+    default: return `${ev.verb} ${what}`;
+  }
+}
+
 function GroupScreen({ groupId, user, onBack }: {
   groupId: string; user: User; onBack: () => void;
 }) {
   const [group, setGroup] = useState<Group | null>(null);
-  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'totals' | 'activity'>('expenses');
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [feed, setFeed] = useState<ActivityItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [totals, setTotals] = useState<GroupTotals | null>(null);
@@ -523,11 +629,19 @@ function GroupScreen({ groupId, user, onBack }: {
 
   const reload = useCallback(() => {
     api.group(groupId).then(setGroup).catch(() => {});
-    api.expenses(groupId).then((r) => setExpenses(r.items)).catch(() => {});
     api.balances(groupId).then(setBalances).catch(() => {});
     api.groupTotals(groupId).then(setTotals).catch(() => {});
+    api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api.expenses(groupId, { q: search, category: catFilter })
+        .then((r) => setExpenses(r.items)).catch(() => {});
+    }, search !== '' ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [groupId, search, catFilter, group, feed]);
 
   const memberById = useMemo(() => new Map((group?.members ?? []).map((m) => [m.id, m])), [group]);
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? 'Former member';
@@ -542,24 +656,47 @@ function GroupScreen({ groupId, user, onBack }: {
       <View style={s.header}>
         <Btn small label="‹" onPress={onBack} />
         <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
-        <Pressable style={{ flex: 1 }} onPress={() => setSettingsOpen(true)}>
-          <Text style={s.h2}>{group.name} <Text style={[s.meta, { fontSize: 12 }]}>✎</Text></Text>
-          <Text style={s.meta}>{group.members.length} members · {group.homeCurrency}</Text>
+        <Pressable style={{ flex: 1 }} onPress={() => { if (!group.isDirect) setSettingsOpen(true); }}>
+          <Text style={s.h2}>
+            {group.isDirect
+              ? group.members.find((m) => m.id !== user.id)?.displayName ?? 'Friend'
+              : group.name}
+            {!group.isDirect && <Text style={[s.meta, { fontSize: 12 }]}> ✎</Text>}
+          </Text>
+          <Text style={s.meta}>
+            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} members · ${group.homeCurrency}`}
+          </Text>
         </Pressable>
         {myNet === 0 ? <Text style={s.meta}>settled ✓</Text>
           : <Amount minor={myNet} currency={group.homeCurrency} signed size={15} />}
       </View>
 
       <View style={s.tabs}>
-        {(['expenses', 'balances', 'totals'] as const).map((t) => (
+        {(['expenses', 'balances', 'totals', 'activity'] as const).map((t) => (
           <Pressable key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
             <Text style={[s.tabText, tab === t && { color: c.text }]}>
-              {t === 'expenses' ? 'Expenses' : t === 'balances' ? 'Balances' : 'Totals'}
+              {t === 'expenses' ? 'Expenses' : t === 'balances' ? 'Balances' : t === 'totals' ? 'Totals' : 'Activity'}
             </Text>
           </Pressable>
         ))}
       </View>
 
+      {tab === 'expenses' && (
+        <View>
+          <Field label="" value={search} onChangeText={setSearch} placeholder="Search expenses…" />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+            {CATEGORIES.map((cat) => (
+              <Pressable key={cat} onPress={() => setCatFilter(catFilter === cat ? '' : cat)}
+                style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 11,
+                  backgroundColor: catFilter === cat ? c.brand : c.surface2 }}>
+                <Text style={{ color: catFilter === cat ? '#fff' : c.text2, fontSize: 11.5 }}>
+                  {CATEGORY_LABELS[cat]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
       {tab === 'expenses' ? (
         <FlatList
           data={expenses}
@@ -603,6 +740,22 @@ function GroupScreen({ groupId, user, onBack }: {
             );
           }}
         />
+      ) : tab === 'activity' ? (
+        <ScrollView>
+          {feed.length === 0 && <Text style={s.meta}>Nothing yet.</Text>}
+          {feed.map((ev) => (
+            <View style={s.row} key={ev.id}>
+              <Badge id={ev.userId} name={nameOf(ev.userId)} size={22} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.body, { fontSize: 13 }]}>
+                  <Text style={{ fontWeight: '700' }}>{ev.userId === user.id ? 'You' : nameOf(ev.userId)}</Text>
+                  {' '}{activityText(ev)}
+                </Text>
+                <Text style={s.meta}>{ev.createdAt}</Text>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
       ) : tab === 'totals' ? (
         <ScrollView>
           {totals === null ? <ActivityIndicator color={c.brand} /> : (
@@ -1052,6 +1205,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
+  const [notes, setNotes] = useState((editing as (Expense & { notes?: string | null }) | null)?.notes ?? '');
+  const [comments, setComments] = useState<Comment[] | null>(null);
+  const [commentText, setCommentText] = useState('');
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [error, setError] = useState<string | null>(null);
@@ -1074,6 +1230,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = parseAmount(amountStr, currency);
+
+  useEffect(() => {
+    if (editing) api.comments(editing.id).then((r) => setComments(r.items)).catch(() => {});
+  }, [editing]);
 
   const shares = useMemo(() => {
     if (exactShares !== null) return exactShares;
@@ -1132,6 +1292,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         splitMethod: exactShares !== null ? 'exact' : 'equal',
         payers: [{ userId: editing?.payers[0]?.userId ?? user.id, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
+        ...(notes.trim() !== '' ? { notes: notes.trim() } : {}),
         ...(receiptId !== null || extraReceiptIds.length > 0
           ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
           : {}),
@@ -1167,6 +1328,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           onPick={(cur) => { setCurrency(cur); setAllCurrencies(false); }} />
       )}
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
+      <Field label="Notes (optional)" value={notes} onChangeText={setNotes}
+        placeholder="e.g. includes the corkage fee" />
       <Text style={s.fieldLabel}>Category</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
         {CATEGORIES.map((cat) => (
@@ -1229,6 +1392,33 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       <Btn primary label={editing ? 'Save changes' : 'Save expense'}
         disabled={amountMinor <= 0 || description.trim() === '' || shares === null}
         onPress={save} />
+      {editing && (
+        <>
+          <Text style={[s.cap, { marginTop: 12 }]}>COMMENTS</Text>
+          {(comments ?? []).map((cm) => {
+            const member = group.members.find((m) => m.id === cm.userId);
+            return (
+              <View key={cm.id} style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+                <Badge id={cm.userId} name={member?.displayName ?? '?'} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.body, { fontSize: 13 }]}>
+                    <Text style={{ fontWeight: '700' }}>{cm.userId === user.id ? 'You' : member?.displayName ?? 'Former member'}</Text>
+                    {' '}{cm.body}
+                  </Text>
+                  <Text style={s.meta}>{cm.createdAt}</Text>
+                </View>
+              </View>
+            );
+          })}
+          <Field label="" value={commentText} onChangeText={setCommentText} placeholder="Add a comment…" />
+          <Btn small label="Send comment" disabled={commentText.trim() === ''}
+            onPress={() => {
+              api.addComment(editing.id, commentText.trim())
+                .then((cm) => { setComments([...(comments ?? []), cm]); setCommentText(''); })
+                .catch((e) => setError((e as Error).message));
+            }} />
+        </>
+      )}
       {editing && onDeleted && (
         <>
           <View style={{ height: 8 }} />

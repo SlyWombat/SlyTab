@@ -406,6 +406,56 @@ final class GroupMoneyFlowTest extends TestCase
         self::assertLessThan(500, $totals['totalMinor']);
     }
 
+    public function testFriendsCommentsAndFilters(): void
+    {
+        Db::pdo()->exec('DELETE FROM rate_limits');
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $rae = $mk('rae');
+
+        // Friends (#12): direct group with a not-yet-registered person.
+        $direct = $this->ok($this->request('POST', '/api/v1/friends', [
+            'email' => 'pal@example.com',
+        ], $rae['token']), 201);
+        self::assertTrue($direct['isDirect']);
+        self::assertCount(2, $direct['members']);
+        // Same email → same direct group, not a duplicate.
+        $again = $this->ok($this->request('POST', '/api/v1/friends', [
+            'email' => 'pal@example.com',
+        ], $rae['token']), 201);
+        self::assertSame($direct['id'], $again['id']);
+
+        // Expenses to filter (#17).
+        foreach ([['Wine bar', 'drinks'], ['Groceries run', 'dining'], ['Gas fill', 'travel']] as [$d, $cat]) {
+            $this->ok($this->request('POST', "/api/v1/groups/{$direct['id']}/expenses", [
+                'description' => $d, 'amountMinor' => 1000, 'currency' => 'CAD',
+                'expenseDate' => '2026-07-20', 'category' => $cat, 'splitMethod' => 'equal',
+                'payers' => [['userId' => $rae['id'], 'amountMinor' => 1000]],
+                'shares' => [['userId' => $rae['id'], 'amountMinor' => 1000]],
+            ], $rae['token']), 201);
+        }
+        $hits = $this->ok($this->request('GET', "/api/v1/groups/{$direct['id']}/expenses?q=wine", null, $rae['token']), 200);
+        self::assertCount(1, $hits['items']);
+        self::assertSame('Wine bar', $hits['items'][0]['description']);
+        $hits = $this->ok($this->request('GET', "/api/v1/groups/{$direct['id']}/expenses?category=travel", null, $rae['token']), 200);
+        self::assertCount(1, $hits['items']);
+
+        // Comments (#15).
+        $eid = $hits['items'][0]['id'];
+        $c = $this->ok($this->request('POST', "/api/v1/expenses/{$eid}/comments", [
+            'body' => 'was this the rental or the truck?',
+        ], $rae['token']), 201);
+        self::assertSame('was this the rental or the truck?', $c['body']);
+        $list = $this->ok($this->request('GET', "/api/v1/expenses/{$eid}/comments", null, $rae['token']), 200);
+        self::assertCount(1, $list['items']);
+        self::assertSame($rae['id'], $list['items'][0]['userId']);
+    }
+
     public function testGroupFavoriteCurrencies(): void
     {
         Db::pdo()->exec('DELETE FROM rate_limits');

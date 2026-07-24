@@ -12,6 +12,9 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [addingFriend, setAddingFriend] = useState(false);
+  const [friendEmail, setFriendEmail] = useState('');
+  const [friendBusy, setFriendBusy] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
 
@@ -91,13 +94,37 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         </>
       )}
 
+      {(data?.items ?? []).some((i) => i.group.isDirect) && (
+        <>
+          <div className="sect">Friends</div>
+          {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
+            const other = group.members.find((m) => m.id !== user.id);
+            return (
+              <button className="row" key={group.id} onClick={() => onOpenGroup(group.id)}>
+                <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
+                <div className="grow">
+                  <div className="name">{other?.displayName ?? 'Friend'}</div>
+                </div>
+                <div className="right">
+                  {netMinor === 0
+                    ? <span className="muted">settled ✓</span>
+                    : <>
+                        <Amount minor={netMinor} currency={currency} signed />
+                        <span className="dir">{netMinor > 0 ? 'owes you' : 'you owe'}</span>
+                      </>}
+                </div>
+              </button>
+            );
+          })}
+        </>
+      )}
       <div className="sect">Groups</div>
       {data !== null && data.items.length === 0 && (
         <p className="muted" style={{ padding: '8px 4px' }}>
           No expenses yet. Start a group and invite your people.
         </p>
       )}
-      {(data?.items ?? []).map(({ group, netMinor, currency }) => (
+      {(data?.items ?? []).filter((i) => !i.group.isDirect).map(({ group, netMinor, currency }) => (
         <button className="row" key={group.id} onClick={() => onOpenGroup(group.id)}>
           <span style={{ fontSize: 22 }} aria-hidden>{group.emoji || '👥'}</span>
           <div className="grow">
@@ -115,6 +142,33 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         </button>
       ))}
 
+      <div style={{ display: 'flex', gap: 8, padding: '10px 0 80px' }}>
+        <button className="btn sm" onClick={() => setAddingFriend(true)}>Split with a friend</button>
+      </div>
+      {addingFriend && (
+        <Sheet title="Split with a friend" onClose={() => setAddingFriend(false)}>
+          <p className="muted" style={{ paddingBottom: 10 }}>
+            One-on-one expenses, no group needed. If they're not on SlyTab yet
+            we'll email an invite — anything you add is waiting when they join.
+          </p>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            setFriendBusy(true);
+            api.addFriend(friendEmail.trim())
+              .then((g) => { setAddingFriend(false); setFriendEmail(''); onOpenGroup(g.id); })
+              .catch((err) => setError((err as Error).message))
+              .finally(() => setFriendBusy(false));
+          }}>
+            <label className="field"><span>Their email</span>
+              <input type="email" value={friendEmail} onChange={(e) => setFriendEmail(e.target.value)}
+                required placeholder="friend@example.com" />
+            </label>
+            <button className="btn primary block" disabled={friendBusy}>
+              {friendBusy ? '…' : 'Start splitting'}
+            </button>
+          </form>
+        </Sheet>
+      )}
       <button className="fab" aria-label="New group" onClick={() => setCreating(true)}>+</button>
       {profileOpen && (
         <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
@@ -159,6 +213,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
+  const [notifyLevel, setNotifyLevel] = useState<'all' | 'important' | 'none'>(user.notifyLevel ?? 'all');
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
   const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
@@ -175,6 +230,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
       const updated = await api.patchMe({
         displayName,
         defaultCurrency: currency.toUpperCase(),
+        notifyLevel,
         paymentHandles: {
           ...(interac ? { interacEmail: interac } : {}),
           ...(paypal ? { paypalMe: paypal } : {}),
@@ -197,6 +253,13 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         <label className="field"><span>Default currency</span>
           <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Notifications (Android app)</span>
+          <select value={notifyLevel} onChange={(e) => setNotifyLevel(e.target.value as typeof notifyLevel)}>
+            <option value="all">Everything (expenses, payments, comments)</option>
+            <option value="important">Important only (payments and joins)</option>
+            <option value="none">Nothing</option>
           </select>
         </label>
         <div className="sect" style={{ paddingLeft: 0 }}>How people pay you</div>

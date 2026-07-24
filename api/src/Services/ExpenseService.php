@@ -106,13 +106,46 @@ final class ExpenseService
     }
 
     /** @return array{items: list<array<string,mixed>>, nextCursor: ?string} */
-    public function listForGroup(string $groupId, ?string $cursor, int $limit = 30): array
+    /** @param array<string,string> $filters q, category, member, from, to */
+    public function listForGroup(string $groupId, ?string $cursor, int $limit = 30, array $filters = []): array
     {
-        $sql = 'SELECT * FROM expenses WHERE group_id = ? AND deleted_at IS NULL'
-            . ($cursor !== null ? ' AND id < ?' : '')
-            . ' ORDER BY id DESC LIMIT ' . ($limit + 1);
+        $sql = 'SELECT DISTINCT e.* FROM expenses e';
+        $args = [$groupId];
+        if (($filters['member'] ?? '') !== '') {
+            $sql .= ' LEFT JOIN expense_payers ep ON ep.expense_id = e.id
+                      LEFT JOIN expense_shares es ON es.expense_id = e.id';
+        }
+        $sql .= ' WHERE e.group_id = ? AND e.deleted_at IS NULL';
+        if (($filters['q'] ?? '') !== '') {
+            $sql .= ' AND (e.description LIKE ? OR e.notes LIKE ?)';
+            $like = '%' . $filters['q'] . '%';
+            $args[] = $like;
+            $args[] = $like;
+        }
+        if (($filters['category'] ?? '') !== '') {
+            $sql .= ' AND e.category = ?';
+            $args[] = $filters['category'];
+        }
+        if (($filters['member'] ?? '') !== '') {
+            $sql .= ' AND (ep.user_id = ? OR es.user_id = ?)';
+            $args[] = $filters['member'];
+            $args[] = $filters['member'];
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filters['from'] ?? '')) {
+            $sql .= ' AND e.expense_date >= ?';
+            $args[] = $filters['from'];
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $filters['to'] ?? '')) {
+            $sql .= ' AND e.expense_date <= ?';
+            $args[] = $filters['to'];
+        }
+        if ($cursor !== null) {
+            $sql .= ' AND e.id < ?';
+            $args[] = $cursor;
+        }
+        $sql .= ' ORDER BY e.id DESC LIMIT ' . ($limit + 1);
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($cursor !== null ? [$groupId, $cursor] : [$groupId]);
+        $stmt->execute($args);
         $rows = $stmt->fetchAll();
 
         $next = null;
@@ -121,6 +154,43 @@ final class ExpenseService
             $next = $rows[array_key_last($rows)]['id'];
         }
         return ['items' => array_map($this->shape(...), $rows), 'nextCursor' => $next];
+    }
+
+    /** Issue #15: discussion on an expense. @return list<array<string,mixed>> */
+    public function comments(string $expenseId, string $userId): array
+    {
+        $e = $this->get($expenseId);
+        $this->groups->assertMember($e['groupId'], $userId);
+        $stmt = $this->pdo->prepare(
+            'SELECT c.id, c.user_id, c.body, c.created_at FROM expense_comments c
+             WHERE c.expense_id = ? ORDER BY c.id',
+        );
+        $stmt->execute([$expenseId]);
+        return array_map(static fn(array $c): array => [
+            'id' => $c['id'],
+            'userId' => $c['user_id'],
+            'body' => $c['body'],
+            'createdAt' => $c['created_at'],
+        ], $stmt->fetchAll());
+    }
+
+    /** @return array<string,mixed> the new comment */
+    public function addComment(string $expenseId, string $userId, string $body): array
+    {
+        $body = trim($body);
+        if ($body === '' || mb_strlen($body) > 1000) {
+            throw new ApiException('VALIDATION', 'comment must be 1-1000 characters');
+        }
+        $e = $this->get($expenseId);
+        $this->groups->assertMember($e['groupId'], $userId);
+        $id = Ulid::generate();
+        $this->pdo->prepare(
+            'INSERT INTO expense_comments (id, expense_id, user_id, body) VALUES (?, ?, ?, ?)',
+        )->execute([$id, $expenseId, $userId, $body]);
+        $this->activity->record($e['groupId'], $userId, 'commented', 'expense', $expenseId, [
+            'description' => $e['description'],
+        ]);
+        return ['id' => $id, 'userId' => $userId, 'body' => $body, 'createdAt' => gmdate('Y-m-d H:i:s')];
     }
 
     public function softDelete(string $expenseId, string $userId): void

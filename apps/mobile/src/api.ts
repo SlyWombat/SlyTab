@@ -21,6 +21,7 @@ export class ApiFailure extends Error {
 export interface User {
   id: string; email: string; emailVerifiedAt: string | null;
   displayName: string; avatar: string;
+  notifyLevel?: 'all' | 'important' | 'none';
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
 }
@@ -61,6 +62,12 @@ export interface ImportResult {
   invited?: string[];
   errors: string[];
 }
+export interface ActivityItem {
+  id: string; userId: string; verb: string; entityType: string; entityId: string;
+  diff: Record<string, unknown> | null; createdAt: string;
+}
+export interface Comment { id: string; userId: string; body: string; createdAt: string }
+export interface ExpenseFilters { q?: string; category?: string }
 export interface Session {
   id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean;
 }
@@ -186,8 +193,14 @@ export const api = {
       'POST', `/groups/${groupId}/invites`, email ? { email } : {}),
   resendVerification: () => req<{ ok: true }>('POST', '/me/verify-request'),
   join: (inviteToken: string) => req<Group>('POST', `/join/${inviteToken}`),
-  expenses: (groupId: string) =>
-    req<{ items: Expense[]; nextCursor: string | null }>('GET', `/groups/${groupId}/expenses`),
+  expenses: (groupId: string, filters: ExpenseFilters = {}, cursor?: string) => {
+    const parts: string[] = [];
+    if (filters.q) parts.push(`q=${encodeURIComponent(filters.q)}`);
+    if (filters.category) parts.push(`category=${encodeURIComponent(filters.category)}`);
+    if (cursor) parts.push(`cursor=${cursor}`);
+    return req<{ items: Expense[]; nextCursor: string | null }>(
+      'GET', `/groups/${groupId}/expenses${parts.length > 0 ? `?${parts.join('&')}` : ''}`);
+  },
   addExpense: (groupId: string, data: object) =>
     req<Expense>('POST', `/groups/${groupId}/expenses`, data),
   updateExpense: (id: string, data: object) => req<Expense>('PATCH', `/expenses/${id}`, data),
@@ -200,6 +213,14 @@ export const api = {
   splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number,
     mapping: Record<string, string | { email: string; name: string }>) =>
     req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
+  activity: (groupId: string, cursor?: string) =>
+    req<{ items: ActivityItem[]; nextCursor: string | null }>(
+      'GET', `/groups/${groupId}/activity${cursor ? `?cursor=${cursor}` : ''}`),
+  comments: (expenseId: string) => req<{ items: Comment[] }>('GET', `/expenses/${expenseId}/comments`),
+  addComment: (expenseId: string, body: string) =>
+    req<Comment>('POST', `/expenses/${expenseId}/comments`, { body }),
+  addFriend: (email: string) => req<Group>('POST', '/friends', { email }),
+  registerPushToken: (token: string) => req<{ ok: true }>('POST', '/me/push-tokens', { token }),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   listSessions: () => req<{ items: Session[] }>('GET', '/me/sessions'),
   revokeSession: (id: string) => req<{ ok: true }>('DELETE', `/me/sessions/${id}`),
