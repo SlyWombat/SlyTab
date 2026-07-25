@@ -10,6 +10,9 @@
     },
     "android-apk": {
       "android": { "buildType": "apk" }
+    },
+    "android-play": {
+      "android": { "buildType": "app-bundle" }
     }
   },
   "submit": {
@@ -18,6 +21,11 @@
         "ascAppId": "6794502588",
         "ascApiKeyPath": "../../secrets/AuthKey_QUC9SR2G3F.p8",
         "ascApiKeyId": "QUC9SR2G3F"
+      },
+      "android": {
+        "serviceAccountKeyPath": "../../secrets/play-service-account.json",
+        "track": "internal",
+        "releaseStatus": "completed"
       }
     }
   }
