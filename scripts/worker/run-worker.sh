@@ -7,7 +7,8 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 LOCK="/tmp/slytab-worker.lock"
 LOG="$REPO/../worker.log"
 # cron has a minimal PATH — make user-local node/claude and docker visible.
-export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+# ~/.local/bin (PC install) and ~/.npm-global/bin (kdocker2 install) both covered.
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 # ANTHROPIC_API_KEY (if used instead of interactive login) lives in .env.
 [ -f "$REPO/.env" ] && set -a && . "$REPO/.env" && set +a
 
