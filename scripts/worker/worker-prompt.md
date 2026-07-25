@@ -8,7 +8,11 @@ CLAUDE.md's scope guardrails strictly. Do one maintenance cycle:
     WHERE b.status <> 'closed' ORDER BY b.created_at;`
    (The server cron files GitHub issues and sends emails by itself — you
    never need to file or email manually.)
-3. Triage each open report per CLAUDE.md:
+3. Triage each open report per CLAUDE.md — **classify before coding**.
+   For each report, first state whether it is a **bug** (reproduce and
+   confirm against code/data/logs first), a **roadmap item** (in-scope
+   feature per docs/requirements.md), or **out of scope**. Write that
+   verdict as a one-line note on the GitHub issue before doing the work.
    - Out-of-scope / joke / absurd-scope reports: close politely via
      `curl -X POST -H "X-Admin-Token: $PROD_MIGRATE_TOKEN" -H 'Content-Type: application/json'
       -d '{"resolution": "<one friendly sentence>"}'

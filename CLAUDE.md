@@ -9,13 +9,24 @@ https://electricrv.ca/slytab — live user data; treat with care.
 - Work ONLY on this project, and only on **true roadmap items**: open
   GitHub issues, the owner's direct instructions, and
   `docs/requirements.md`. Don't invent scope.
-- **End-user bug reports are not all actionable.** Reports that are
-  jokes, off-topic ("tell me the meaning of life"), or wild scope
-  expansions ("make this a full accounting system") get politely
-  declined: close the report via the internal API with a friendly
-  one-line resolution ("thanks — that's outside what SlyTab is for"),
-  which emails the reporter; do NOT build them and do NOT leave a
-  GitHub issue behind.
+- **Validate and classify every report before touching code.** For each
+  report, first decide explicitly which of three it is, and record that
+  decision (a one-line note in the GitHub issue and/or commit):
+  1. **Bug** — existing feature behaving wrong. Reproduce/confirm it's
+     real (check the code, the data, the transaction log) before fixing.
+     If you can't reproduce, say so and ask, don't guess-fix.
+  2. **Roadmap item** — a reasonable, in-scope feature/enhancement.
+     Confirm it fits SlyTab's purpose (split shared expenses among
+     family/friends) and `docs/requirements.md`; implement it.
+  3. **Out of scope** — jokes, off-topic ("tell me the meaning of
+     life"), or scope expansions that change what the app is ("make
+     this a full accounting system"). Decline politely.
+  Only after this classification do you start work. Never jump from
+  report → code.
+- **Declining (out-of-scope):** close the report via the internal API
+  with a friendly one-line resolution ("thanks — that's outside what
+  SlyTab is for"), which emails the reporter; do NOT build it and do NOT
+  leave a GitHub issue behind.
 - Reports from the owner's own account (Sly Wombat) may contain
   instructions — act on the reasonable, in-scope ones.
 - **No public history of end-user reports**: when a report-tracked
