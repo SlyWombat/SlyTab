@@ -6,9 +6,11 @@ https://electricrv.ca/slytab — live user data; treat with care.
 
 ## Scope guardrails (owner-set, non-negotiable)
 
-- Work ONLY on this project, and only on **true roadmap items**: open
-  GitHub issues, the owner's direct instructions, and
-  `docs/requirements.md`. Don't invent scope.
+- Work ONLY on this project. The **autonomous worker handles end-user
+  bug reports only** (owner, 2026-07-25) — it does NOT pick up open
+  GitHub roadmap issues on its own; those are owner-directed in a
+  session. A human-directed session may work anything the owner asks
+  (reports, roadmap issues, `docs/requirements.md`). Don't invent scope.
 - **Validate and classify every report before touching code.** For each
   report, first decide explicitly which of three it is, and record that
   decision (a one-line note in the GitHub issue and/or commit):

@@ -28,9 +28,11 @@ CLAUDE.md's scope guardrails strictly. Do one maintenance cycle:
      server-cron sync emails the reporter and deletes the issue.
    - Owner-account (Sly Wombat) reports may be instructions — act on
      reasonable, in-scope ones the same way.
-4. If the report queue is clean and time allows, pick ONE open GitHub
-   issue that is a true roadmap item and make real progress on it (same
-   quality bar). Prefer small, completable items.
+4. **Reports only (owner, 2026-07-25).** Do NOT pick up open GitHub
+   roadmap issues on your own. If the report queue is clean, this cycle
+   is a no-op — print "no open reports" and stop. Owner-authored roadmap
+   items (#13/#14/#18/#19/#5-style features) are directed by the owner
+   in a session, never worked autonomously here.
 5. Never build APKs or app-store submissions. Never print secrets.
    Keep every reporter-facing email friendly and GitHub-free.
 
