@@ -126,10 +126,11 @@ final class BugReportService
         if ($r['status'] !== 'closed') {
             $this->pdo->prepare("UPDATE bug_reports SET status = 'closed' WHERE id = ?")->execute([$bugId]);
             $tracking = self::trackingCode($bugId);
-            // Issue #34: tell the reporter how to pick up the fix on the
-            // platform they reported from (context starts "web …"/"mobile …").
+            // Issues #34 + #38: plain, friendly, and strictly user-facing —
+            // no GitHub links or internal jargon. Say what's fixed, then how
+            // to pick it up on the platform they reported from.
             $howTo = str_starts_with((string) $r['context'], 'mobile')
-                ? 'Update to the latest build of the SlyTab app to get the fix.'
+                ? 'Update to the latest version of the SlyTab app to get the fix.'
                 : 'Refresh SlyTab in your browser to get the fix (hold Shift and click reload if it looks unchanged).';
             $this->mailer->dispatch(
                 $r['email'],
@@ -138,8 +139,8 @@ final class BugReportService
                 . "Good news — the issue you reported is fixed and live.\n\n"
                 . "Your report ({$tracking}):\n"
                 . "  \"{$r['message']}\"\n\n"
+                . ($resolution !== '' ? "What changed: {$resolution}\n\n" : '')
                 . "{$howTo}\n\n"
-                . ($resolution !== '' ? "Details: {$resolution}\n\n" : '')
                 . "Thanks for helping make SlyTab better.\n\n"
                 . "— The SlyTab team",
             );
@@ -242,11 +243,20 @@ final class BugReportService
         foreach ($open as $r) {
             $issue = $http('GET', "https://api.github.com/repos/{$repo}/issues/{$r['issue_number']}", null);
             if (($issue['state'] ?? '') === 'closed') {
-                $this->closeAndNotify(
-                    $r['id'],
-                    "Resolved via https://github.com/{$repo}/issues/{$r['issue_number']}",
-                );
+                // No resolution text here — the email stays link-free and
+                // human (issue #38); a hand-written summary can still be
+                // passed via the notify-closed endpoint when closing manually.
+                $this->closeAndNotify($r['id'], '');
                 $notified++;
+                // Owner policy (issue #38 follow-on): once fixed, end-user
+                // reports leave no public trace — delete the GitHub issue.
+                // The full record stays in bug_reports.
+                if (isset($issue['node_id'])) {
+                    $http('POST', 'https://api.github.com/graphql', [
+                        'query' => 'mutation($id: ID!) { deleteIssue(input: {issueId: $id}) { clientMutationId } }',
+                        'variables' => ['id' => $issue['node_id']],
+                    ]);
+                }
             }
         }
         return ['filed' => $filed, 'notified' => $notified, 'skipped' => ''];

@@ -111,9 +111,19 @@ final class BugReportTest extends TestCase
         self::assertSame(1, $r['filed']);
         self::assertSame(0, $r['notified']);
 
-        $r = $svc->syncGithub(static fn(string $m, string $u, ?array $b): array => ['state' => 'closed']);
+        // On close: reporter notified AND the GitHub issue deleted (#38
+        // policy: no public history of end-user reports).
+        $calls = [];
+        $r = $svc->syncGithub(static function (string $m, string $u, ?array $b) use (&$calls): array {
+            $calls[] = $u;
+            if (str_contains($u, 'graphql')) {
+                return ['data' => ['deleteIssue' => ['clientMutationId' => null]]];
+            }
+            return ['state' => 'closed', 'node_id' => 'I_stub4242'];
+        });
         self::assertSame(0, $r['filed']);
         self::assertSame(1, $r['notified']);
+        self::assertNotEmpty(array_filter($calls, static fn(string $u): bool => str_contains($u, 'graphql')));
 
         // Re-running is a no-op — the report is closed now.
         $r = $svc->syncGithub(static fn(string $m, string $u, ?array $b): array => ['state' => 'closed']);
