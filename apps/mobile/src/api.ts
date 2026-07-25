@@ -8,6 +8,36 @@ import { Platform } from 'react-native';
 
 const BASE = 'https://electricrv.ca/slytab/api/v1';
 
+/**
+ * Debug breadcrumbs for in-app bug reports: being inside the app, we can
+ * attach diagnostics the user would otherwise have to screenshot — app
+ * version/build, OS, and the last few failed API calls ride along with
+ * every report automatically.
+ */
+const recentErrors: string[] = [];
+function noteApiError(method: string, path: string, status: number, code: string): void {
+  const t = new Date().toISOString().slice(11, 19);
+  recentErrors.push(`${method} ${path} → ${status}/${code} @${t}Z`);
+  if (recentErrors.length > 5) recentErrors.shift();
+}
+
+export function debugContext(): string {
+  let version = '?';
+  let build = '?';
+  try {
+    // Metro bundles app.json; keeps us dependency-free (no expo-constants).
+    const appJson = require('../app.json') as {
+      expo?: { version?: string; ios?: { buildNumber?: string }; android?: { versionCode?: number } };
+    };
+    version = appJson.expo?.version ?? '?';
+    build = Platform.OS === 'ios'
+      ? appJson.expo?.ios?.buildNumber ?? '?'
+      : String(appJson.expo?.android?.versionCode ?? '?');
+  } catch { /* context stays partial */ }
+  const errs = recentErrors.length > 0 ? ` | recent API errors: ${recentErrors.join('; ')}` : '';
+  return `mobile ${Platform.OS} ${Platform.Version} app v${version}(${build})${errs}`.slice(0, 500);
+}
+
 let token: string | null = null;
 export function setToken(t: string | null): void {
   token = t;
@@ -106,10 +136,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiFailure(
-      (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'request failed' },
-      res.status,
-    );
+    const err = (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'request failed' };
+    noteApiError(method, path.split('?')[0] ?? path, res.status, err.code);
+    throw new ApiFailure(err, res.status);
   }
   return json as T;
 }
@@ -258,7 +287,7 @@ export const api = {
   reportBug: async (message: string, image?: { uri: string; mime: string } | null): Promise<{ id: string; status: string }> => {
     const fd = new FormData();
     fd.append('message', message);
-    fd.append('context', `mobile ${Platform.OS}`.slice(0, 500));
+    fd.append('context', debugContext());
     if (image) {
       // React Native FormData file part: { uri, name, type }.
       fd.append('image', {
