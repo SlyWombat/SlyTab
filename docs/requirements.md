@@ -25,7 +25,7 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 
 - **FR-1.1 (MUST)** Users register with email + password. Passwords hashed
   with argon2id. No third-party OAuth in v1.0 (privacy-first, no external
-  identity dependency).
+  identity dependency); amended post-1.0 by FR-1.7.
 - **FR-1.2 (MUST)** Long-lived per-device sessions (opaque token, revocable
   from settings). Users stay signed in on their own devices.
 - **FR-1.3 (MUST)** Password reset via emailed one-time link (sent through
@@ -40,6 +40,13 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-1.5 (SHOULD)** Account deletion: removes the user's personal data;
   their shares in historical expenses are anonymized ("Deleted user"), not
   deleted, so other members' balances stay correct.
+- **FR-1.7 (SHOULD)** Optional "Sign in with Google" / "Sign in with Apple"
+  (post-1.0 amendment to FR-1.1): secretless ID-token verification maps the
+  external identity onto a SlyTab account, linking by verified email when
+  the address is already registered. On mobile (issue #39), Google sign-in
+  runs in the system browser via a one-time handoff: the app keeps a secret
+  verifier and polls to claim the session, so the browser page (and anything
+  that sees its URL) never holds a session token.
 
 ### 2.2 Groups & membership
 

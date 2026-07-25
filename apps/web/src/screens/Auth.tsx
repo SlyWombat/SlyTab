@@ -30,11 +30,14 @@ declare global {
 /**
  * "Sign in with Google" button. Renders nothing until the API reports a
  * configured client id, then loads the GIS script and mounts the official
- * button; the returned ID token is exchanged for a SlyTab session.
+ * button; the returned ID token goes to `onCredential` — the Auth screen
+ * exchanges it for a session, the AppSignIn handoff page parks it for the
+ * mobile app.
  */
-function GoogleButton({ onSignedIn, onError }: {
-  onSignedIn: (token: string, user: User) => void;
+function GoogleButton({ onCredential, onError, divider = false }: {
+  onCredential: (credential: string) => Promise<void>;
   onError: (message: string) => void;
+  divider?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [clientId, setClientId] = useState<string | null>(null);
@@ -52,8 +55,7 @@ function GoogleButton({ onSignedIn, onError }: {
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: ({ credential }) => {
-          api.googleSignIn(credential)
-            .then((r) => onSignedIn(r.token, r.user))
+          onCredential(credential)
             .catch((e) => onError(e instanceof ApiFailure ? e.message : 'Google sign-in failed — try again'));
         },
       });
@@ -75,9 +77,49 @@ function GoogleButton({ onSignedIn, onError }: {
   if (clientId === null) return null;
   return (
     <>
-      <div className="muted" style={{ fontSize: '0.75rem', margin: '10px 0 6px' }}>or</div>
+      {divider && <div className="muted" style={{ fontSize: '0.75rem', margin: '10px 0 6px' }}>or</div>}
       <div ref={host} style={{ minHeight: 44 }} />
     </>
+  );
+}
+
+/**
+ * /app-signin/<state> — the browser half of the mobile Google sign-in
+ * handoff (issue #39). The mobile app opened this page; once Google
+ * confirms the account we complete the handoff server-side and the app
+ * picks the session up by polling. No session token ever lands in this
+ * browser tab.
+ */
+export function AppSignIn({ state }: { state: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  return (
+    <div className="center">
+      <Mark size={56} />
+      <h1 style={{ font: '600 1.625rem var(--ss-font-display)' }}>Sign in to the SlyTab app</h1>
+      {done ? (
+        <>
+          <p style={{ color: 'var(--ss-text-2)', maxWidth: '36ch' }}>
+            You're signed in ✓ — switch back to the SlyTab app to continue.
+          </p>
+          <a className="btn primary" href="slytab://signed-in" style={{ textDecoration: 'none' }}>
+            Open SlyTab
+          </a>
+        </>
+      ) : (
+        <>
+          <p style={{ color: 'var(--ss-text-2)', maxWidth: '36ch' }}>
+            Confirm your Google account below and the app will sign itself in.
+          </p>
+          {error && <div className="error" role="alert">{error}</div>}
+          <GoogleButton
+            onCredential={(credential) => api.handoffGoogle(state, credential).then(() => setDone(true))}
+            onError={setError}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -241,7 +283,10 @@ export function Auth({ onSignedIn, joinPending }: {
           Forgot password?
         </button>
       )}
-      <GoogleButton onSignedIn={onSignedIn} onError={setError} />
+      <GoogleButton divider
+        onCredential={(credential) =>
+          api.googleSignIn(credential).then((r) => onSignedIn(r.token, r.user))}
+        onError={setError} />
       <AppleButton onSignedIn={onSignedIn} onError={setError} />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--ss-space-1)', marginTop: 'var(--ss-space-5)' }}>
         <a

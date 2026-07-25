@@ -13,6 +13,7 @@ use SlyTab\Db\Migrator;
 use SlyTab\Middleware\RequireAuth;
 use SlyTab\Services\ActivityService;
 use SlyTab\Services\AppleAuthService;
+use SlyTab\Services\AuthHandoffService;
 use SlyTab\Services\AuthService;
 use SlyTab\Services\BalanceService;
 use SlyTab\Services\EmailVerificationService;
@@ -54,6 +55,7 @@ final class Api
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
         $apple = new AppleAuthService($pdo, $auth);
+        $handoff = new AuthHandoffService($pdo, $auth, $google);
         $bugs = new \SlyTab\Services\BugReportService($pdo);
 
         $ip = static fn(Request $rq): string =>
@@ -124,7 +126,7 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
-            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $swApi, $pdo, $notify, $bugs,
+            $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $handoff, $swApi, $pdo, $notify, $bugs,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
@@ -174,6 +176,29 @@ final class Api
                 return Http::json($rs, $google->signIn(
                     Http::str($b, 'idToken'), Http::str($b, 'deviceLabel', ''),
                 ));
+            });
+            // ---- mobile sign-in handoff (issue #39): the app opens the system
+            // browser to sign in with Google, then claims the session with the
+            // verifier only it holds ----
+            $g->post('/auth/handoff/start', function (Request $rq, Response $rs) use ($handoff, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
+                return Http::json($rs->withStatus(201), $handoff->start(
+                    Http::str(Http::body($rq), 'deviceLabel', ''),
+                ));
+            });
+            $g->post('/auth/handoff/{state}/google', function (Request $rq, Response $rs, array $a) use ($handoff, $limiter, $ip): Response {
+                $limiter->guard('auth', $ip($rq), 10, 60);
+                return Http::json($rs, $handoff->completeGoogle(
+                    (string) $a['state'], Http::str(Http::body($rq), 'idToken'),
+                ));
+            });
+            $g->post('/auth/handoff/claim', function (Request $rq, Response $rs) use ($handoff, $limiter, $ip): Response {
+                // Generous cap: the app polls every few seconds while the
+                // user finishes signing in over in the browser.
+                $limiter->guard('handoffClaim', $ip($rq), 300, 600);
+                $b = Http::body($rq);
+                $result = $handoff->claim(Http::str($b, 'state'), Http::str($b, 'verifier'));
+                return Http::json(isset($result['pending']) ? $rs->withStatus(202) : $rs, $result);
             });
             $g->get('/auth/apple/config', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['enabled' => $apple->enabled(), 'clientId' => $apple->clientId()]));

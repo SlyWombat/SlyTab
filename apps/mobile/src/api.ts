@@ -239,6 +239,18 @@ export const api = {
     req<{ token: string; user: User }>('POST', '/auth/login', {
       email, password, deviceLabel: 'mobile',
     }),
+  googleConfig: () => req<{ enabled: boolean }>('GET', '/auth/google/config'),
+  /**
+   * "Sign in with Google" via browser handoff (issue #39): start returns a
+   * public state (goes in the browser URL) and a secret verifier (never
+   * leaves the app); claim polls until the browser side has signed in.
+   */
+  handoffStart: () =>
+    req<{ state: string; verifier: string; expiresIn: number }>(
+      'POST', '/auth/handoff/start', { deviceLabel: 'mobile' }),
+  handoffClaim: (state: string, verifier: string) =>
+    req<{ pending?: boolean; token?: string; user?: User }>(
+      'POST', '/auth/handoff/claim', { state, verifier }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
   me: () => req<User>('GET', '/me'),
   patchMe: (data: object) => req<User>('PATCH', '/me', data),

@@ -42,6 +42,16 @@ class GoogleAuthService
     /** @return array{token:string, user:array<string,mixed>} */
     public function signIn(string $idToken, string $deviceLabel = ''): array
     {
+        return $this->auth->issueSession($this->resolveUser($idToken), $deviceLabel);
+    }
+
+    /**
+     * Verify the ID token and return the mapped SlyTab user id (linking
+     * or creating as needed) — no session. The mobile handoff flow uses
+     * this to park the identity until the app claims it.
+     */
+    public function resolveUser(string $idToken): string
+    {
         if (!$this->enabled()) {
             throw new ApiException('GOOGLE_DISABLED', 'Google sign-in is not configured', 503);
         }
@@ -64,8 +74,7 @@ class GoogleAuthService
             throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed — try again', 401);
         }
 
-        $userId = $this->userForIdentity($sub, $email, trim((string) ($c['name'] ?? '')));
-        return $this->auth->issueSession($userId, $deviceLabel);
+        return $this->userForIdentity($sub, $email, trim((string) ($c['name'] ?? '')));
     }
 
     /** Resolve the Google identity to a user id, linking or creating as needed. */

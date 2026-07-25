@@ -183,6 +183,57 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [waitingGoogle, setWaitingGoogle] = useState(false);
+  const handoff = useRef<{ state: string; verifier: string } | null>(null);
+
+  useEffect(() => {
+    api.googleConfig().then((cfg) => setGoogleReady(cfg.enabled)).catch(() => {});
+  }, []);
+
+  // Issue #39: while the user signs in with Google in the system browser,
+  // poll for the session it parks server-side. Offline blips keep polling;
+  // only a server verdict (handoff expired) or Cancel stops the wait.
+  useEffect(() => {
+    if (!waitingGoogle || handoff.current === null) return;
+    const { state, verifier } = handoff.current;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const r = await api.handoffClaim(state, verifier);
+        if (!active) return;
+        if (r.token !== undefined && r.user !== undefined) {
+          setWaitingGoogle(false);
+          onSignedIn(r.token, r.user);
+          return;
+        }
+      } catch (e) {
+        if (!active) return;
+        if (e instanceof ApiFailure) {
+          setWaitingGoogle(false);
+          setError("Google sign-in didn't finish — try again");
+          return;
+        }
+      }
+      timer = setTimeout(poll, 3000);
+    };
+    timer = setTimeout(poll, 3000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [waitingGoogle]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function googleSignIn() {
+    setError(null);
+    try {
+      const h = await api.handoffStart();
+      handoff.current = { state: h.state, verifier: h.verifier };
+      setWaitingGoogle(true);
+      await Linking.openURL(`https://electricrv.ca/slytab/app-signin/${h.state}`);
+    } catch (e) {
+      setWaitingGoogle(false);
+      setError((e as Error).message);
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -215,6 +266,19 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
         <Btn primary disabled={busy}
           label={busy ? '…' : mode === 'create' ? 'Create account' : 'Sign in'}
           onPress={submit} />
+        {googleReady && (
+          <>
+            <Text style={[s.meta, { textAlign: 'center', paddingTop: 4 }]}>or</Text>
+            <Btn disabled={busy || waitingGoogle}
+              label={waitingGoogle ? 'Waiting for your browser…' : 'Continue with Google'}
+              onPress={googleSignIn} />
+            {waitingGoogle && (
+              <Pressable onPress={() => { setWaitingGoogle(false); handoff.current = null; }}>
+                <Text style={s.link}>Cancel</Text>
+              </Pressable>
+            )}
+          </>
+        )}
         <Pressable onPress={() => setMode(mode === 'create' ? 'signin' : 'create')}>
           <Text style={s.link}>
             {mode === 'create' ? 'Already have an account? Sign in' : 'New here? Create an account'}

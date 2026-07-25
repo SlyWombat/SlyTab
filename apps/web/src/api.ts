@@ -389,6 +389,9 @@ export const api = {
   googleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/google/config'),
   googleSignIn: (idToken: string) =>
     req<{ token: string; user: User }>('POST', '/auth/google', { idToken, deviceLabel: deviceLabel() }),
+  /** Browser half of the mobile sign-in handoff (issue #39): hand Google's proof to the app's pending session. */
+  handoffGoogle: (state: string, idToken: string) =>
+    req<{ ok: true }>('POST', `/auth/handoff/${state}/google`, { idToken }),
   appleConfig: () => req<{ enabled: boolean; clientId: string }>('GET', '/auth/apple/config'),
   appleSignIn: (idToken: string, displayName?: string) =>
     req<{ token: string; user: User }>('POST', '/auth/apple', {

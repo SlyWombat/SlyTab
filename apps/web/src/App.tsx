@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, getToken, setToken, type User } from './api';
-import { Auth } from './screens/Auth';
+import { AppSignIn, Auth } from './screens/Auth';
 import { Home } from './screens/Home';
 import { GroupScreen } from './screens/Group';
 import { Onboarding } from './screens/Onboarding';
@@ -11,6 +11,12 @@ type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
 /** Pull a pending invite token from /join/<token> URLs (SPA fallback). */
 function pendingJoinToken(): string | null {
   const m = location.pathname.match(/\/join\/([a-f0-9]{32})$/);
+  return m?.[1] ?? null;
+}
+
+/** Pull a mobile sign-in handoff state from /app-signin/<state> URLs (issue #39). */
+function pendingAppSignInState(): string | null {
+  const m = location.pathname.match(/\/app-signin\/([a-f0-9]{32})$/);
   return m?.[1] ?? null;
 }
 
@@ -69,6 +75,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [checked, setChecked] = useState(false);
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
+  const [appSignInState] = useState<string | null>(pendingAppSignInState);
   const [joinToken, setJoinToken] = useState<string | null>(pendingJoinToken);
   const [resetToken, setResetToken] = useState<string | null>(pendingResetToken);
   const [verifyState, setVerifyState] = useState<'pending' | 'done' | 'failed' | null>(
@@ -108,6 +115,12 @@ export function App() {
         history.replaceState(null, '', import.meta.env.BASE_URL);
       });
   }, [user, joinToken]);
+
+  // Mobile handoff page: always the sign-in prompt, even with a web
+  // session — the app's session comes from Google's proof, not this tab's.
+  if (appSignInState !== null) {
+    return <AppSignIn state={appSignInState} />;
+  }
 
   if (!checked) return null;
 

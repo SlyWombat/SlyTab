@@ -43,6 +43,14 @@ hint), display name (create only). Inline validation on blur; server errors
 inline, not toasts. `Forgot password?` → email-entry screen → "check your
 inbox" confirmation (identical response whether or not the account exists).
 
+**Third-party sign-in (FR-1.7)** — below the form, an "or" divider with
+the official Google button and an Apple button (web; each hidden unless
+the server reports it configured). On mobile, `Continue with Google`
+(issue #39) opens the system browser to the web `/app-signin/<state>`
+page; the button shows "Waiting for your browser…" with a `Cancel` link
+until the app claims the session, and the browser page ends on "You're
+signed in ✓ — switch back to the SlyTab app" with an `Open SlyTab` link.
+
 **First-run setup** (create only) — pick avatar colour/emoji, default
 currency (pre-set CAD), optional payment handles with a "you can add these
 later" skip. One screen, not a carousel.
