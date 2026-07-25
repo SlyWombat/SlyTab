@@ -440,6 +440,10 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     setError(null);
     fetchEta();
     try {
+      // Issue #32: PDFs (emailed receipts) render to a JPEG first, then
+      // ride the normal image pipeline.
+      const pdf = await import('../pdf');
+      if (pdf.isPdf(file)) file = await pdf.pdfFirstPageToJpeg(file);
       // Issue #21 (and #9 item 1): the photo's EXIF GPS knows what
       // country the receipt is from — a better currency hint than the
       // form's current pick. Must read the ORIGINAL bytes (shrinking
@@ -739,7 +743,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             Delete this expense
           </button>
         )}
-        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp"
+        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
           style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void onScanFile(f); e.target.value = ''; }} />
       </form>
@@ -944,7 +948,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
           ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`
           : slipBusy ? 'Reading the card slip…' : 'Scan card slip (adds the tip)'}
       </button>
-      <input ref={slipInput} type="file" accept="image/jpeg,image/png,image/webp"
+      <input ref={slipInput} type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
         style={{ display: 'none' }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void onSlipFile(f); e.target.value = ''; }} />
       <p className="muted" style={{ padding: '10px 2px' }}>
@@ -1018,6 +1022,22 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
         </div>
         <button className="btn primary block" disabled={busy || name.trim() === ''}>Save</button>
       </form>
+      {/* Issue #35: groups aren't deleted (balances must stay honest) —
+          they archive to read-only and collapse on the home page. */}
+      <button type="button" className="btn block" style={{ marginTop: 10, color: 'var(--ss-owe)' }}
+        disabled={busy}
+        onClick={() => {
+          if (!window.confirm(
+            `Archive "${group.name}"? It becomes read-only — no new expenses — and moves under `
+            + '"Show archived groups" on Home. History and balances stay visible. This can\'t be undone from the app.',
+          )) return;
+          setBusy(true);
+          api.archiveGroup(group.id)
+            .then(onSaved)
+            .catch((err) => { setError((err as Error).message); setBusy(false); });
+        }}>
+        Archive this group…
+      </button>
     </Sheet>
   );
 }

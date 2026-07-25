@@ -78,17 +78,27 @@ final class BugReportService
             );
         }
 
-        // Issue #25: the reporter hears back immediately…
+        // Issues #25 + #34: immediate acknowledgment with a tracking number.
+        $tracking = self::trackingCode($id);
         $this->mailer->dispatch(
             $u['email'],
-            'SlyTab got your bug report',
+            "We got your SlyTab report — {$tracking}",
             "Hi {$u['display_name']},\n\n"
-            . "Thanks — your report is in and a human (and their robot) will look at it:\n\n"
-            . "> {$message}\n\n"
-            . "We'll email you again when it's resolved.\n\n— SlyTab",
+            . "Thanks for the report! It's in our queue as {$tracking}.\n\n"
+            . "What you told us:\n"
+            . "  \"{$message}\"\n\n"
+            . "We'll email you at this address as soon as it's fixed, with what\n"
+            . "changed and how to pick up the update.\n\n"
+            . "— The SlyTab team",
         );
 
-        return ['id' => $id, 'status' => 'new'];
+        return ['id' => $id, 'status' => 'new', 'tracking' => $tracking];
+    }
+
+    /** Issue #34: short human-friendly tracking ref, stable per report. */
+    public static function trackingCode(string $bugId): string
+    {
+        return 'SLY-' . substr($bugId, -6);
     }
 
     /** Issue #25: remember which GitHub issue tracks this report. */
@@ -105,7 +115,7 @@ final class BugReportService
     public function closeAndNotify(string $bugId, string $resolution = ''): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.message, b.status, b.issue_number, u.display_name, u.email
+            'SELECT b.message, b.status, b.context, b.issue_number, u.display_name, u.email
              FROM bug_reports b JOIN users u ON u.id = b.user_id WHERE b.id = ?',
         );
         $stmt->execute([$bugId]);
@@ -115,17 +125,23 @@ final class BugReportService
         }
         if ($r['status'] !== 'closed') {
             $this->pdo->prepare("UPDATE bug_reports SET status = 'closed' WHERE id = ?")->execute([$bugId]);
-            $issue = $r['issue_number'] !== null
-                ? " (issue #{$r['issue_number']}, https://github.com/SlyWombat/SlyTab/issues/{$r['issue_number']})"
-                : '';
+            $tracking = self::trackingCode($bugId);
+            // Issue #34: tell the reporter how to pick up the fix on the
+            // platform they reported from (context starts "web …"/"mobile …").
+            $howTo = str_starts_with((string) $r['context'], 'mobile')
+                ? 'Update to the latest build of the SlyTab app to get the fix.'
+                : 'Refresh SlyTab in your browser to get the fix (hold Shift and click reload if it looks unchanged).';
             $this->mailer->dispatch(
                 $r['email'],
-                'Your SlyTab bug report is resolved',
+                "Fixed: your SlyTab report {$tracking}",
                 "Hi {$r['display_name']},\n\n"
-                . "The bug you reported is resolved{$issue}:\n\n"
-                . "> {$r['message']}\n\n"
-                . ($resolution !== '' ? "{$resolution}\n\n" : '')
-                . "Thanks for helping make SlyTab better.\n\n— SlyTab",
+                . "Good news — the issue you reported is fixed and live.\n\n"
+                . "Your report ({$tracking}):\n"
+                . "  \"{$r['message']}\"\n\n"
+                . "{$howTo}\n\n"
+                . ($resolution !== '' ? "Details: {$resolution}\n\n" : '')
+                . "Thanks for helping make SlyTab better.\n\n"
+                . "— The SlyTab team",
             );
         }
         return ['id' => $bugId, 'status' => 'closed'];

@@ -380,13 +380,14 @@ function BugReportSection() {
   const [message, setMessage] = useState('');
   const [image, setImage] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null); // tracking code
   const [error, setError] = useState<string | null>(null);
 
-  if (sent) {
+  if (sent !== null) {
     return (
       <p className="muted" style={{ padding: '8px 2px' }}>
-        Thanks — your report is in. We read every one. 🐛✓
+        Thanks — your report is in as <b>{sent}</b>. We read every one,
+        and you'll get an email when it's fixed. 🐛✓
       </p>
     );
   }
@@ -417,7 +418,7 @@ function BugReportSection() {
             setBusy(true);
             setError(null);
             api.reportBug(message.trim(), image)
-              .then(() => setSent(true))
+              .then((r) => setSent(r.tracking ?? 'received'))
               .catch((e) => setError((e as Error).message))
               .finally(() => setBusy(false));
           }}>

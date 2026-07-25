@@ -245,6 +245,7 @@ export const api = {
   /** Add someone you already share a group with (issue #24). */
   addKnownMember: (groupId: string, userId: string) =>
     req<Group>('POST', `/groups/${groupId}/members`, { userId }),
+  archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
   createGroup: (name: string, emoji: string, homeCurrency: string, currencies: string[] = []) =>
     req<Group>('POST', '/groups', { name, emoji, homeCurrency, currencies }),
   updateGroup: (id: string, data: { name?: string; emoji?: string; currencies?: string[] }) =>
@@ -284,7 +285,7 @@ export const api = {
   registerPushToken: (token: string) => req<{ ok: true }>('POST', '/me/push-tokens', { token }),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   /** Report a bug from the profile page: comment + optional screenshot. */
-  reportBug: async (message: string, image?: { uri: string; mime: string } | null): Promise<{ id: string; status: string }> => {
+  reportBug: async (message: string, image?: { uri: string; mime: string } | null): Promise<{ id: string; status: string; tracking?: string }> => {
     const fd = new FormData();
     fd.append('message', message);
     fd.append('context', debugContext());
@@ -306,7 +307,7 @@ export const api = {
         res.status,
       );
     }
-    return json as { id: string; status: string };
+    return json as { id: string; status: string; tracking?: string };
   },
   /** Re-run the parser on the stored photo — no re-photographing. */
   rescanReceipt: (receiptId: string, currencyHint?: string) =>

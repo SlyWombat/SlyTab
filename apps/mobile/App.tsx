@@ -539,13 +539,14 @@ function BugReportSection() {
   const [message, setMessage] = useState('');
   const [image, setImage] = useState<{ uri: string; mime: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null); // tracking code
   const [error, setError] = useState<string | null>(null);
 
-  if (sent) {
+  if (sent !== null) {
     return (
       <Text style={[s.meta, { textAlign: 'center', paddingVertical: 8 }]}>
-        Thanks — your report is in. We read every one. 🐛✓
+        Thanks — your report is in as {sent}. We read every one, and
+        you'll get an email when it's fixed. 🐛✓
       </Text>
     );
   }
@@ -583,7 +584,7 @@ function BugReportSection() {
               setBusy(true);
               setError(null);
               api.reportBug(message.trim(), image)
-                .then(() => setSent(true))
+                .then((r) => setSent(r.tracking ?? 'received'))
                 .catch((e) => setError((e as Error).message))
                 .finally(() => setBusy(false));
             }} />
@@ -824,6 +825,24 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
             .catch((e) => setError((e as Error).message))
             .finally(() => setBusy(false));
         }} />
+      <View style={{ height: 8 }} />
+      {/* Issue #35: groups aren't deleted (balances must stay honest) —
+          they archive to read-only and collapse on the home page. */}
+      <Btn label="Archive this group…" disabled={busy}
+        onPress={() => Alert.alert(
+          `Archive "${group.name}"?`,
+          'It becomes read-only — no new expenses — and moves under "Show archived groups" on Home. '
+          + "History and balances stay visible. This can't be undone from the app.",
+          [
+            { text: 'Keep it active', style: 'cancel' },
+            { text: 'Archive', style: 'destructive', onPress: () => {
+              setBusy(true);
+              api.archiveGroup(group.id)
+                .then(onSaved)
+                .catch((e) => { setError((e as Error).message); setBusy(false); });
+            } },
+          ],
+        )} />
     </SheetModal>
   );
 }

@@ -324,7 +324,8 @@ export const api = {
   },
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   /** Report a bug from the profile page: comment + optional screenshot. */
-  reportBug: async (message: string, image?: File | null): Promise<{ id: string; status: string }> => {
+  archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
+  reportBug: async (message: string, image?: File | null): Promise<{ id: string; status: string; tracking?: string }> => {
     const fd = new FormData();
     fd.append('message', message);
     fd.append('context', `web ${navigator.userAgent}`.slice(0, 500));
@@ -340,7 +341,7 @@ export const api = {
         res.status,
       );
     }
-    return json as { id: string; status: string };
+    return json as { id: string; status: string; tracking?: string };
   },
   /** Re-run the parser on the stored photo — no re-photographing. */
   rescanReceipt: (receiptId: string, currencyHint?: string) =>
