@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 secrets/
+apps/mobile/credentials.json
 
 # Dependencies
 node_modules/

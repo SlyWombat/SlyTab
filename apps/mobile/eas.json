@@ -2,7 +2,8 @@
   "cli": { "version": ">= 13.0.0", "appVersionSource": "local" },
   "build": {
     "ios-testflight": {
-      "extends": "production"
+      "extends": "production",
+      "credentialsSource": "local"
     },
     "production": {
       "autoIncrement": false
