@@ -2,7 +2,7 @@
   "expo": {
     "name": "SlyTab",
     "slug": "slytab",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "scheme": "slytab",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -10,7 +10,7 @@
     "ios": {
       "bundleIdentifier": "ca.electricrv.slytab",
       "supportsTablet": false,
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "NSCameraUsageDescription": "SlyTab uses the camera to scan receipts so expenses can be split by item.",
         "NSPhotoLibraryUsageDescription": "SlyTab lets you pick a receipt photo from your library to split an expense.",
@@ -22,7 +22,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#0c1220"
       },
-      "versionCode": 2
+      "versionCode": 3
     },
     "splash": {
       "backgroundColor": "#0c1220",

@@ -33,8 +33,21 @@ https://electricrv.ca/slytab — live user data; treat with care.
   GitHub issue is fixed and the reporter notified, the pipeline deletes
   the issue (the internal `bug_reports` table keeps the full record).
   Owner-created issues stay.
-- Never build or publish an APK / app-store submission unless the owner
-  explicitly asks.
+- **Never notify a reporter that a fix is live until it actually reaches
+  them.** A fix that changes the mobile app (`apps/mobile/`) does NOT
+  reach users until a new app build is released — the deployed web/API
+  is not enough. So for a mobile-affecting fix: deploy web/API, comment
+  on the issue that the code is done and a mobile release is pending,
+  and LEAVE IT OPEN — do NOT close it (closing triggers the "it's fixed,
+  update your app" email). Web/backend-only fixes close and notify
+  immediately. This is the rule the owner set on 2026-07-25 after a
+  premature "fixed" email went out for an unreleased Android change.
+- **Release policy (owner, 2026-07-25):** when mobile work is done,
+  release BOTH platforms (`scripts/worker`/release runbook: bump
+  app.json, EAS build android-apk + ios-testflight, upload APK to
+  `downloads/slytab-latest.apk`, submit iOS, then close the
+  mobile-pending issues so their "update your app" email is truthful).
+  This reversed the earlier "never build an APK" rule.
 
 ## The feedback loop (how work arrives)
 
