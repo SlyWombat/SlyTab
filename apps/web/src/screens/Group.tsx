@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, type Category } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, type Category, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
@@ -404,13 +404,34 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>(editing?.category ?? 'dining');
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
-  const [mode, setMode] = useState<'equal' | 'unequal'>(editing ? 'unequal' : 'equal');
-  const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
+  // FR-3.2 (issue #13): all five split methods. Editing re-opens on the
+  // stored method; shares/percent/adjustment restore their form inputs
+  // from the persisted splitInput (legacy rows without one fall back to
+  // the data-faithful exact view).
+  const [method, setMethod] = useState<SplitMethod>(() => {
+    if (!editing) return 'equal';
+    const m = editing.splitMethod as SplitMethod;
+    if (m === 'equal' || m === 'exact') return m;
+    return editing.splitInput ? m : 'exact';
+  });
+  const [included, setIncluded] = useState<Set<string>>(() =>
+    editing && editing.splitMethod === 'equal'
+      ? new Set(editing.shares.map((sh) => sh.userId))
+      : new Set(group.members.map((m) => m.id)));
   const [exact, setExact] = useState<Record<string, string>>(() => {
     if (!editing) return {};
     const out: Record<string, string> = {};
     for (const sh of editing.shares) out[sh.userId] = minorToAmountString(sh.amountMinor, editing.currency);
     return out;
+  });
+  // Per-member form inputs for the weighted methods, kept separately so
+  // flipping between tabs doesn't reinterpret 33.3 shares as 33.3%.
+  const [weights, setWeights] = useState<Record<string, Record<string, string>>>(() => {
+    const m = editing?.splitMethod as SplitMethod | undefined;
+    if (editing?.splitInput && (m === 'shares' || m === 'percent' || m === 'adjustment')) {
+      return { [m]: splitInputsFromStored(m, editing.splitInput, editing.currency) };
+    }
+    return {};
   });
   const [fxOverride, setFxOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -532,29 +553,38 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     if (result.currency && /^[A-Z]{3}$/.test(result.currency)) setCurrency(result.currency);
     if (result.merchant) setDescription(result.merchant);
     if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) setDate(result.date);
-    setMode('unequal');
+    setMethod('exact');
     const next: Record<string, string> = {};
     for (const [uid, v] of Object.entries(result.shares)) next[uid] = minorToAmountString(v, cur);
     setExact(next);
   }
 
-  const shares = useMemo(() => {
+  // Split result per member, plus the SplitError message as the form
+  // hint when the inputs don't reconcile yet.
+  const { shares, splitHint } = useMemo((): { shares: Record<string, number> | null; splitHint: string | null } => {
+    if (amountMinor <= 0) return { shares: null, splitHint: null };
     try {
-      if (mode === 'equal') {
-        const members = group.members.filter((m) => included.has(m.id)).map((m) => ({ id: m.id }));
-        if (members.length === 0 || amountMinor <= 0) return null;
-        return computeSplit('equal', amountMinor, members);
+      if (method === 'exact') {
+        const out: Record<string, number> = {};
+        for (const m of group.members) {
+          const v = parseAmount(exact[m.id] ?? '', currency);
+          if (v > 0) out[m.id] = v;
+        }
+        return { shares: out, splitHint: null }; // "remaining" line covers the hint
       }
+      const ids = method === 'equal'
+        ? group.members.filter((m) => included.has(m.id)).map((m) => m.id)
+        : group.members.map((m) => m.id);
+      if (ids.length === 0) return { shares: null, splitHint: 'pick at least one person' };
+      const computed = computeSplit(method, amountMinor,
+        splitMembersFromInputs(method, ids, weights[method] ?? {}, currency));
       const out: Record<string, number> = {};
-      for (const m of group.members) {
-        const v = parseAmount(exact[m.id] ?? '', currency);
-        if (v > 0) out[m.id] = v;
-      }
-      return out;
-    } catch {
-      return null;
+      for (const [id, v] of Object.entries(computed)) if (v > 0) out[id] = v;
+      return { shares: out, splitHint: null };
+    } catch (err) {
+      return { shares: null, splitHint: err instanceof SplitError ? err.message : null };
     }
-  }, [mode, group.members, included, exact, amountMinor]);
+  }, [method, group.members, included, exact, weights, amountMinor, currency]);
 
   const sharesSum = Object.values(shares ?? {}).reduce((a, b) => a + b, 0);
   const remaining = amountMinor - sharesSum;
@@ -572,9 +602,13 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         currency: currency.toUpperCase(),
         expenseDate: date,
         category,
-        splitMethod: mode === 'equal' ? 'equal' : 'exact',
+        splitMethod: method,
         payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
+        ...(() => {
+          const stored = splitInputsToStored(method, group.members.map((m) => m.id), weights[method] ?? {}, currency);
+          return stored !== null ? { splitInput: stored } : {};
+        })(),
         ...(notes.trim() !== '' ? { notes: notes.trim() } : {}),
         ...(fxOverride !== '' ? { fxRateOverride: parseFloat(fxOverride) } : {}),
         ...(receiptId !== null || extraReceiptIds.length > 0
@@ -609,6 +643,11 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
               setExact((m) => Object.fromEntries(
                 Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
               ));
+              // Adjustment offsets are amounts too; share counts and
+              // percents are scale-free.
+              setWeights((w) => w.adjustment === undefined ? w : { ...w,
+                adjustment: Object.fromEntries(Object.entries(w.adjustment).map(([id, v]) =>
+                  [id, v.startsWith('-') ? `-${rescaleAmountString(v.slice(1), currency, next)}` : rescaleAmountString(v, currency, next)])) });
               setCurrency(next);
             }}>
               <optgroup label="This group">
@@ -671,19 +710,26 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 
         <div className="sect" style={{ paddingLeft: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span>Split</span>
-          {mode === 'equal' && (
+          {method === 'equal' && (
             <span className="muted" style={{ fontSize: '0.75rem', letterSpacing: 0, textTransform: 'none', fontWeight: 400 }}>
               {included.size === group.members.length
                 ? `equally between everyone (${group.members.length})`
                 : `equally between ${included.size} of ${group.members.length}`}
             </span>
           )}
+          {method === 'adjustment' && (
+            <span className="muted" style={{ fontSize: '0.75rem', letterSpacing: 0, textTransform: 'none', fontWeight: 400 }}>
+              equal after per-person + / − offsets
+            </span>
+          )}
         </div>
+        {/* FR-3.2: all five split methods */}
         <div className="tabs">
-          <button type="button" className={mode === 'equal' ? 'on' : ''} onClick={() => setMode('equal')}>Equal</button>
-          <button type="button" className={mode === 'unequal' ? 'on' : ''} onClick={() => setMode('unequal')}>Unequal</button>
+          {([['equal', 'Equal'], ['exact', 'Exact'], ['shares', 'Shares'], ['percent', '%'], ['adjustment', '+/−']] as const).map(([m, label]) => (
+            <button key={m} type="button" className={method === m ? 'on' : ''} onClick={() => setMethod(m)}>{label}</button>
+          ))}
         </div>
-        {mode === 'equal' && (
+        {method === 'equal' && (
           <div style={{ display: 'flex', gap: 8, padding: '2px 0 6px' }}>
             <button type="button" className="btn sm"
               onClick={() => setIncluded(new Set(group.members.map((m) => m.id)))}>Everyone</button>
@@ -694,7 +740,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 
         {group.members.map((m) => (
           <div className="checkrow" key={m.id}>
-            {mode === 'equal' && (
+            {method === 'equal' && (
               <input type="checkbox" checked={included.has(m.id)}
                 onChange={(e) => {
                   const next = new Set(included);
@@ -704,20 +750,40 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             )}
             <Badge id={m.id} name={m.displayName} sm />
             {m.id === user.id ? 'You' : m.displayName}
-            {mode === 'equal'
-              ? <span className="amount muted" style={{ marginLeft: 'auto', fontSize: '0.8125rem' }}>
+            {method === 'equal' && (
+              <span className="amount muted" style={{ marginLeft: 'auto', fontSize: '0.8125rem' }}>
+                {shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}
+              </span>
+            )}
+            {method === 'exact' && (
+              <label className="field amt-in" style={{ margin: 0 }}>
+                <input className="amt" inputMode="decimal" placeholder="0.00"
+                  value={exact[m.id] ?? ''} onChange={(e) => setExact({ ...exact, [m.id]: e.target.value })} />
+              </label>
+            )}
+            {(method === 'shares' || method === 'percent' || method === 'adjustment') && (
+              <>
+                <span className="amount muted" style={{ marginLeft: 'auto', fontSize: '0.8125rem' }}>
                   {shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}
                 </span>
-              : <label className="field amt-in" style={{ margin: 0 }}>
-                  <input className="amt" inputMode="decimal" placeholder="0.00"
-                    value={exact[m.id] ?? ''} onChange={(e) => setExact({ ...exact, [m.id]: e.target.value })} />
-                </label>}
+                <label className="field amt-in" style={{ margin: 0 }}>
+                  <input className="amt" inputMode={method === 'shares' ? 'numeric' : 'decimal'}
+                    placeholder={method === 'shares' ? '0' : method === 'percent' ? '0%' : '±0.00'}
+                    value={weights[method]?.[m.id] ?? ''}
+                    onChange={(e) => setWeights({ ...weights,
+                      [method]: { ...(weights[method] ?? {}), [m.id]: e.target.value } })} />
+                </label>
+              </>
+            )}
           </div>
         ))}
-        {mode === 'unequal' && (
+        {method === 'exact' && (
           <p className="muted" style={{ padding: '4px 2px', color: remaining === 0 ? 'var(--ss-owed)' : 'var(--ss-owe)' }}>
             remaining: {minorToAmountString(remaining, currency)}
           </p>
+        )}
+        {splitHint !== null && amountMinor > 0 && (
+          <p className="muted" style={{ padding: '4px 2px', color: 'var(--ss-owe)' }}>{splitHint}</p>
         )}
         {receiptId !== null && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

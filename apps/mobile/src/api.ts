@@ -72,6 +72,9 @@ export interface Expense {
   id: string; groupId: string; description: string; amountMinor: number;
   currency: string; fxRate: number | null; expenseDate: string;
   category: string; payers: Participant[]; shares: Participant[];
+  splitMethod: string;
+  /** Per-member form inputs for shares/percent/adjustment splits, so editing restores them. */
+  splitInput?: Record<string, number> | null;
   receiptId: string | null;
   /** All linked receipts (bill + card slip …), primary first. */
   receiptIds: string[];

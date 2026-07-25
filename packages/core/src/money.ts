@@ -65,6 +65,18 @@ export function parseAmount(input: string, currency: string): number {
   return Math.round((parseFloat(input) || 0) * 100);
 }
 
+/**
+ * Signed variant of parseAmount for +/- adjustment fields. parseAmount
+ * strips the sign for zero-decimal currencies (every non-digit is a
+ * grouping separator there), so the sign is peeled off first.
+ */
+export function parseSignedAmount(input: string, currency: string): number {
+  const trimmed = input.trim();
+  const negative = trimmed.startsWith('-');
+  const magnitude = parseAmount(trimmed.replace(/^[+-]/, ''), currency);
+  return negative ? -magnitude : magnitude;
+}
+
 /** Minor units → amount-field text ("4240" for CLP, "42.40" for CAD). */
 export function minorToAmountString(minor: number, currency: string): string {
   const scale = minorUnitScale(currency);

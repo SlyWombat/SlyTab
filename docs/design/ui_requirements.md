@@ -161,12 +161,16 @@ me** shortcuts. Full field order when expanded:
 3. **Paid by** — defaults to you; tap → member picker; supports multiple
    payers with per-payer amounts that must sum to total (FR-3.3, live
    remainder shown).
-4. **Split** — segmented control: `Equal · Unequal`. Equal shows member
-   checklist (everyone on by default). Unequal opens the split editor:
-   sub-tabs **Amounts / Shares / % / +Adjust**, one row per member with
-   inline Keypad, live "remaining: C$0.00" reconciliation line that must
-   reach zero before save (FR-3.2). The split editor renders a SplitBar
-   preview at the top.
+4. **Split** — segmented control over all five methods (FR-3.2, issue
+   #13): `Equal · Exact · Shares · % · +/−`. Equal shows the member
+   checklist (everyone on by default). Exact gives one amount row per
+   member with a live "remaining: C$0.00" reconciliation line that must
+   reach zero before save. Shares / % / +/− give one input per member
+   (share count, percentage, signed offset) with the computed per-member
+   amount previewed beside it and the split-math error ("percentages sum
+   to 92, expected 100") shown as the hint until the inputs reconcile.
+   Editing re-opens on the stored method with its inputs restored
+   (persisted as `splitInput`).
 5. **Date** (defaults today) · **Notes** · **Receipt** (`Scan receipt`
    primary, `Attach photo` secondary).
 6. `Save` — disabled until amount > 0 and splits reconcile. Save is

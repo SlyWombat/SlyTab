@@ -65,6 +65,8 @@ export interface Expense {
   category: string;
   createdBy: string;
   splitMethod: string;
+  /** Per-member form inputs for shares/percent/adjustment splits, so editing restores them. */
+  splitInput?: Record<string, number> | null;
   payers: Participant[];
   shares: Participant[];
   receiptId: string | null;

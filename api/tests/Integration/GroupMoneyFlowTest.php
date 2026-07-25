@@ -582,4 +582,76 @@ final class GroupMoneyFlowTest extends TestCase
         $members = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}", null, $stay['token']), 200)['members'];
         self::assertNotContains($gone['id'], array_column($members, 'id'), 'deleted user is no longer an active member');
     }
+
+    /** Issue #13: splitInput round-trips so editing clients can restore the split form. */
+    public function testSplitInputRoundTripsThroughCreateAndUpdate(): void
+    {
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $ana = $mk('ana-splits');
+        $ben = $mk('ben-splits');
+        $g = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Split lab', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $ana['token']), 201);
+        $invite = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/invites", [], $ana['token']), 201);
+        $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $ben['token']), 200);
+
+        // Create with a 2:1 shares split; the raw inputs come back verbatim.
+        $e = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Firewood', 'amountMinor' => 3000, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-25', 'category' => 'adulting', 'splitMethod' => 'shares',
+            'splitInput' => [$ana['id'] => 2, $ben['id'] => 1],
+            'payers' => [['userId' => $ana['id'], 'amountMinor' => 3000]],
+            'shares' => [
+                ['userId' => $ana['id'], 'amountMinor' => 2000],
+                ['userId' => $ben['id'], 'amountMinor' => 1000],
+            ],
+        ], $ana['token']), 201);
+        self::assertSame('shares', $e['splitMethod']);
+        self::assertSame([$ana['id'] => 2, $ben['id'] => 1], $e['splitInput']);
+
+        $fetched = $this->ok($this->request('GET', "/api/v1/expenses/{$e['id']}", null, $ben['token']), 200);
+        self::assertSame([$ana['id'] => 2, $ben['id'] => 1], $fetched['splitInput']);
+
+        // Update to an adjustment split; the new inputs replace the old.
+        $e = $this->ok($this->request('PATCH', "/api/v1/expenses/{$e['id']}", [
+            'description' => 'Firewood', 'amountMinor' => 3000, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-25', 'category' => 'adulting', 'splitMethod' => 'adjustment',
+            'splitInput' => [$ben['id'] => -500],
+            'payers' => [['userId' => $ana['id'], 'amountMinor' => 3000]],
+            'shares' => [
+                ['userId' => $ana['id'], 'amountMinor' => 1750],
+                ['userId' => $ben['id'], 'amountMinor' => 1250],
+            ],
+        ], $ben['token']), 200);
+        self::assertSame('adjustment', $e['splitMethod']);
+        self::assertSame([$ben['id'] => -500], $e['splitInput']);
+
+        // Equal splits store no inputs — nothing to restore beyond the shares.
+        $plain = $this->ok($this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Ice', 'amountMinor' => 800, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-25', 'category' => 'other', 'splitMethod' => 'equal',
+            'payers' => [['userId' => $ana['id'], 'amountMinor' => 800]],
+            'shares' => [
+                ['userId' => $ana['id'], 'amountMinor' => 400],
+                ['userId' => $ben['id'], 'amountMinor' => 400],
+            ],
+        ], $ana['token']), 201);
+        self::assertNull($plain['splitInput']);
+
+        // A scalar splitInput is rejected.
+        $bad = $this->request('POST', "/api/v1/groups/{$g['id']}/expenses", [
+            'description' => 'Bad', 'amountMinor' => 100, 'currency' => 'CAD',
+            'expenseDate' => '2026-07-25', 'category' => 'other', 'splitMethod' => 'percent',
+            'splitInput' => 'fifty-fifty',
+            'payers' => [['userId' => $ana['id'], 'amountMinor' => 100]],
+            'shares' => [['userId' => $ana['id'], 'amountMinor' => 100]],
+        ], $ana['token']);
+        self::assertSame(400, $bad->getStatusCode());
+    }
 }

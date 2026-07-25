@@ -300,6 +300,9 @@ final class ExpenseService
         if (!in_array($splitMethod, self::SPLIT_METHODS, true)) {
             throw new ApiException('VALIDATION', 'unknown split method');
         }
+        if (isset($data['splitInput']) && !is_array($data['splitInput'])) {
+            throw new ApiException('VALIDATION', 'splitInput must be an object');
+        }
 
         $payers = self::participantList($data['payers'] ?? null, 'payers');
         $shares = self::participantList($data['shares'] ?? null, 'shares');
@@ -423,6 +426,11 @@ final class ExpenseService
             'createdAt' => $e['created_at'],
             'updatedAt' => $e['updated_at'],
             'splitMethod' => $shareRows[0]['split_method'] ?? 'equal',
+            // Raw per-member form inputs (shares/percent/adjustment), so
+            // editing clients can restore the split form — issue #13.
+            'splitInput' => isset($shareRows[0]['split_input']) && $shareRows[0]['split_input'] !== null
+                ? json_decode((string) $shareRows[0]['split_input'], true)
+                : null,
             'payers' => array_map(static fn(array $p): array => [
                 'userId' => $p['user_id'], 'amountMinor' => (int) $p['amount'],
             ], $payers->fetchAll()),

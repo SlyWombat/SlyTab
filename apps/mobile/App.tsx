@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, bridgeMinor, minorUnitScale, tokens, type Category, type Currency } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type Category, type Currency, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -1656,7 +1656,29 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [commentText, setCommentText] = useState('');
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
-  const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
+  // FR-3.2 (issue #13): all five split methods. Editing re-opens on the
+  // stored method; shares/percent/adjustment restore their form inputs
+  // from the persisted splitInput (legacy rows without one fall back to
+  // the data-faithful exact view).
+  const [method, setMethod] = useState<SplitMethod>(() => {
+    if (!editing) return 'equal';
+    const m = editing.splitMethod as SplitMethod;
+    if (m === 'equal' || m === 'exact') return m;
+    return editing.splitInput ? m : 'exact';
+  });
+  const [included, setIncluded] = useState<Set<string>>(() =>
+    editing && editing.splitMethod === 'equal'
+      ? new Set(editing.shares.map((sh) => sh.userId))
+      : new Set(group.members.map((m) => m.id)));
+  // Per-member form inputs for the weighted methods, kept separately so
+  // flipping between tabs doesn't reinterpret 33.3 shares as 33.3%.
+  const [weights, setWeights] = useState<Record<string, Record<string, string>>>(() => {
+    const m = editing?.splitMethod as SplitMethod | undefined;
+    if (editing?.splitInput && (m === 'shares' || m === 'percent' || m === 'adjustment')) {
+      return { [m]: splitInputsFromStored(m, editing.splitInput, editing.currency) };
+    }
+    return {};
+  });
   // Issue #37: who paid was hard-wired to "you" on mobile — now selectable.
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
   // Issue #37 speed entry: category + notes + paid-by tuck behind "More".
@@ -1673,10 +1695,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const scanHandle = useRef<{ cancel: () => void } | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   const scanBusy = scanProg !== null;
-  const [exactShares, setExactShares] = useState<Record<string, number> | null>(() => {
-    if (!editing) return null;
-    const out: Record<string, number> = {};
-    for (const sh of editing.shares) out[sh.userId] = sh.amountMinor;
+  const [exact, setExact] = useState<Record<string, string>>(() => {
+    if (!editing) return {};
+    const out: Record<string, string> = {};
+    for (const sh of editing.shares) out[sh.userId] = minorToAmountString(sh.amountMinor, editing.currency);
     return out;
   });
   // New expenses start in whatever currency the group used last (mid-trip
@@ -1692,9 +1714,14 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // become 95,000,000 pesos.
   function switchCurrency(next: string) {
     setAmountStr((s) => rescaleAmountString(s, currency, next));
-    setExactShares((m) => m === null ? null : Object.fromEntries(
-      Object.entries(m).map(([id, v]) => [id, bridgeMinor(v, minorUnitScale(currency), next)]),
+    setExact((m) => Object.fromEntries(
+      Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
     ));
+    // Adjustment offsets are amounts too; share counts and percents are
+    // scale-free.
+    setWeights((w) => w.adjustment === undefined ? w : { ...w,
+      adjustment: Object.fromEntries(Object.entries(w.adjustment).map(([id, v]) =>
+        [id, v.startsWith('-') ? `-${rescaleAmountString(v.slice(1), currency, next)}` : rescaleAmountString(v, currency, next)])) });
     setCurrency(next);
   }
 
@@ -1702,12 +1729,35 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     if (editing) api.comments(editing.id).then((r) => setComments(r.items)).catch(() => {});
   }, [editing]);
 
-  const shares = useMemo(() => {
-    if (exactShares !== null) return exactShares;
-    const ids = group.members.filter((m) => included.has(m.id)).map((m) => ({ id: m.id }));
-    if (ids.length === 0 || amountMinor <= 0) return null;
-    try { return computeSplit('equal', amountMinor, ids); } catch { return null; }
-  }, [exactShares, group.members, included, amountMinor]);
+  // Split result per member, plus the SplitError message as the form
+  // hint when the inputs don't reconcile yet.
+  const { shares, splitHint } = useMemo((): { shares: Record<string, number> | null; splitHint: string | null } => {
+    if (amountMinor <= 0) return { shares: null, splitHint: null };
+    try {
+      if (method === 'exact') {
+        const out: Record<string, number> = {};
+        for (const m of group.members) {
+          const v = parseAmount(exact[m.id] ?? '', currency);
+          if (v > 0) out[m.id] = v;
+        }
+        return { shares: out, splitHint: null }; // "remaining" line covers the hint
+      }
+      const ids = method === 'equal'
+        ? group.members.filter((m) => included.has(m.id)).map((m) => m.id)
+        : group.members.map((m) => m.id);
+      if (ids.length === 0) return { shares: null, splitHint: 'pick at least one person' };
+      const computed = computeSplit(method, amountMinor,
+        splitMembersFromInputs(method, ids, weights[method] ?? {}, currency));
+      const out: Record<string, number> = {};
+      for (const [id, v] of Object.entries(computed)) if (v > 0) out[id] = v;
+      return { shares: out, splitHint: null };
+    } catch (err) {
+      return { shares: null, splitHint: err instanceof SplitError ? err.message : null };
+    }
+  }, [method, group.members, included, exact, weights, amountMinor, currency]);
+
+  const sharesSum = Object.values(shares ?? {}).reduce((a, b) => a + b, 0);
+  const remaining = amountMinor - sharesSum;
 
   async function scan(fromCamera: boolean) {
     setError(null);
@@ -1797,9 +1847,13 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         currency,
         expenseDate: date,
         category,
-        splitMethod: exactShares !== null ? 'exact' : 'equal',
+        splitMethod: method,
         payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
+        ...(() => {
+          const stored = splitInputsToStored(method, group.members.map((m) => m.id), weights[method] ?? {}, currency);
+          return stored !== null ? { splitInput: stored } : {};
+        })(),
         ...(notes.trim() !== '' ? { notes: notes.trim() } : {}),
         ...(receiptId !== null || extraReceiptIds.length > 0
           ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
@@ -1816,7 +1870,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     <SheetModal title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label={`Amount (${currency})`} value={amountStr}
-        onChangeText={(v) => { setAmountStr(v); setExactShares(null); }}
+        onChangeText={setAmountStr}
         keyboardType="decimal-pad" placeholder="0.00" />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: allCurrencies ? 8 : 12 }}>
         {[...new Set([group.homeCurrency, ...group.currencies, currency])].map((cur) => (
@@ -1898,54 +1952,82 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           <Btn label="Photo library" disabled={scanBusy} onPress={() => void scan(false)} />
         </View>
       </View>
-      {exactShares !== null ? (
-        <>
-          <Text style={s.fieldLabel}>Split from receipt</Text>
-          {Object.entries(exactShares).map(([uid, v]) => {
-            const m = group.members.find((mm) => mm.id === uid);
-            return (
-              <View key={uid} style={s.checkRow}>
-                <Badge id={uid} name={m?.displayName ?? '?'} size={22} />
-                <Text style={[s.body, { flex: 1 }]}>{uid === user.id ? 'You' : m?.displayName ?? 'Member'}</Text>
-                <Text style={s.meta}>{minorToAmountString(v, currency)}</Text>
-              </View>
-            );
-          })}
-          <Pressable onPress={() => setExactShares(null)}>
-            <Text style={s.link}>Clear and split equally instead</Text>
-          </Pressable>
-        </>
-      ) : (
-        <>
-          <Text style={s.fieldLabel}>
-            {included.size === group.members.length
+      {/* FR-3.2 (issue #13): all five split methods */}
+      <Text style={s.fieldLabel}>
+        {method === 'equal'
+          ? (included.size === group.members.length
               ? `Split equally — everyone's in (${group.members.length})`
-              : `Split equally between ${included.size} of ${group.members.length}`}
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
-            <Btn small label="Everyone" onPress={() => setIncluded(new Set(group.members.map((m) => m.id)))} />
-            <Btn small label="Just me" onPress={() => setIncluded(new Set([user.id]))} />
-          </View>
-          {group.members.map((m) => {
-            const on = included.has(m.id);
-            return (
-              <Pressable key={m.id} style={s.checkRow}
-                onPress={() => {
-                  const next = new Set(included);
-                  on ? next.delete(m.id) : next.add(m.id);
-                  setIncluded(next);
-                }}>
-                <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
-                <Badge id={m.id} name={m.displayName} size={22} />
-                <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-                <Text style={s.meta}>{on && shares?.[m.id] !== undefined ? minorToAmountString(shares[m.id]!, currency) : '—'}</Text>
-              </Pressable>
-            );
-          })}
-        </>
+              : `Split equally between ${included.size} of ${group.members.length}`)
+          : method === 'exact' ? 'Split by exact amounts'
+          : method === 'shares' ? 'Split by shares (2:1:1 …)'
+          : method === 'percent' ? 'Split by percentages'
+          : 'Split equally after + / − offsets'}
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+        {([['equal', 'Equal'], ['exact', 'Exact'], ['shares', 'Shares'], ['percent', '%'], ['adjustment', '+/−']] as const).map(([m, label]) => (
+          <Pressable key={m} onPress={() => setMethod(m)}
+            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              backgroundColor: method === m ? c.brand : c.surface2 }}>
+            <Text style={{ color: method === m ? '#fff' : c.text2, fontSize: 12.5 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {method === 'equal' && (
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+          <Btn small label="Everyone" onPress={() => setIncluded(new Set(group.members.map((m) => m.id)))} />
+          <Btn small label="Just me" onPress={() => setIncluded(new Set([user.id]))} />
+        </View>
+      )}
+      {group.members.map((m) => {
+        const on = included.has(m.id);
+        return (
+          <Pressable key={m.id} style={s.checkRow} disabled={method !== 'equal'}
+            onPress={() => {
+              const next = new Set(included);
+              on ? next.delete(m.id) : next.add(m.id);
+              setIncluded(next);
+            }}>
+            {method === 'equal' && (
+              <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
+            )}
+            <Badge id={m.id} name={m.displayName} size={22} />
+            <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
+            {method !== 'exact' && (
+              <Text style={s.meta}>
+                {(method !== 'equal' || on) && shares?.[m.id] !== undefined
+                  ? minorToAmountString(shares[m.id]!, currency) : '—'}
+              </Text>
+            )}
+            {method === 'exact' && (
+              <TextInput placeholderTextColor={c.text3} placeholder="0.00" keyboardType="decimal-pad"
+                value={exact[m.id] ?? ''} onChangeText={(v) => setExact({ ...exact, [m.id]: v })}
+                style={[s.input, { width: 96, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+            )}
+            {(method === 'shares' || method === 'percent' || method === 'adjustment') && (
+              <TextInput placeholderTextColor={c.text3}
+                keyboardType={method === 'shares' ? 'number-pad'
+                  : method === 'percent' ? 'decimal-pad'
+                  : 'numbers-and-punctuation' /* adjustment needs a minus key */}
+                placeholder={method === 'shares' ? '0' : method === 'percent' ? '0%' : '±0.00'}
+                value={weights[method]?.[m.id] ?? ''}
+                onChangeText={(v) => setWeights({ ...weights,
+                  [method]: { ...(weights[method] ?? {}), [m.id]: v } })}
+                style={[s.input, { width: 76, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+            )}
+          </Pressable>
+        );
+      })}
+      {method === 'exact' && (
+        <Text style={[s.meta, { color: remaining === 0 ? c.owed : c.owe, paddingVertical: 4 }]}>
+          remaining: {minorToAmountString(remaining, currency)}
+        </Text>
+      )}
+      {splitHint !== null && amountMinor > 0 && (
+        <Text style={[s.meta, { color: c.owe, paddingVertical: 4 }]}>{splitHint}</Text>
       )}
       <Btn primary label={editing ? 'Save changes' : 'Save expense'}
-        disabled={amountMinor <= 0 || description.trim() === '' || shares === null}
+        disabled={amountMinor <= 0 || description.trim() === '' || shares === null
+          || Object.keys(shares).length === 0 || remaining !== 0}
         onPress={save} />
       {editing && (
         <>
@@ -2022,7 +2104,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             if (r.merchant) setDescription(r.merchant);
             if (r.currency && CURRENCIES.includes(r.currency as never)) setCurrency(r.currency);
             if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setDate(r.date);
-            setExactShares(r.shares);
+            const cur = r.currency && CURRENCIES.includes(r.currency as never) ? r.currency : currency;
+            setMethod('exact');
+            setExact(Object.fromEntries(Object.entries(r.shares).map(([uid, v]) =>
+              [uid, minorToAmountString(v, cur)])));
           }} />
       )}
     </SheetModal>

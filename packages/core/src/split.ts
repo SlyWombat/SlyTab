@@ -6,7 +6,7 @@
  * must pass packages/core/test-vectors/split.json. Change them together.
  */
 
-import { assertMinor } from './money.js';
+import { assertMinor, minorToAmountString, parseAmount, parseSignedAmount } from './money.js';
 
 export type SplitMethod = 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment';
 
@@ -56,6 +56,78 @@ function apportion(
     leftover--;
   }
   return out;
+}
+
+/**
+ * Split-form input bridging — issue #13. Both clients build their split
+ * forms on these so the parsing rules stay identical: blank means 0,
+ * shares are whole numbers, percents take decimals, adjustments are
+ * signed amounts at the currency's scale.
+ */
+
+/**
+ * Per-member numbers an expense persists as `splitInput` so editing can
+ * restore the form. Meaning follows the split method: share counts,
+ * percents, or adjustment minor units (in the expense's currency).
+ */
+export type SplitInputValues = Record<string, number>;
+
+function inputNumber(raw: string, label: string): number {
+  const n = Number(raw);
+  if (Number.isNaN(n)) throw new SplitError(`"${raw}" is not a ${label}`);
+  return n;
+}
+
+/** Raw per-member form strings → members for computeSplit. */
+export function splitMembersFromInputs(
+  method: SplitMethod,
+  ids: readonly string[],
+  inputs: Readonly<Record<string, string>>,
+  currency: string,
+): SplitMember[] {
+  return ids.map((id) => {
+    const raw = (inputs[id] ?? '').trim();
+    switch (method) {
+      case 'equal':
+        return { id };
+      case 'exact':
+        return { id, exactMinor: parseAmount(raw, currency) };
+      case 'shares':
+        return { id, shares: raw === '' ? 0 : inputNumber(raw, 'share count') };
+      case 'percent':
+        return { id, percent: raw === '' ? 0 : inputNumber(raw, 'percentage') };
+      case 'adjustment':
+        return { id, adjustMinor: parseSignedAmount(raw, currency) };
+    }
+  });
+}
+
+/** Form strings → the numbers to persist as `splitInput`. Members left blank (or 0) are dropped. */
+export function splitInputsToStored(
+  method: SplitMethod,
+  ids: readonly string[],
+  inputs: Readonly<Record<string, string>>,
+  currency: string,
+): SplitInputValues | null {
+  if (method === 'equal' || method === 'exact') return null; // the shares list restores these
+  const out: SplitInputValues = {};
+  for (const m of splitMembersFromInputs(method, ids, inputs, currency)) {
+    const v = m.shares ?? m.percent ?? m.adjustMinor ?? 0;
+    if (v !== 0) out[m.id] = v;
+  }
+  return out;
+}
+
+/** Persisted `splitInput` numbers → the form strings they came from. */
+export function splitInputsFromStored(
+  method: SplitMethod,
+  stored: Readonly<SplitInputValues>,
+  currency: string,
+): Record<string, string> {
+  return Object.fromEntries(Object.entries(stored).map(([id, v]) => [
+    id,
+    method === 'adjustment' ? minorToAmountString(v, currency) : String(v),
+  ]));
 }
 
 const PCT_SCALE = 10_000; // percent carries up to 4 decimals, held as integers
