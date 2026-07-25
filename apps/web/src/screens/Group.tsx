@@ -404,6 +404,18 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const [category, setCategory] = useState<string>(editing?.category ?? 'dining');
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
+  // FR-3.3 (issue #14): an expense can be paid by several people. Single
+  // payer stays the default; "Multiple people…" swaps the select for
+  // per-member amount inputs that must sum to the total (same
+  // reconciliation rule as the exact split). Editing a multi-payer
+  // expense re-opens in that mode instead of collapsing to payers[0].
+  const [multiPayer, setMultiPayer] = useState((editing?.payers.length ?? 0) > 1);
+  const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>(() => {
+    if (!editing) return {};
+    const out: Record<string, string> = {};
+    for (const p of editing.payers) out[p.userId] = minorToAmountString(p.amountMinor, editing.currency);
+    return out;
+  });
   // FR-3.2 (issue #13): all five split methods. Editing re-opens on the
   // stored method; shares/percent/adjustment restore their form inputs
   // from the persisted splitInput (legacy rows without one fall back to
@@ -588,8 +600,21 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 
   const sharesSum = Object.values(shares ?? {}).reduce((a, b) => a + b, 0);
   const remaining = amountMinor - sharesSum;
+
+  const payers = useMemo((): { userId: string; amountMinor: number }[] => {
+    if (!multiPayer) return [{ userId: payerId, amountMinor }];
+    const out: { userId: string; amountMinor: number }[] = [];
+    for (const m of group.members) {
+      const v = parseAmount(payerAmounts[m.id] ?? '', currency);
+      if (v > 0) out.push({ userId: m.id, amountMinor: v });
+    }
+    return out;
+  }, [multiPayer, payerId, amountMinor, payerAmounts, group.members, currency]);
+  const payersRemaining = amountMinor - payers.reduce((a, p) => a + p.amountMinor, 0);
+
   const valid = amountMinor > 0 && description.trim() !== '' && shares !== null
-    && Object.keys(shares).length > 0 && remaining === 0;
+    && Object.keys(shares).length > 0 && remaining === 0
+    && payers.length > 0 && payersRemaining === 0;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -603,7 +628,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         expenseDate: date,
         category,
         splitMethod: method,
-        payers: [{ userId: payerId, amountMinor }],
+        payers,
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(() => {
           const stored = splitInputsToStored(method, group.members.map((m) => m.id), weights[method] ?? {}, currency);
@@ -643,6 +668,9 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
               setExact((m) => Object.fromEntries(
                 Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
               ));
+              setPayerAmounts((m) => Object.fromEntries(
+                Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
+              ));
               // Adjustment offsets are amounts too; share counts and
               // percents are scale-free.
               setWeights((w) => w.adjustment === undefined ? w : { ...w,
@@ -675,23 +703,63 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             sensible defaults tucked behind "More options"; the summary line
             shows the current values and turns amber if anything is
             non-default so nothing is silently hidden. */}
-        <details className="more" open={payerId !== user.id || notes.trim() !== ''}>
+        <details className="more" open={multiPayer || payerId !== user.id || notes.trim() !== ''}>
           <summary>
             More options
             <span className="muted" style={{ marginLeft: 6, fontSize: '0.75rem' }}>
-              {payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
+              {multiPayer
+                ? `${payers.length > 1 ? `${payers.length} people` : 'multiple people'} paid`
+                : payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
               {date !== new Date().toISOString().slice(0, 10) ? ` · ${date}` : ''}
               {` · ${CATEGORY_LABELS[category as Category] ?? category}`}
               {notes.trim() !== '' ? ' · note' : ''}
             </span>
           </summary>
-          <label className="field"><span>Paid by</span>
-            <select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
+          {!multiPayer ? (
+            <label className="field"><span>Paid by</span>
+              <select value={payerId} onChange={(e) => {
+                if (e.target.value === '__multi__') {
+                  // Seed the current payer with the full amount so the user
+                  // only moves the other contributions off it — unless edit
+                  // state already holds per-payer amounts.
+                  setPayerAmounts((m) => {
+                    const hasAny = group.members.some((mm) => parseAmount(m[mm.id] ?? '', currency) > 0);
+                    return hasAny || amountMinor <= 0 ? m
+                      : { ...m, [payerId]: minorToAmountString(amountMinor, currency) };
+                  });
+                  setMultiPayer(true);
+                } else {
+                  setPayerId(e.target.value);
+                }
+              }}>
+                {group.members.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id === user.id ? 'You' : m.displayName}</option>
+                ))}
+                <option value="__multi__">Multiple people…</option>
+              </select>
+            </label>
+          ) : (
+            <>
+              <div className="sect" style={{ paddingLeft: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span>Paid by</span>
+                <button type="button" className="btn sm" onClick={() => setMultiPayer(false)}>Single payer</button>
+              </div>
               {group.members.map((m) => (
-                <option key={m.id} value={m.id}>{m.id === user.id ? 'You' : m.displayName}</option>
+                <div className="checkrow" key={m.id}>
+                  <Badge id={m.id} name={m.displayName} sm />
+                  {m.id === user.id ? 'You' : m.displayName}
+                  <label className="field amt-in" style={{ margin: 0 }}>
+                    <input className="amt" inputMode="decimal" placeholder="0.00"
+                      value={payerAmounts[m.id] ?? ''}
+                      onChange={(e) => setPayerAmounts({ ...payerAmounts, [m.id]: e.target.value })} />
+                  </label>
+                </div>
               ))}
-            </select>
-          </label>
+              <p className="muted" style={{ padding: '4px 2px', color: payersRemaining === 0 ? 'var(--ss-owed)' : 'var(--ss-owe)' }}>
+                remaining: {minorToAmountString(payersRemaining, currency)}
+              </p>
+            </>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <label className="field" style={{ flex: 1 }}><span>Date</span>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />

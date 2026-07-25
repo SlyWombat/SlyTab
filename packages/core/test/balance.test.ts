@@ -28,6 +28,28 @@ describe('computeNetBalances', () => {
     expect(net['priya']).toBe(-2052);
     expect(Object.values(net).reduce((a, b) => a + b, 0)).toBe(0);
   });
+
+  it('credits each of multiple payers for their contribution (FR-3.3)', () => {
+    const expenses = [
+      {
+        // marina gas 60.00: dave puts in 40, priya 20, split equally 3 ways
+        payers: [
+          { userId: 'dave', amountMinor: 4000 },
+          { userId: 'priya', amountMinor: 2000 },
+        ],
+        shares: [
+          { userId: 'dave', amountMinor: 2000 },
+          { userId: 'priya', amountMinor: 2000 },
+          { userId: 'marc', amountMinor: 2000 },
+        ],
+      },
+    ];
+    const net = computeNetBalances(expenses, []);
+    expect(net['dave']).toBe(4000 - 2000);
+    expect(net['priya']).toBe(0); // paid exactly their share
+    expect(net['marc']).toBe(-2000);
+    expect(Object.values(net).reduce((a, b) => a + b, 0)).toBe(0);
+  });
 });
 
 describe('convertMinor', () => {

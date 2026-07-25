@@ -1681,8 +1681,21 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   });
   // Issue #37: who paid was hard-wired to "you" on mobile — now selectable.
   const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
-  // Issue #37 speed entry: category + notes + paid-by tuck behind "More".
-  const [showMore, setShowMore] = useState(false);
+  // FR-3.3 (issue #14): an expense can be paid by several people. Single
+  // payer stays the default; "Multiple…" swaps the chips for per-member
+  // amount inputs that must sum to the total (same reconciliation rule
+  // as the exact split). Editing a multi-payer expense re-opens in that
+  // mode instead of collapsing to payers[0].
+  const [multiPayer, setMultiPayer] = useState((editing?.payers.length ?? 0) > 1);
+  const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>(() => {
+    if (!editing) return {};
+    const out: Record<string, string> = {};
+    for (const p of editing.payers) out[p.userId] = minorToAmountString(p.amountMinor, editing.currency);
+    return out;
+  });
+  // Issue #37 speed entry: category + notes + paid-by tuck behind "More"
+  // (opened up front when a multi-payer edit needs the payer rows visible).
+  const [showMore, setShowMore] = useState((editing?.payers.length ?? 0) > 1);
   const [error, setError] = useState<string | null>(null);
   // Seed from the expense being edited so a previously scanned receipt
   // stays linked on save and can be viewed/rescanned here.
@@ -1715,6 +1728,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   function switchCurrency(next: string) {
     setAmountStr((s) => rescaleAmountString(s, currency, next));
     setExact((m) => Object.fromEntries(
+      Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
+    ));
+    setPayerAmounts((m) => Object.fromEntries(
       Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
     ));
     // Adjustment offsets are amounts too; share counts and percents are
@@ -1758,6 +1774,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
 
   const sharesSum = Object.values(shares ?? {}).reduce((a, b) => a + b, 0);
   const remaining = amountMinor - sharesSum;
+
+  const payers = useMemo((): { userId: string; amountMinor: number }[] => {
+    if (!multiPayer) return [{ userId: payerId, amountMinor }];
+    const out: { userId: string; amountMinor: number }[] = [];
+    for (const m of group.members) {
+      const v = parseAmount(payerAmounts[m.id] ?? '', currency);
+      if (v > 0) out.push({ userId: m.id, amountMinor: v });
+    }
+    return out;
+  }, [multiPayer, payerId, amountMinor, payerAmounts, group.members, currency]);
+  const payersRemaining = amountMinor - payers.reduce((a, p) => a + p.amountMinor, 0);
 
   async function scan(fromCamera: boolean) {
     setError(null);
@@ -1848,7 +1875,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         expenseDate: date,
         category,
         splitMethod: method,
-        payers: [{ userId: payerId, amountMinor }],
+        payers,
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(() => {
           const stored = splitInputsToStored(method, group.members.map((m) => m.id), weights[method] ?? {}, currency);
@@ -1896,7 +1923,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           {showMore ? '▾ ' : '▸ '}More options
           {!showMore && (
             <Text style={{ color: c.text3 }}>
-              {'  '}{payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
+              {'  '}{multiPayer
+                ? `${payers.length > 1 ? `${payers.length} people` : 'multiple people'} paid`
+                : payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
               {' · '}{CATEGORY_LABELS[category as Category] ?? category}{notes.trim() !== '' ? ' · note' : ''}
             </Text>
           )}
@@ -1905,17 +1934,52 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       {showMore && (
         <>
           <Text style={s.fieldLabel}>Paid by</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-            {group.members.map((m) => (
-              <Pressable key={m.id} onPress={() => setPayerId(m.id)}
-                style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-                  backgroundColor: payerId === m.id ? c.brand : c.surface2 }}>
-                <Text style={{ color: payerId === m.id ? '#fff' : c.text2, fontSize: 12.5 }}>
-                  {m.id === user.id ? 'You' : m.displayName}
-                </Text>
+          {!multiPayer ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {group.members.map((m) => (
+                <Pressable key={m.id} onPress={() => setPayerId(m.id)}
+                  style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+                    backgroundColor: payerId === m.id ? c.brand : c.surface2 }}>
+                  <Text style={{ color: payerId === m.id ? '#fff' : c.text2, fontSize: 12.5 }}>
+                    {m.id === user.id ? 'You' : m.displayName}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable onPress={() => {
+                  // Seed the current payer with the full amount so the user
+                  // only moves the other contributions off it — unless edit
+                  // state already holds per-payer amounts.
+                  setPayerAmounts((m) => {
+                    const hasAny = group.members.some((mm) => parseAmount(m[mm.id] ?? '', currency) > 0);
+                    return hasAny || amountMinor <= 0 ? m
+                      : { ...m, [payerId]: minorToAmountString(amountMinor, currency) };
+                  });
+                  setMultiPayer(true);
+                }}
+                style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.surface2 }}>
+                <Text style={{ color: c.brand, fontSize: 12.5 }}>Multiple…</Text>
               </Pressable>
-            ))}
-          </View>
+            </View>
+          ) : (
+            <>
+              {group.members.map((m) => (
+                <View key={m.id} style={s.checkRow}>
+                  <Badge id={m.id} name={m.displayName} size={22} />
+                  <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
+                  <TextInput placeholderTextColor={c.text3} placeholder="0.00" keyboardType="decimal-pad"
+                    value={payerAmounts[m.id] ?? ''}
+                    onChangeText={(v) => setPayerAmounts({ ...payerAmounts, [m.id]: v })}
+                    style={[s.input, { width: 96, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+                </View>
+              ))}
+              <Text style={[s.meta, { color: payersRemaining === 0 ? c.owed : c.owe, paddingVertical: 4 }]}>
+                remaining: {minorToAmountString(payersRemaining, currency)}
+              </Text>
+              <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                <Btn small label="Single payer" onPress={() => setMultiPayer(false)} />
+              </View>
+            </>
+          )}
           <Text style={s.fieldLabel}>Category</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
             {CATEGORIES.map((cat) => (
@@ -2027,7 +2091,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       )}
       <Btn primary label={editing ? 'Save changes' : 'Save expense'}
         disabled={amountMinor <= 0 || description.trim() === '' || shares === null
-          || Object.keys(shares).length === 0 || remaining !== 0}
+          || Object.keys(shares).length === 0 || remaining !== 0
+          || payers.length === 0 || payersRemaining !== 0}
         onPress={save} />
       {editing && (
         <>
