@@ -154,6 +154,88 @@ final class BugReportService
         ], $stmt->fetchAll());
     }
 
+    /**
+     * Durable feedback pipeline (server cron / internal endpoint): file a
+     * GitHub issue for every new report, and email the reporter when a
+     * previously filed issue has been closed. Safe to run repeatedly.
+     * $http is injectable for tests: fn(method, url, ?body) => array.
+     *
+     * @param ?callable(string,string,?array):array $http
+     * @return array{filed:int, notified:int, skipped:string}
+     */
+    public function syncGithub(?callable $http = null): array
+    {
+        $token = Env::get('BUG_GITHUB_TOKEN');
+        $repo = Env::get('BUG_GITHUB_REPO', 'SlyWombat/SlyTab');
+        if ($token === '' && $http === null) {
+            return ['filed' => 0, 'notified' => 0, 'skipped' => 'BUG_GITHUB_TOKEN not configured'];
+        }
+        $http ??= static function (string $method, string $url, ?array $body) use ($token): array {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CUSTOMREQUEST => $method,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_USERAGENT => 'slytab-bug-sync',
+                CURLOPT_HTTPHEADER => [
+                    "Authorization: Bearer {$token}",
+                    'Accept: application/vnd.github+json',
+                    'Content-Type: application/json',
+                ],
+            ]);
+            if ($body !== null) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR));
+            }
+            $raw = curl_exec($ch);
+            curl_close($ch);
+            return is_string($raw) ? (json_decode($raw, true) ?: []) : [];
+        };
+
+        $filed = 0;
+        $new = $this->pdo->query(
+            "SELECT b.id, b.message, b.context, b.image_path IS NOT NULL AS has_image, b.created_at,
+                    u.display_name
+             FROM bug_reports b JOIN users u ON u.id = b.user_id
+             WHERE b.status = 'new' ORDER BY b.created_at",
+        )->fetchAll();
+        foreach ($new as $r) {
+            $firstLine = trim(explode("\n", trim($r['message']))[0]);
+            $title = mb_strlen($firstLine) > 70 ? mb_substr($firstLine, 0, 67) . '...' : $firstLine;
+            $quoted = '> ' . str_replace("\n", "\n> ", trim($r['message']));
+            $body = "**In-app bug report** from **{$r['display_name']}** at {$r['created_at']} UTC (report `{$r['id']}`).\n\n"
+                . "{$quoted}\n\n"
+                . '- Context: `' . ($r['context'] ?: 'none') . "`\n"
+                . '- Screenshot: ' . ($r['has_image']
+                    ? "attached — review with `GET /api/internal/bugs/{$r['id']}/image` (X-Admin-Token)"
+                    : 'none') . "\n\n"
+                . "Filed automatically by the server-side feedback pipeline (FR-10.3).";
+            $resp = $http('POST', "https://api.github.com/repos/{$repo}/issues",
+                ['title' => "Bug report: {$title}", 'body' => $body, 'labels' => ['bug']]);
+            if (isset($resp['number'])) {
+                $this->pdo->prepare("UPDATE bug_reports SET status = 'seen', issue_number = ? WHERE id = ?")
+                    ->execute([(int) $resp['number'], $r['id']]);
+                $filed++;
+            }
+        }
+
+        $notified = 0;
+        $open = $this->pdo->query(
+            "SELECT id, issue_number FROM bug_reports
+             WHERE issue_number IS NOT NULL AND status <> 'closed'",
+        )->fetchAll();
+        foreach ($open as $r) {
+            $issue = $http('GET', "https://api.github.com/repos/{$repo}/issues/{$r['issue_number']}", null);
+            if (($issue['state'] ?? '') === 'closed') {
+                $this->closeAndNotify(
+                    $r['id'],
+                    "Resolved via https://github.com/{$repo}/issues/{$r['issue_number']}",
+                );
+                $notified++;
+            }
+        }
+        return ['filed' => $filed, 'notified' => $notified, 'skipped' => ''];
+    }
+
     /** @return array{path:string, mime:string} */
     public function imageFile(string $bugId): array
     {

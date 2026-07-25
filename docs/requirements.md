@@ -174,6 +174,12 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   #25): an acknowledgment when the report lands, and a resolution note
   when the tracking issue closes (reports carry their GitHub issue
   number; the close notification includes the issue link).
+- **FR-10.3 (MUST)** The feedback pipeline is durable — it runs
+  server-side, independent of any dev session: a 10-minute cron on the
+  host calls `POST /api/internal/bug-sync`, which files a GitHub issue
+  for every new report and sends the FR-10.2 resolution email once an
+  issue closes. Requires `BUG_GITHUB_TOKEN` (+ `BUG_GITHUB_REPO`) in the
+  server config; logs to `data/bug-sync.log`.
 
 ## 3. Non-functional requirements
 

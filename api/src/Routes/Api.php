@@ -78,6 +78,9 @@ final class Api
                 $resolution = (string) (($rq->getParsedBody() ?? [])['resolution'] ?? '');
                 return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution));
             });
+            // Manual trigger for the feedback pipeline (cron runs it too).
+            $g->post('/bug-sync', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, $bugs->syncGithub()));
             // Owner status mails and other one-off sends (admin-token only).
             $g->post('/send-mail', function (Request $rq, Response $rs): Response {
                 $b = Http::body($rq);

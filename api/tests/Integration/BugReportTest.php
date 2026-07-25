@@ -98,5 +98,34 @@ final class BugReportTest extends TestCase
             'X-Admin-Token' => getenv('MIGRATE_TOKEN'),
         ]);
         self::assertSame(404, $res->getStatusCode());
+
+        // FR-10.3: the sync files an issue for the new report, then emails
+        // the reporter once the issue closes (GitHub stubbed).
+        $svc = new \SlyTab\Services\BugReportService(\SlyTab\Db\Db::pdo(), new CapturingBugMailer());
+        $r = $svc->syncGithub(static function (string $method, string $url, ?array $body): array {
+            if ($method === 'POST') {
+                return ['number' => 4242];
+            }
+            return ['state' => 'open'];
+        });
+        self::assertSame(1, $r['filed']);
+        self::assertSame(0, $r['notified']);
+
+        $r = $svc->syncGithub(static fn(string $m, string $u, ?array $b): array => ['state' => 'closed']);
+        self::assertSame(0, $r['filed']);
+        self::assertSame(1, $r['notified']);
+
+        // Re-running is a no-op — the report is closed now.
+        $r = $svc->syncGithub(static fn(string $m, string $u, ?array $b): array => ['state' => 'closed']);
+        self::assertSame(0, $r['filed']);
+        self::assertSame(0, $r['notified']);
+    }
+}
+
+final class CapturingBugMailer extends \SlyTab\Services\Mailer
+{
+    public function dispatch(string $to, string $subject, string $body): bool
+    {
+        return true; // swallow — sync tests only count outcomes
     }
 }
