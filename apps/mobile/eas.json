@@ -13,6 +13,12 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6794502588",
+        "ascApiKeyPath": "../../secrets/AuthKey_QUC9SR2G3F.p8",
+        "ascApiKeyId": "QUC9SR2G3F"
+      }
+    }
   }
 }
