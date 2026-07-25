@@ -29,6 +29,12 @@
     },
     "notification": {
       "color": "#4f8ef7"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "04e9b2b8-e6a9-4e27-8d8b-f8fc2694feff"
+      }
+    },
+    "owner": "electricrv"
   }
 }
