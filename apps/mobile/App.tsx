@@ -154,6 +154,8 @@ export default function App() {
         </View>
       ) : user === null ? (
         <AuthScreen onSignedIn={signedIn} />
+      ) : user.onboardedAt === null ? (
+        <OnboardingScreen user={user} onDone={setUser} />
       ) : nav.screen === 'group' ? (
         <GroupScreen groupId={nav.groupId} user={user} onBack={() => setNav({ screen: 'home' })} />
       ) : (
@@ -219,6 +221,63 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
           </Text>
         </Pressable>
       </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * Issue #36: first-run welcome. Shown once (server onboardedAt is null),
+ * captures the key things — name and home currency — plus optional
+ * payment handles, then marks onboarding complete.
+ */
+function OnboardingScreen({ user, onDone }: { user: User; onDone: (u: User) => void }) {
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [currency, setCurrency] = useState(user.defaultCurrency || 'USD');
+  const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
+  const [showHandles, setShowHandles] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patchMe({
+        displayName: displayName.trim(),
+        defaultCurrency: currency,
+        paymentHandles: { ...(interac ? { interacEmail: interac } : {}) },
+        onboarded: true,
+      });
+      onDone(updated);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={s.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingVertical: 24 }} keyboardShouldPersistTaps="handled">
+        <Text style={s.wordmark}>Welcome to Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
+        <Text style={s.tagline}>Split expenses with family and friends — no math, no awkward reminders. Two quick things and you're set.</Text>
+        {error && <Text style={s.error}>{error}</Text>}
+        <View style={{ width: '100%', maxWidth: 340 }}>
+          <Field label="What should we call you?" value={displayName} onChangeText={setDisplayName} autoCapitalize="words" />
+          <CurrencySingleField label="Your home currency — your overall balance shows in this"
+            value={currency} onChange={setCurrency} />
+          {!showHandles ? (
+            <Btn label="＋ Add how people pay you (optional)" onPress={() => setShowHandles(true)} />
+          ) : (
+            <Field label="Interac e-Transfer email" value={interac} onChangeText={setInterac}
+              autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" />
+          )}
+          <Btn primary disabled={busy || displayName.trim() === ''}
+            label={busy ? 'Setting up…' : 'Get started'} onPress={submit} />
+          <Text style={[s.meta, { textAlign: 'center', paddingTop: 8 }]}>
+            You can change any of this later in Profile.
+          </Text>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

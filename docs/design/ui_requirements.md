@@ -28,6 +28,16 @@ Deep links: `slytab://join/<token>` (and
 you to *Cottage Trip*" above the buttons and carry the invite through
 auth (FR-2.3).
 
+**First-run onboarding** (issue #36) — the first time a user reaches the
+app after creating/claiming their account (server `onboarded_at` is null),
+a one-screen welcome captures the essentials before anything else: their
+display name and **home/base currency** (pre-filled from the browser
+locale on web, overridable), plus an optional "how people pay you"
+(Interac / PayPal / Venmo) disclosure. `Get started` stamps `onboarded_at`
+via `PATCH /me {onboarded:true}` and drops them into the app (invite-joins
+continue into their group). Everything is editable later in Profile; the
+flow is shown once. Existing users are backfilled so they never see it.
+
 **Create account / Sign in** — email, password (min 10 chars, strength
 hint), display name (create only). Inline validation on blur; server errors
 inline, not toasts. `Forgot password?` → email-entry screen → "check your

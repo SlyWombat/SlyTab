@@ -3,6 +3,7 @@ import { api, getToken, setToken, type User } from './api';
 import { Auth } from './screens/Auth';
 import { Home } from './screens/Home';
 import { GroupScreen } from './screens/Group';
+import { Onboarding } from './screens/Onboarding';
 import { Mark } from './ui';
 
 type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
@@ -143,6 +144,13 @@ export function App() {
         onSignedIn={(token, u) => { setToken(token); setUser(u); }}
       />
     );
+  }
+
+  // Issue #36: first-run welcome, before anything else (invite-joins then
+  // continue into their group via the existing join flow). Only an explicit
+  // null triggers it — a missing field (old API) means an established user.
+  if (user.onboardedAt === null) {
+    return <Onboarding user={user} onDone={setUser} />;
   }
 
   if (nav.screen === 'group') {

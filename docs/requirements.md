@@ -33,6 +33,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-1.4 (MUST)** A user profile holds display name, avatar colour/emoji,
   default currency, and optional payment handles (Interac e-Transfer email,
   PayPal.Me username, Venmo username).
+- **FR-1.6 (SHOULD)** First-run onboarding (issue #36): a new user is shown
+  a one-screen welcome that captures their name and home currency (and
+  optional payment handles) before entering the app, tracked by a
+  server-side `onboarded_at` so it appears exactly once.
 - **FR-1.5 (SHOULD)** Account deletion: removes the user's personal data;
   their shares in historical expenses are anonymized ("Deleted user"), not
   deleted, so other members' balances stay correct.

@@ -72,6 +72,18 @@ final class ResetAndLimitsTest extends TestCase
         ]));
         $token = $r['token'];
 
+        // Issue #36: a freshly registered user has not onboarded yet…
+        self::assertNull($r['user']['onboardedAt']);
+
+        // …and completing onboarding stamps it (and won't un-stamp on later saves).
+        $onboarded = self::json($this->request('PATCH', '/api/v1/me', [
+            'defaultCurrency' => 'CAD', 'onboarded' => true,
+        ], $token));
+        self::assertNotNull($onboarded['onboardedAt']);
+        $stampedAt = $onboarded['onboardedAt'];
+        $again = self::json($this->request('PATCH', '/api/v1/me', ['displayName' => 'Pat2'], $token));
+        self::assertSame($stampedAt, $again['onboardedAt']);
+
         $res = $this->request('PATCH', '/api/v1/me', [
             'displayName' => 'Patricia',
             'defaultCurrency' => 'usd',

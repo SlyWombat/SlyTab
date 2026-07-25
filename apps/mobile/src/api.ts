@@ -56,6 +56,8 @@ export interface User {
   notifyLevel?: 'all' | 'important' | 'none';
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
+  /** null until the first-run welcome flow is completed (issue #36). */
+  onboardedAt?: string | null;
 }
 export interface Member {
   id: string; displayName: string; avatar: string;

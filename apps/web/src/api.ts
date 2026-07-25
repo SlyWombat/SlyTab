@@ -27,6 +27,8 @@ export interface User {
   avatar: string;
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
+  /** null until the first-run welcome flow is completed (issue #36). */
+  onboardedAt?: string | null;
 }
 
 export interface Member {
@@ -315,7 +317,7 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     req<{ ok: true }>('POST', '/auth/reset', { token, password }),
   me: () => req<User>('GET', '/me'),
-  patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles' | 'notifyLevel'>>) =>
+  patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles' | 'notifyLevel'>> & { onboarded?: boolean }) =>
     req<User>('PATCH', '/me', data),
   uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}, currencyHint?: string) => {
     const { blob, name } = await shrinkImage(file);
