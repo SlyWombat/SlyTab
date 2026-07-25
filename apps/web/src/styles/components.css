@@ -109,6 +109,14 @@ button.row:hover { background: var(--ss-surface-2); }
 .hero .split b { font: 600 0.8125rem var(--ss-font-mono); font-variant-numeric: tabular-nums; }
 .sect .count { color: var(--ss-text-3); }
 
+/* Collapsible "More options" on the expense sheet (issue #37 speed entry) */
+.more { margin: 4px 0 2px; }
+.more > summary { cursor: pointer; list-style: none; padding: 8px 2px;
+  font-size: 0.8125rem; color: var(--ss-text-2); user-select: none; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: '▸ '; color: var(--ss-text-3); }
+.more[open] > summary::before { content: '▾ '; }
+
 .center { min-height: 100vh; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: var(--ss-space-4);
   padding: var(--ss-space-6); text-align: center; }

@@ -1534,6 +1534,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   const [commentText, setCommentText] = useState('');
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
   const [included, setIncluded] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
+  // Issue #37: who paid was hard-wired to "you" on mobile — now selectable.
+  const [payerId, setPayerId] = useState(editing?.payers[0]?.userId ?? user.id);
+  // Issue #37 speed entry: category + notes + paid-by tuck behind "More".
+  const [showMore, setShowMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Seed from the expense being edited so a previously scanned receipt
   // stays linked on save and can be viewed/rescanned here.
@@ -1671,7 +1675,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         expenseDate: date,
         category,
         splitMethod: exactShares !== null ? 'exact' : 'equal',
-        payers: [{ userId: editing?.payers[0]?.userId ?? user.id, amountMinor }],
+        payers: [{ userId: payerId, amountMinor }],
         shares: Object.entries(shares).map(([userId, v]) => ({ userId, amountMinor: v })),
         ...(notes.trim() !== '' ? { notes: notes.trim() } : {}),
         ...(receiptId !== null || extraReceiptIds.length > 0
@@ -1709,20 +1713,48 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           onPick={(cur) => { switchCurrency(cur); setAllCurrencies(false); }} />
       )}
       <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
-      <Field label="Notes (optional)" value={notes} onChangeText={setNotes}
-        placeholder="e.g. includes the corkage fee" />
-      <Text style={s.fieldLabel}>Category</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {CATEGORIES.map((cat) => (
-          <Pressable key={cat} onPress={() => setCategory(cat)}
-            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-              backgroundColor: category === cat ? c.brand : c.surface2 }}>
-            <Text style={{ color: category === cat ? '#fff' : c.text2, fontSize: 12.5 }}>
-              {CATEGORY_LABELS[cat]}
+      {/* Issue #37 speed entry: category, who-paid, notes behind "More". */}
+      <Pressable onPress={() => setShowMore((v) => !v)} style={{ paddingVertical: 8 }}>
+        <Text style={{ color: c.text2, fontSize: 13 }} maxFontSizeMultiplier={1.4}>
+          {showMore ? '▾ ' : '▸ '}More options
+          {!showMore && (
+            <Text style={{ color: c.text3 }}>
+              {'  '}{payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
+              {' · '}{CATEGORY_LABELS[category as Category] ?? category}{notes.trim() !== '' ? ' · note' : ''}
             </Text>
-          </Pressable>
-        ))}
-      </View>
+          )}
+        </Text>
+      </Pressable>
+      {showMore && (
+        <>
+          <Text style={s.fieldLabel}>Paid by</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {group.members.map((m) => (
+              <Pressable key={m.id} onPress={() => setPayerId(m.id)}
+                style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+                  backgroundColor: payerId === m.id ? c.brand : c.surface2 }}>
+                <Text style={{ color: payerId === m.id ? '#fff' : c.text2, fontSize: 12.5 }}>
+                  {m.id === user.id ? 'You' : m.displayName}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={s.fieldLabel}>Category</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {CATEGORIES.map((cat) => (
+              <Pressable key={cat} onPress={() => setCategory(cat)}
+                style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+                  backgroundColor: category === cat ? c.brand : c.surface2 }}>
+                <Text style={{ color: category === cat ? '#fff' : c.text2, fontSize: 12.5 }}>
+                  {CATEGORY_LABELS[cat]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Field label="Notes (optional)" value={notes} onChangeText={setNotes}
+            placeholder="e.g. includes the corkage fee" />
+        </>
+      )}
       {receiptId !== null && (
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
           <View style={{ flex: 1 }}>
@@ -1762,7 +1794,15 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         </>
       ) : (
         <>
-          <Text style={s.fieldLabel}>Split equally between</Text>
+          <Text style={s.fieldLabel}>
+            {included.size === group.members.length
+              ? `Split equally — everyone's in (${group.members.length})`
+              : `Split equally between ${included.size} of ${group.members.length}`}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+            <Btn small label="Everyone" onPress={() => setIncluded(new Set(group.members.map((m) => m.id)))} />
+            <Btn small label="Just me" onPress={() => setIncluded(new Set([user.id]))} />
+          </View>
           {group.members.map((m) => {
             const on = included.has(m.id);
             return (

@@ -631,32 +631,66 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         <label className="field"><span>Description</span>
           <input value={description} onChange={(e) => setDescription(e.target.value)} required maxLength={200} placeholder="Groceries" />
         </label>
-        <label className="field"><span>Notes (optional)</span>
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000}
-            placeholder="e.g. includes the corkage fee" />
-        </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <label className="field" style={{ flex: 1 }}><span>Date</span>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-          </label>
-          <label className="field" style={{ flex: 1 }}><span>Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+        {/* Issue #37 speed entry: the happy path is amount → description →
+            save. Date (today), category, who-paid (you), and notes are
+            sensible defaults tucked behind "More options"; the summary line
+            shows the current values and turns amber if anything is
+            non-default so nothing is silently hidden. */}
+        <details className="more" open={payerId !== user.id || notes.trim() !== ''}>
+          <summary>
+            More options
+            <span className="muted" style={{ marginLeft: 6, fontSize: '0.75rem' }}>
+              {payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
+              {date !== new Date().toISOString().slice(0, 10) ? ` · ${date}` : ''}
+              {` · ${CATEGORY_LABELS[category as Category] ?? category}`}
+              {notes.trim() !== '' ? ' · note' : ''}
+            </span>
+          </summary>
+          <label className="field"><span>Paid by</span>
+            <select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
+              {group.members.map((m) => (
+                <option key={m.id} value={m.id}>{m.id === user.id ? 'You' : m.displayName}</option>
+              ))}
             </select>
           </label>
-        </div>
-        <label className="field"><span>Paid by</span>
-          <select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
-            {group.members.map((m) => (
-              <option key={m.id} value={m.id}>{m.id === user.id ? 'You' : m.displayName}</option>
-            ))}
-          </select>
-        </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label className="field" style={{ flex: 1 }}><span>Date</span>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </label>
+            <label className="field" style={{ flex: 1 }}><span>Category</span>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="field"><span>Notes (optional)</span>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000}
+              placeholder="e.g. includes the corkage fee" />
+          </label>
+        </details>
 
+        <div className="sect" style={{ paddingLeft: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span>Split</span>
+          {mode === 'equal' && (
+            <span className="muted" style={{ fontSize: '0.75rem', letterSpacing: 0, textTransform: 'none', fontWeight: 400 }}>
+              {included.size === group.members.length
+                ? `equally between everyone (${group.members.length})`
+                : `equally between ${included.size} of ${group.members.length}`}
+            </span>
+          )}
+        </div>
         <div className="tabs">
           <button type="button" className={mode === 'equal' ? 'on' : ''} onClick={() => setMode('equal')}>Equal</button>
           <button type="button" className={mode === 'unequal' ? 'on' : ''} onClick={() => setMode('unequal')}>Unequal</button>
         </div>
+        {mode === 'equal' && (
+          <div style={{ display: 'flex', gap: 8, padding: '2px 0 6px' }}>
+            <button type="button" className="btn sm"
+              onClick={() => setIncluded(new Set(group.members.map((m) => m.id)))}>Everyone</button>
+            <button type="button" className="btn sm"
+              onClick={() => setIncluded(new Set([user.id]))}>Just me</button>
+          </div>
+        )}
 
         {group.members.map((m) => (
           <div className="checkrow" key={m.id}>

@@ -127,7 +127,14 @@ FR-2.4), invite, archive.
 
 ### 2.5 Add / edit expense (the money screen)
 
-Bottom sheet, optimized for a 10-second entry. Order:
+Bottom sheet, optimized for a 10-second entry (issue #37). The happy path
+is **amount → description → Save**: date defaults to today, category and
+payer to sensible defaults, and those rarely-touched fields (paid-by,
+date, category, notes) live behind a **"More options"** disclosure whose
+summary line shows their current values (and flags any non-default so
+nothing is silently hidden). The split section states its default plainly
+— "Split equally — everyone's in (N)" — with one-tap **Everyone / Just
+me** shortcuts. Full field order when expanded:
 
 1. **Amount + currency** — Keypad, giant mono amount, currency chip
    (defaults to group home currency; recently-used currencies first).
