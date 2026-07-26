@@ -23,19 +23,32 @@ function noteApiError(method: string, path: string, status: number, code: string
   if (recentErrors.length > 5) recentErrors.shift();
 }
 
-export function debugContext(): string {
-  let version = '?';
-  let build = '?';
+/**
+ * This app's marketing version and build number.
+ *
+ * Read from versions.json, NOT app.json: the 2026-07-25 per-platform split
+ * moved the numbers there and app.config.js injects them at build time, so
+ * app.json no longer carries `version`, `ios.buildNumber` or
+ * `android.versionCode` at all. Reading the old location silently produced
+ * "v?(?)" on every bug report from both platforms (issue #45).
+ */
+export function appVersion(): { version: string; build: string } {
   try {
-    // Metro bundles app.json; keeps us dependency-free (no expo-constants).
-    const appJson = require('../app.json') as {
-      expo?: { version?: string; ios?: { buildNumber?: string }; android?: { versionCode?: number } };
+    // Metro bundles the JSON; keeps us dependency-free (no expo-constants).
+    const versions = require('../versions.json') as {
+      ios: { version: string; buildNumber: string };
+      android: { version: string; versionCode: number };
     };
-    version = appJson.expo?.version ?? '?';
-    build = Platform.OS === 'ios'
-      ? appJson.expo?.ios?.buildNumber ?? '?'
-      : String(appJson.expo?.android?.versionCode ?? '?');
-  } catch { /* context stays partial */ }
+    return Platform.OS === 'ios'
+      ? { version: versions.ios.version, build: versions.ios.buildNumber }
+      : { version: versions.android.version, build: String(versions.android.versionCode) };
+  } catch {
+    return { version: '?', build: '?' };
+  }
+}
+
+export function debugContext(): string {
+  const { version, build } = appVersion();
   const errs = recentErrors.length > 0 ? ` | recent API errors: ${recentErrors.join('; ')}` : '';
   return `mobile ${Platform.OS} ${Platform.Version} app v${version}(${build})${errs}`.slice(0, 500);
 }
@@ -237,14 +250,21 @@ export function uploadReceipt(groupId: string, uri: string, mime: string, hooks:
   return { promise, cancel: () => { void task.cancelAsync(); } };
 }
 
+/**
+ * What "Where you're signed in" shows for this session. Every mobile
+ * session used to be labelled 'mobile' and rendered as "Android app", so an
+ * iPhone user was told they had signed in from an Android (issue #49).
+ */
+const DEVICE_LABEL = Platform.OS === 'ios' ? 'ios' : 'android';
+
 export const api = {
   register: (email: string, password: string, displayName: string) =>
     req<{ token: string; user: User }>('POST', '/auth/register', {
-      email, password, displayName, deviceLabel: 'mobile',
+      email, password, displayName, deviceLabel: DEVICE_LABEL,
     }),
   login: (email: string, password: string) =>
     req<{ token: string; user: User }>('POST', '/auth/login', {
-      email, password, deviceLabel: 'mobile',
+      email, password, deviceLabel: DEVICE_LABEL,
     }),
   googleConfig: () => req<{ enabled: boolean }>('GET', '/auth/google/config'),
   /**
@@ -254,7 +274,7 @@ export const api = {
    */
   handoffStart: () =>
     req<{ state: string; verifier: string; expiresIn: number }>(
-      'POST', '/auth/handoff/start', { deviceLabel: 'mobile' }),
+      'POST', '/auth/handoff/start', { deviceLabel: DEVICE_LABEL }),
   handoffClaim: (state: string, verifier: string) =>
     req<{ pending?: boolean; token?: string; user?: User }>(
       'POST', '/auth/handoff/claim', { state, verifier }),

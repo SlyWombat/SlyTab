@@ -6,6 +6,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-07-26
+
+First stable release: both mobile apps and the web app ship together.
+
+### Added
+
+- **Per-group categories** (#18): the five headings gain subcategories
+  (`travel.taxi`, `dining.groceries`, …), and each group can rename any
+  label, hide what it never uses and reorder the headings from a Categories
+  page. Only the differences are stored, so groups keep inheriting
+  improvements to the shipped defaults. Totals roll subcategories up under
+  their heading; filtering by a heading sweeps up its leaves.
+- Profile now shows the app version and build (spec §2.10).
+
+### Fixed
+
+- **Splitwise import money bug** (#54): both importers converted decimals
+  with a hardcoded x100, so every row in a zero-decimal currency (CLP, JPY,
+  KRW, VND, ISK, HUF) imported 100x too large — self-consistently, so
+  balances still reconciled and nothing looked wrong until you read an
+  amount.
+- **Splitwise import crash** (#55): a spreadsheet or a Windows-1252 CSV (what
+  Excel writes when you re-save the export) returned a 500 instead of a
+  clear message.
+- **Accessibility pass, web** (#65-#73): the group tab strip pushed
+  "Activity" off screen at larger fonts with no way to scroll to it; long
+  member names printed over the balance amounts; the group header collapsed
+  at 200% zoom and took the only route to group settings with it; lists
+  claimed to be empty while still loading; two colour pairs failed WCAG AA;
+  sheets ignored Escape and never moved focus; several targets were under
+  44px; the FAB covered the last row.
+- **Accessibility pass, mobile** (#45-#64): at large system font scales the
+  group screen lost its expense list entirely and the action row was drawn
+  under the Android gesture bar, and Home's list was squeezed to a sliver —
+  both because screen chrome sat outside the list rather than scrolling with
+  it. Sign-in had no working keyboard handling on either platform. Also
+  fixed: the iOS tab bar leaving a mismatched band under the home indicator,
+  Profile's keyboard avoidance and off-screen notification options, iPhone
+  sessions labelled "Android app", light system chrome over the dark UI,
+  clipped split-editor inputs, sub-44pt targets, a misaligned Profile tab
+  label, and Android's system Back leaving the app from a group screen.
+- Bug reports from the app carry the real version again (#45): the
+  per-platform version split moved the numbers to `versions.json` but the
+  app still read `app.json`, so every report arrived stamped `v?(?)`.
+
 ### Added
 
 - **Splitwise import** (2026-07-22): upload a group's Splitwise CSV export

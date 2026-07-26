@@ -1,8 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
-  Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, AppState, BackHandler, FlatList, Image, KeyboardAvoidingView, Linking,
+  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,7 +11,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
-  api, ApiFailure, receiptImageSource, setToken, uploadReceipt,
+  api, ApiFailure, appVersion, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
@@ -67,7 +67,10 @@ function Field({ label, ...input }: { label: string } & React.ComponentProps<typ
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={s.fieldLabel}>{label}</Text>
-      <TextInput placeholderTextColor={c.text3} {...input} style={[s.input, input.style]} />
+      {/* keyboardAppearance: the UI is hard-dark, and a light iOS keyboard
+          slammed up against it looked like a different app (issue #50). */}
+      <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark"
+        {...input} style={[s.input, input.style]} />
     </View>
   );
 }
@@ -80,8 +83,11 @@ function SheetModal({ title, onClose, children }: {
   const insets = useSafeAreaInsets();
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      {/* behavior='padding' on Android double-counts the keyboard inset the
+          platform already applies, leaving an 84dp dead band between the
+          sheet and the keyboard (issue #61). iOS still needs it. */}
       <KeyboardAvoidingView
-        behavior="padding"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1, justifyContent: 'flex-end' }}
       >
         <Pressable style={s.sheetBack} onPress={onClose} />
@@ -90,7 +96,8 @@ function SheetModal({ title, onClose, children }: {
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <Text style={[s.sheetTitle, { flex: 1 }]}>{title}</Text>
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
-              hitSlop={10} style={{ padding: 4 }}>
+              hitSlop={16} style={{ minWidth: 44, minHeight: 44,
+                alignItems: 'flex-end', justifyContent: 'center' }}>
               <Text style={{ color: c.text2, fontSize: 16 }} maxFontSizeMultiplier={1.4}>✕</Text>
             </Pressable>
           </View>
@@ -169,8 +176,19 @@ function AppShell() {
   // clear of the status bar and gesture bar (issue #40: bottom overprint).
   const insets = useSafeAreaInsets();
 
+  // Android's system Back used to leave the app from a group screen, which
+  // reads as "I lost my place" rather than "I went up a level" (issue #64).
+  useEffect(() => {
+    if (Platform.OS !== 'android' || nav.screen !== 'group') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setNav({ screen: 'home' });
+      return true; // handled — don't fall through to exiting the app
+    });
+    return () => sub.remove();
+  }, [nav.screen]);
+
   return (
-    <View style={[s.app, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[s.app, { paddingTop: insets.top }]}>
       {restoring ? (
         <View style={[s.screen, { justifyContent: 'center' }]}>
           <ActivityIndicator color={c.brand} />
@@ -216,6 +234,10 @@ function AppShell() {
 }
 
 function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user: User }) {
+  // The bar owns the bottom inset so its SURFACE runs to the screen edge.
+  // Padding the root view instead left a strip of page background below the
+  // bar in a different colour — a 34pt band on iPhone (issue #46).
+  const insets = useSafeAreaInsets();
   const items: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'home', label: 'Home', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>🏠</Text> },
     { key: 'groups', label: 'Groups', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>👥</Text> },
@@ -224,12 +246,12 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
     { key: 'profile', label: 'Profile', icon: <Badge id={user.id} name={user.displayName} size={22} /> },
   ];
   return (
-    <View style={s.tabbar}>
+    <View style={[s.tabbar, { paddingBottom: insets.bottom }]}>
       {items.map((it) => (
         <Pressable key={it.key} style={s.tabItem} onPress={() => onTab(it.key)}
           accessibilityRole="tab" accessibilityLabel={it.label}
           accessibilityState={{ selected: tab === it.key }}>
-          <View style={{ opacity: tab === it.key ? 1 : 0.45 }}>{it.icon}</View>
+          <View style={[s.tabIconBox, { opacity: tab === it.key ? 1 : 0.45 }]}>{it.icon}</View>
           <Text style={[s.tabBarLabel, tab === it.key && { color: c.text }]}
             maxFontSizeMultiplier={1.2}>{it.label}</Text>
         </Pressable>
@@ -335,7 +357,16 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   }
 
   return (
-    <KeyboardAvoidingView style={s.center} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    // The app's front door, and it had no working keyboard handling on
+    // EITHER platform: `behavior` resolved to undefined on Android (a
+    // no-op) and on iOS the KeyboardAvoidingView had nothing scrollable
+    // inside it, so the keyboard pushed the primary button off screen with
+    // no way to reach it (issues #47/#59). This mirrors OnboardingScreen,
+    // which already had the correct shape.
+    <KeyboardAvoidingView style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={[s.center, { flexGrow: 1 }]}
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <Text style={s.wordmark}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
       <Text style={s.tagline}>Split expenses with the people you actually share life with.</Text>
       {error && <Text style={s.error}>{error}</Text>}
@@ -369,6 +400,7 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
           </Text>
         </Pressable>
       </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -491,8 +523,11 @@ function HomeScreen({ user, onOpenGroup, active }: {
     else setPicking(true); // includes the no-groups case (picker explains)
   }
 
-  return (
-    <View style={s.screen}>
+  // #56/#57: this chrome used to sit ABOVE the list as fixed siblings,
+  // so at large system font scales it ate the screen and the group list
+  // collapsed to a sliver. As a list header it scrolls with the content.
+  const chrome = (
+    <View>
       <View style={s.header}>
         <Text style={s.h1}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
       </View>
@@ -557,7 +592,11 @@ function HomeScreen({ user, onOpenGroup, active }: {
           <Btn small primary label="Confirm" onPress={() => api.confirmSettlement(p.id).then(reload)} />
         </View>
       ))}
+    </View>
+  );
 
+  return (
+    <View style={s.screen}>
       <FlatList
         data={[
           ...(data?.items ?? []).filter((i) => !i.group.isDirect && !i.group.archivedAt),
@@ -566,8 +605,12 @@ function HomeScreen({ user, onOpenGroup, active }: {
         keyExtractor={(i) => i.group.id}
         onRefresh={reload}
         refreshing={false}
-        ListHeaderComponent={(data?.items ?? []).some((i) => i.group.isDirect) ? (
+        contentContainerStyle={{ paddingBottom: 96 }}
+        ListHeaderComponent={(
           <View>
+            {chrome}
+            {(data?.items ?? []).some((i) => i.group.isDirect) && (
+              <>
             <Text style={s.cap}>FRIENDS · {(data?.items ?? []).filter((i) => i.group.isDirect).length}</Text>
             {(data?.items ?? []).filter((i) => i.group.isDirect).map(({ group, netMinor, currency }) => {
               const other = group.members.find((m) => m.id !== user.id);
@@ -587,8 +630,10 @@ function HomeScreen({ user, onOpenGroup, active }: {
             <Text style={s.cap}>
               GROUPS{(() => { const n = (data?.items ?? []).filter((i) => !i.group.isDirect && !i.group.archivedAt).length; return n > 0 ? ` · ${n}` : ''; })()}
             </Text>
+              </>
+            )}
           </View>
-        ) : null}
+        )}
         ListEmptyComponent={data ? <Text style={s.meta}>No groups yet — create one.</Text> : null}
         ListFooterComponent={(() => {
           const archived = (data?.items ?? []).filter((i) => !i.group.isDirect && i.group.archivedAt);
@@ -725,7 +770,12 @@ function ago(iso: string): string {
 
 function deviceName(label: string): string {
   if (label === 'web') return 'Web browser';
-  if (label === 'mobile') return 'Android app';
+  // Sessions are labelled by platform now; 'mobile' is what older sessions
+  // carry and could be either OS, so it stays deliberately vague rather
+  // than telling an iPhone user they signed in from an Android (issue #49).
+  if (label === 'mobile') return 'Mobile app';
+  if (label === 'ios') return 'iPhone app';
+  if (label === 'android') return 'Android app';
   return label || 'Unknown device';
 }
 
@@ -848,16 +898,25 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
         <Badge id={user.id} name={user.displayName} size={34} />
         <Text style={s.h1}>Profile</Text>
       </View>
+      {/* This screen has fields near the bottom (payment handles, the
+          delete-account confirmation), and a ScrollView alone does not lift
+          them clear of the keyboard on iOS — issue #48. */}
+      <KeyboardAvoidingView style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
         value={currency} onChange={setCurrency} />
       <Text style={s.fieldLabel}>Notifications</Text>
-      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+      {/* Wraps: at large font scales the three options ran off the right
+          edge and "Nothing" became untappable (issue #60). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
         {([['all', 'Everything'], ['important', 'Important only'], ['none', 'Nothing']] as const).map(([v, label]) => (
           <Pressable key={v} onPress={() => setNotifyLevel(v)}
+            accessibilityRole="button" accessibilityState={{ selected: notifyLevel === v }}
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+              minHeight: 44, justifyContent: 'center',
               backgroundColor: notifyLevel === v ? c.brand : c.surface2 }}>
             <Text style={{ color: notifyLevel === v ? '#fff' : c.text2, fontSize: 12.5 }}>{label}</Text>
           </Pressable>
@@ -931,7 +990,13 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
         </View>
       )}
       <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>Account: {user.email}</Text>
+      {/* Spec §2.10 version footer. Without it a tester on TestFlight has
+          no way to tell you which build they are looking at (issue #45). */}
+      <Text style={[s.meta, { textAlign: 'center', marginTop: 4 }]}>
+        SlyTab {appVersion().version} ({appVersion().build})
+      </Text>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -1299,8 +1364,11 @@ function GroupScreen({ groupId, user, onBack }: {
   }
   const myNet = balances?.net[user.id] ?? 0;
 
-  return (
-    <View style={s.screen}>
+  // #56: header, tab strip and the search/filter row used to sit above
+  // the list as fixed siblings — at font scale 1.8 they consumed the
+  // screen and the expense list disappeared. They scroll with it now.
+  const chrome = (
+    <View>
       <View style={s.header}>
         <Btn small label="‹" onPress={onBack} />
         <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
@@ -1345,19 +1413,43 @@ function GroupScreen({ groupId, user, onBack }: {
           </View>
         </View>
       )}
+    </View>
+  );
+  // Likewise the action row, which was being drawn under the gesture bar.
+  const actions = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 10 }}>
+      <Btn small label="Invite"
+        onPress={() => api.createInvite(group.id)
+          .then((i) => setInviteLink(`https://electricrv.ca/slytab/join/${i.token}`))} />
+      {group.archivedAt === null && (
+        <Btn small label="Import from Splitwise" onPress={() => setImporting(true)} />
+      )}
+      <Btn small label="Categories" onPress={() => setManagingCategories(true)} />
+    </View>
+  );
+
+  return (
+    <View style={s.screen}>
       {tab === 'expenses' ? (
         <FlatList
           data={expenses}
           keyExtractor={(e) => e.id}
           onRefresh={reload}
           refreshing={false}
+          contentContainerStyle={{ paddingBottom: 96 }}
           ListEmptyComponent={<Text style={s.meta}>No expenses yet.</Text>}
-          ListHeaderComponent={lastDeleted === null ? null : (
+          ListFooterComponent={actions}
+          ListHeaderComponent={(
+            <View>
+            {chrome}
+            {lastDeleted !== null && (
             <View style={[s.row, { borderColor: c.owe }]}>
               <Text style={[s.body, { flex: 1, fontSize: 12.5 }]}>Deleted "{lastDeleted.description}"</Text>
               <Btn small label="Undo" onPress={() => {
-                api.restoreExpense(lastDeleted.id).then(() => { setLastDeleted(null); reload(); }).catch(() => {});
+                api.restoreExpense(lastDeleted!.id).then(() => { setLastDeleted(null); reload(); }).catch(() => {});
               }} />
+            </View>
+            )}
             </View>
           )}
           renderItem={({ item: e }) => {
@@ -1401,7 +1493,8 @@ function GroupScreen({ groupId, user, onBack }: {
           }}
         />
       ) : tab === 'activity' ? (
-        <ScrollView>
+        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+          {chrome}
           {feed.length === 0 && <Text style={s.meta}>Nothing yet.</Text>}
           {feed.map((ev) => (
             <View style={s.row} key={ev.id}>
@@ -1415,9 +1508,11 @@ function GroupScreen({ groupId, user, onBack }: {
               </View>
             </View>
           ))}
+          {actions}
         </ScrollView>
       ) : tab === 'totals' ? (
-        <ScrollView>
+        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+          {chrome}
           {totals === null ? <ActivityIndicator color={c.brand} /> : (
             <>
               <View style={s.hero}>
@@ -1472,9 +1567,11 @@ function GroupScreen({ groupId, user, onBack }: {
               ))}
             </>
           )}
+          {actions}
         </ScrollView>
       ) : (
-        <ScrollView>
+        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+          {chrome}
           {group.members.map((m) => (
             <View style={s.row} key={m.id}>
               <Badge id={m.id} name={m.displayName} />
@@ -1497,18 +1594,13 @@ function GroupScreen({ groupId, user, onBack }: {
               )}
             </View>
           ))}
+          {actions}
         </ScrollView>
       )}
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 10 }}>
-        <Btn small label="Invite"
-          onPress={() => api.createInvite(group.id)
-            .then((i) => setInviteLink(`https://electricrv.ca/slytab/join/${i.token}`))} />
-        {group.archivedAt === null && (
-          <Btn small label="Import from Splitwise" onPress={() => setImporting(true)} />
-        )}
-        <Btn small label="Categories" onPress={() => setManagingCategories(true)} />
-      </View>
+      {/* The action row now rides at the bottom of whichever list is on
+          screen (see `actions`), so it can never be stranded under the
+          gesture bar again — issue #56. */}
       {inviteLink && (
         <InviteSheet group={group} user={user} link={inviteLink} onClose={() => setInviteLink(null)} onChanged={reload} />
       )}
@@ -2002,7 +2094,7 @@ function ManageCategoriesScreen({ group, onBack }: { group: Group; onBack: () =>
                 <View key={cat.slug}
                   style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
                     paddingVertical: 6, opacity: cat.hidden ? 0.5 : 1 }}>
-                  <TextInput
+                  <TextInput keyboardAppearance="dark"
                     value={cat.label}
                     onChangeText={(t) => patch(cat.slug, { label: t })}
                     maxLength={60}
@@ -2400,10 +2492,10 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 <View key={m.id} style={s.checkRow}>
                   <Badge id={m.id} name={m.displayName} size={22} />
                   <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-                  <TextInput placeholderTextColor={c.text3} placeholder="0.00" keyboardType="decimal-pad"
+                  <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark" placeholder="0.00" keyboardType="decimal-pad"
                     value={payerAmounts[m.id] ?? ''}
                     onChangeText={(v) => setPayerAmounts({ ...payerAmounts, [m.id]: v })}
-                    style={[s.input, { width: 96, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+                    style={[s.input, { minWidth: 96, flexShrink: 1, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
                 </View>
               ))}
               <Text style={[s.meta, { color: payersRemaining === 0 ? c.owed : c.owe, paddingVertical: 4 }]}>
@@ -2487,12 +2579,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               </Text>
             )}
             {method === 'exact' && (
-              <TextInput placeholderTextColor={c.text3} placeholder="0.00" keyboardType="decimal-pad"
+              <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark" placeholder="0.00" keyboardType="decimal-pad"
                 value={exact[m.id] ?? ''} onChangeText={(v) => setExact({ ...exact, [m.id]: v })}
-                style={[s.input, { width: 96, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+                style={[s.input, { minWidth: 96, flexShrink: 1, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
             )}
             {(method === 'shares' || method === 'percent' || method === 'adjustment') && (
-              <TextInput placeholderTextColor={c.text3}
+              <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark"
                 keyboardType={method === 'shares' ? 'number-pad'
                   : method === 'percent' ? 'decimal-pad'
                   : 'numbers-and-punctuation' /* adjustment needs a minus key */}
@@ -2500,7 +2592,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 value={weights[method]?.[m.id] ?? ''}
                 onChangeText={(v) => setWeights({ ...weights,
                   [method]: { ...(weights[method] ?? {}), [m.id]: v } })}
-                style={[s.input, { width: 76, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
+                style={[s.input, { minWidth: 76, flexShrink: 1, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
             )}
           </Pressable>
         );
@@ -2723,7 +2815,14 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
                       next[i] = set;
                       return next;
                     })}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${on ? 'Unassign' : 'Assign'} ${item.name} ${on ? 'from' : 'to'} ${m.displayName}`}
+                    accessibilityState={{ selected: on }}
+                    // 44pt minimum: these were ~30pt with 4pt between them,
+                    // and mis-tapping one changes who owes what (issue #52).
+                    hitSlop={8}
                     style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
+                      minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center',
                       borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
                     <Badge id={m.id} name={m.displayName} size={22} />
                   </Pressable>
@@ -2732,7 +2831,8 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
               <Pressable onPress={() => toggleIgnored(i)} hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={off ? `Restore ${item.name}` : `Ignore ${item.name}`}
-                style={{ padding: 4 }}>
+                style={{ padding: 4, minWidth: 44, minHeight: 44,
+                  alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: c.text2, fontSize: 15 }} maxFontSizeMultiplier={1.4}>{off ? '↩' : '✕'}</Text>
               </Pressable>
             </View>
@@ -2858,7 +2958,9 @@ const s = StyleSheet.create({
     alignItems: 'center', marginBottom: 8,
   },
   btnPrimary: { backgroundColor: c.brand },
-  btnSmall: { paddingVertical: 7, paddingHorizontal: 12, marginBottom: 0 },
+  // 44dp minimum hit area — the compact buttons measured 30dp tall (#62).
+  btnSmall: { paddingVertical: 7, paddingHorizontal: 12, marginBottom: 0,
+    minHeight: 44, justifyContent: 'center' },
   btnText: { color: c.text, fontWeight: '600', fontSize: 14 },
   fieldLabel: { color: c.text3, fontSize: 11.5, marginBottom: 4 },
   input: {
@@ -2896,5 +2998,9 @@ const s = StyleSheet.create({
   },
   tabItem: { flex: 1, alignItems: 'center', paddingTop: 7, paddingBottom: 6, gap: 2, minHeight: 52 },
   tabIcon: { fontSize: 19, lineHeight: 24 },
+  // Fixed box so the avatar Badge and the emoji glyphs occupy the same
+  // height — otherwise the Profile label sits higher than the other three
+  // once the system font grows (issue #63).
+  tabIconBox: { height: 24, justifyContent: 'center', alignItems: 'center' },
   tabBarLabel: { color: c.text3, fontSize: 10.5, fontWeight: '600' },
 });
