@@ -136,6 +136,11 @@ button. If not signed in, auth flows first and returns here.
 Header: emoji + name, member badges, **your net balance in this group**
 (Amount-lg). Tab strip: **Expenses · Balances · Totals**.
 
+The category picker offers the five headings first (one tap still files an
+expense — speed entry is unchanged) with the chosen heading's subcategories
+on a second row; on web it is a grouped `<select>`. Hidden categories are
+omitted unless the expense being edited already uses one.
+
 **Expenses tab** — reverse-chron list grouped by month. Row: category chip
 colour-strip, description, payer ("Dave paid"), date, and right-aligned
 *your share effect* ("you lent C$18.00" green / "you borrowed C$7.50"
@@ -148,7 +153,17 @@ settlement plan** (FR-6.2): "Alice → Dave C$25.00" rows, each with a
 
 **Totals tab** — group total spent, per-member paid vs share, this
 month/all-time toggle, per-category totals as a simple horizontal bar list
-(no chart library; SplitBar-style bars). `Export CSV` lives here (FR-9.1).
+(no chart library; SplitBar-style bars). Category totals roll **subcategories
+up under their heading**, with the leaves indented beneath so the breakdown
+stays explorable. `Export CSV` lives here (FR-9.1).
+
+**Categories page** — reached from the group's footer actions, a full screen
+rather than a sheet. Lists every heading with its subcategories; each row is
+an editable label with a `Reset` affordance once renamed, and a show/hide
+toggle. Headings can be moved up and down. `Save` appears in the header only
+when something differs from what is stored. The last visible category cannot
+be hidden. Everything scrolls in one container so large system font scales
+push content down rather than collapsing a list.
 
 Group settings (gear): rename, emoji, home currency (only while the group
 has no foreign-currency expenses), members list (with leave/remove per

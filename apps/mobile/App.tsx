@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type Category, type Currency, type SplitMethod } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -1251,6 +1251,9 @@ function GroupScreen({ groupId, user, onBack }: {
   const [lastDeleted, setLastDeleted] = useState<Expense | null>(null);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Per-group category customisation (#18): overrides on the shipped taxonomy.
+  const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
+  const [managingCategories, setManagingCategories] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
   // Today's group-home → user-home rate, for the fine print under each
@@ -1270,6 +1273,7 @@ function GroupScreen({ groupId, user, onBack }: {
     api.balances(groupId).then(setBalances).catch(() => {});
     api.groupTotals(groupId).then(setTotals).catch(() => {});
     api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
+    api.groupCategories(groupId).then((r) => setCatOverrides(r.overrides ?? {})).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
 
@@ -1286,6 +1290,12 @@ function GroupScreen({ groupId, user, onBack }: {
 
   if (group === null) {
     return <View style={s.screen}><Btn small label="‹ Back" onPress={onBack} /><ActivityIndicator color={c.brand} style={{ marginTop: 40 }} /></View>;
+  }
+  // "Category management can be a separate page" (owner, #18).
+  if (managingCategories) {
+    return (
+      <ManageCategoriesScreen group={group} onBack={() => { setManagingCategories(false); reload(); }} />
+    );
   }
   const myNet = balances?.net[user.id] ?? 0;
 
@@ -1323,12 +1333,12 @@ function GroupScreen({ groupId, user, onBack }: {
         <View>
           <Field label="" value={search} onChangeText={setSearch} placeholder="Search expenses…" />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-            {CATEGORIES.map((cat) => (
+            {CATEGORY_HEADINGS.map((cat) => (
               <Pressable key={cat} onPress={() => setCatFilter(catFilter === cat ? '' : cat)}
                 style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 11,
                   backgroundColor: catFilter === cat ? c.brand : c.surface2 }}>
                 <Text style={{ color: catFilter === cat ? '#fff' : c.text2, fontSize: 11.5 }}>
-                  {CATEGORY_LABELS[cat]}
+                  {categoryLabel(cat, catOverrides)}
                 </Text>
               </Pressable>
             ))}
@@ -1427,10 +1437,21 @@ function GroupScreen({ groupId, user, onBack }: {
                 </>
               )}
               <Text style={s.cap}>BY CATEGORY</Text>
-              {totals.byCategory.map((cat) => (
-                <View style={s.row} key={cat.category}>
-                  <Text style={[s.body, { flex: 1 }]}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</Text>
-                  <Amount minor={cat.minor} currency={group.homeCurrency} />
+              {totals.byHeading.map((h) => (
+                <View key={h.category}>
+                  <View style={s.row}>
+                    <Text style={[s.body, { flex: 1 }]}>{categoryLabel(h.category, catOverrides)}</Text>
+                    <Amount minor={h.minor} currency={group.homeCurrency} />
+                  </View>
+                  {/* Leaves under this heading keep the roll-up explorable. */}
+                  {totals.byCategory
+                    .filter((cat) => cat.category.startsWith(`${h.category}.`))
+                    .map((cat) => (
+                      <View style={[s.row, { paddingLeft: 18 }]} key={cat.category}>
+                        <Text style={[s.body, { flex: 1, color: c.text2, fontSize: 12.5 }]}>{categoryLabel(cat.category, catOverrides)}</Text>
+                        <Amount minor={cat.minor} currency={group.homeCurrency} />
+                      </View>
+                    ))}
                 </View>
               ))}
               <Text style={s.cap}>WHO PAID</Text>
@@ -1479,13 +1500,14 @@ function GroupScreen({ groupId, user, onBack }: {
         </ScrollView>
       )}
 
-      <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 10 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 10 }}>
         <Btn small label="Invite"
           onPress={() => api.createInvite(group.id)
             .then((i) => setInviteLink(`https://electricrv.ca/slytab/join/${i.token}`))} />
         {group.archivedAt === null && (
           <Btn small label="Import from Splitwise" onPress={() => setImporting(true)} />
         )}
+        <Btn small label="Categories" onPress={() => setManagingCategories(true)} />
       </View>
       {inviteLink && (
         <InviteSheet group={group} user={user} link={inviteLink} onClose={() => setInviteLink(null)} onChanged={reload} />
@@ -1891,6 +1913,164 @@ async function shrinkPhoto(uri: string): Promise<{ uri: string; mime: string }> 
   }
 }
 
+/**
+ * Two-level category picker (#18): headings on the first row, the chosen
+ * heading's subcategories on the second. Picking a heading assigns it
+ * directly — speed entry still costs one tap — and the leaves are there
+ * when someone wants the detail. Hidden categories are omitted unless the
+ * expense already uses one.
+ */
+/**
+ * Manage categories (#18) — its own screen, reached from the group.
+ *
+ * Everything lives in one ScrollView so it survives large system font
+ * scales (the Android UI review found fixed-height siblings collapsing the
+ * lists they wrap); rows wrap rather than clip.
+ */
+function ManageCategoriesScreen({ group, onBack }: { group: Group; onBack: () => void }) {
+  const [overrides, setOverrides] = useState<Record<string, CategoryOverride> | null>(null);
+  const [saved, setSaved] = useState<Record<string, CategoryOverride>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.groupCategories(group.id)
+      .then((r) => {
+        if (!live) return;
+        setOverrides(r.overrides ?? {});
+        setSaved(r.overrides ?? {});
+      })
+      .catch((e: Error) => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [group.id]);
+
+  const prune = (o: Record<string, CategoryOverride>): Record<string, CategoryOverride> => {
+    const out: Record<string, CategoryOverride> = {};
+    for (const [slug, v] of Object.entries(o)) {
+      const entry: CategoryOverride = {};
+      if (typeof v.label === 'string' && v.label.trim() !== '') entry.label = v.label.trim();
+      if (v.hidden === true) entry.hidden = true;
+      if (typeof v.sortOrder === 'number') entry.sortOrder = v.sortOrder;
+      if (Object.keys(entry).length > 0) out[slug] = entry;
+    }
+    return out;
+  };
+
+  const tree = useMemo(() => resolveCategories(overrides ?? {}), [overrides]);
+  const dirty = JSON.stringify(prune(overrides ?? {})) !== JSON.stringify(prune(saved));
+  const visible = tree.flatMap((h) => [h, ...h.children]).filter((x) => !x.hidden).length;
+
+  function patch(slug: string, change: CategoryOverride) {
+    setOverrides((prev) => ({ ...(prev ?? {}), [slug]: { ...(prev?.[slug] ?? {}), ...change } }));
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.saveGroupCategories(group.id, prune(overrides ?? {}));
+      setOverrides(r.overrides ?? {});
+      setSaved(r.overrides ?? {});
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={s.screen}>
+      <View style={s.header}>
+        <Btn small label="‹" onPress={onBack} />
+        <Text style={[s.h1, { flex: 1 }]} numberOfLines={1}>Categories</Text>
+        {dirty && <Btn small primary label={busy ? 'Saving…' : 'Save'} onPress={save} />}
+      </View>
+      {overrides === null ? (
+        <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+          <Text style={[s.meta, { paddingBottom: 8 }]}>
+            Rename anything to suit {group.name}, and hide what you never use. Hidden
+            categories stay on expenses already filed under them.
+          </Text>
+          {error !== null && <Text style={[s.meta, { color: c.owe }]}>{error}</Text>}
+          {tree.map((heading) => (
+            <View key={heading.slug}>
+              <Text style={s.cap}>{heading.emoji} {heading.label.toUpperCase()}</Text>
+              {[heading, ...heading.children].map((cat) => (
+                <View key={cat.slug}
+                  style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+                    paddingVertical: 6, opacity: cat.hidden ? 0.5 : 1 }}>
+                  <TextInput
+                    value={cat.label}
+                    onChangeText={(t) => patch(cat.slug, { label: t })}
+                    maxLength={60}
+                    accessibilityLabel={`Label for ${cat.defaultLabel}`}
+                    style={{ flexGrow: 1, flexBasis: 160, color: c.text, backgroundColor: c.surface2,
+                      borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14 }} />
+                  {cat.renamed && (
+                    <Btn small label="Reset" onPress={() => patch(cat.slug, { label: '' })} />
+                  )}
+                  <Btn small
+                    label={cat.hidden ? 'Hidden' : 'Shown'}
+                    onPress={() => {
+                      if (!cat.hidden && visible === 1) return; // never hide the last one
+                      patch(cat.slug, { hidden: !cat.hidden });
+                    }} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function CategoryPicker({ value, onChange, overrides }: {
+  value: string; onChange: (slug: string) => void;
+  overrides: Record<string, CategoryOverride>;
+}) {
+  const tree = useMemo(() => resolveCategories(overrides), [overrides]);
+  const headingOf = value.includes('.') ? value.slice(0, value.indexOf('.')) : value;
+  const [open, setOpen] = useState(headingOf);
+  const current = tree.find((h) => h.slug === open) ?? tree[0];
+  const chip = (active: boolean) => ({
+    paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+    backgroundColor: active ? c.brand : c.surface2,
+  });
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {tree.filter((h) => !h.hidden || h.slug === value).map((h) => (
+          <Pressable key={h.slug} onPress={() => { setOpen(h.slug); onChange(h.slug); }}
+            accessibilityRole="button" accessibilityState={{ selected: headingOf === h.slug }}
+            style={chip(headingOf === h.slug)}>
+            <Text style={{ color: headingOf === h.slug ? '#fff' : c.text2, fontSize: 12.5 }}>
+              {h.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {current !== undefined && current.children.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          {current.children.filter((leaf) => !leaf.hidden || leaf.slug === value).map((leaf) => (
+            <Pressable key={leaf.slug} onPress={() => onChange(leaf.slug)}
+              accessibilityRole="button" accessibilityState={{ selected: value === leaf.slug }}
+              style={chip(value === leaf.slug)}>
+              <Text style={{ color: value === leaf.slug ? '#fff' : c.text3, fontSize: 12 }}>
+                {leaf.emoji} {leaf.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDeleted, lastCurrency }: {
   group: Group; user: User; onClose: () => void; onSaved: () => void;
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
@@ -1962,6 +2142,16 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // you keep paying in the local currency).
   const [currency, setCurrency] = useState(editing?.currency ?? lastCurrency ?? group.homeCurrency);
   const [category, setCategory] = useState(editing?.category ?? 'dining');
+  // Opened from Home's quick-add as well as the group screen, so it fetches
+  // the group's category overrides itself (#18).
+  const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
+  useEffect(() => {
+    let live = true;
+    api.groupCategories(group.id)
+      .then((r) => { if (live) setCatOverrides(r.overrides ?? {}); })
+      .catch(() => {}); // shipped defaults are a fine fallback
+    return () => { live = false; };
+  }, [group.id]);
   const [allCurrencies, setAllCurrencies] = useState(false);
   const [date, setDate] = useState(editing?.expenseDate ?? new Date().toISOString().slice(0, 10));
   const amountMinor = parseAmount(amountStr, currency);
@@ -2170,7 +2360,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               {'  '}{multiPayer
                 ? `${payers.length > 1 ? `${payers.length} people` : 'multiple people'} paid`
                 : payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
-              {' · '}{CATEGORY_LABELS[category as Category] ?? category}{notes.trim() !== '' ? ' · note' : ''}
+              {' · '}{categoryLabel(category, catOverrides)}{notes.trim() !== '' ? ' · note' : ''}
             </Text>
           )}
         </Text>
@@ -2225,17 +2415,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             </>
           )}
           <Text style={s.fieldLabel}>Category</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-            {CATEGORIES.map((cat) => (
-              <Pressable key={cat} onPress={() => setCategory(cat)}
-                style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-                  backgroundColor: category === cat ? c.brand : c.surface2 }}>
-                <Text style={{ color: category === cat ? '#fff' : c.text2, fontSize: 12.5 }}>
-                  {CATEGORY_LABELS[cat]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <CategoryPicker value={category} onChange={setCategory} overrides={catOverrides} />
           <Field label="Notes (optional)" value={notes} onChangeText={setNotes}
             placeholder="e.g. includes the corkage fee" />
         </>

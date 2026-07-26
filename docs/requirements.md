@@ -76,6 +76,18 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-3.1 (MUST)** An expense records: description, total amount + currency,
   date, payer(s), category, optional notes, optional receipt photo, and how
   it splits across members.
+- **FR-3.1a (MUST)** Categories are a **two-level taxonomy** shipped in
+  `@slytab/core`: five headings (`drinks`, `dining`, `travel`, `adulting`,
+  `other`) each with subcategories (`travel.taxi`, `dining.groceries`, …).
+  Both levels are assignable, so expenses recorded before subcategories
+  existed stay valid. Filtering by a heading includes everything under it,
+  and the Totals view rolls subcategories up to their heading.
+- **FR-3.1b (SHOULD)** Each group can **customise** that taxonomy on a
+  *Categories* page: rename any entry (the labels carry the house style, so
+  a group may add or drop the snark), hide entries it never uses, and
+  reorder the headings. Only the differences are stored, so groups that
+  change nothing keep inheriting improvements to the shipped defaults, and
+  hiding a category never alters expenses already filed under it.
 - **FR-3.2 (MUST)** Split methods: **equal**, **exact amounts**, **shares**
   (2:1:1), **percentages**, and **adjustment** (equal after fixed offsets).
   Sums must reconcile to the total exactly; remainder cents distribute

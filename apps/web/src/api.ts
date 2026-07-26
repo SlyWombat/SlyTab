@@ -18,6 +18,8 @@ export class ApiFailure extends Error {
   }
 }
 
+import type { CategoryOverride } from '@slytab/core';
+
 export interface User {
   id: string;
   email: string;
@@ -100,6 +102,8 @@ export interface Settlement {
 export interface GroupTotals {
   totalMinor: number;
   byCategory: { category: string; minor: number }[];
+  /** Subcategories rolled up under their heading (#18). */
+  byHeading: { category: string; minor: number }[];
   byPayer: { userId: string; minor: number }[];
   byShare: { userId: string; minor: number }[];
   byMonth: { month: string; minor: number }[];
@@ -415,6 +419,10 @@ export const api = {
   deleteExpense: (id: string) => req<{ ok: true }>('DELETE', `/expenses/${id}`),
   restoreExpense: (id: string) => req<Expense>('POST', `/expenses/${id}/restore`),
   groupTotals: (groupId: string) => req<GroupTotals>('GET', `/groups/${groupId}/totals`),
+  groupCategories: (groupId: string) =>
+    req<{ overrides: Record<string, CategoryOverride> }>('GET', `/groups/${groupId}/categories`),
+  saveGroupCategories: (groupId: string, overrides: Record<string, CategoryOverride>) =>
+    req<{ overrides: Record<string, CategoryOverride> }>('PUT', `/groups/${groupId}/categories`, { overrides }),
   deleteAccount: (confirmEmail: string) => req<{ ok: true }>('DELETE', '/me', { confirmEmail }),
   splitwiseApiGroups: (groupId: string, apiKey: string) =>
     req<{ groups: SplitwiseGroup[] }>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey }),

@@ -330,23 +330,65 @@ final class ImportService
         return (int) round(((float) $value) * Money::scale($currency));
     }
 
+    /**
+     * Splitwise's ~50 category names onto our taxonomy (#18). Before
+     * subcategories existed this could only reach the five headings, so a
+     * third of a real export piled into "other" — Splitwise's catch-all
+     * "General" plus everything entertainment-shaped. Leaves fix that.
+     *
+     * Order matters: the first match wins, so the specific patterns come
+     * before the broad ones ("liquor store" before "store").
+     */
     public static function mapCategory(string $splitwise): string
     {
-        $sw = strtolower($splitwise);
-        return match (true) {
-            str_contains($sw, 'liquor'), str_contains($sw, 'alcohol'), str_contains($sw, 'bar'),
-            str_contains($sw, 'drink'), str_contains($sw, 'wine'), str_contains($sw, 'beer') => 'drinks',
-            str_contains($sw, 'grocer'), str_contains($sw, 'dining'), str_contains($sw, 'food'),
-            str_contains($sw, 'restaurant') => 'dining',
-            str_contains($sw, 'transport'), str_contains($sw, 'travel'), str_contains($sw, 'car'),
-            str_contains($sw, 'gas'), str_contains($sw, 'hotel'), str_contains($sw, 'plane'),
-            str_contains($sw, 'taxi'), str_contains($sw, 'parking') => 'travel',
-            str_contains($sw, 'rent'), str_contains($sw, 'household'), str_contains($sw, 'home'),
-            str_contains($sw, 'furniture'), str_contains($sw, 'maintenance'), str_contains($sw, 'utilit'),
-            str_contains($sw, 'electric'), str_contains($sw, 'water'), str_contains($sw, 'heat'),
-            str_contains($sw, 'tv'), str_contains($sw, 'phone'), str_contains($sw, 'insurance'),
-            str_contains($sw, 'internet') => 'adulting',
-            default => 'other',
-        };
+        $sw = strtolower(trim($splitwise));
+        if ($sw === '' || $sw === 'general' || $sw === 'other') {
+            return 'other';
+        }
+        foreach (self::CATEGORY_PATTERNS as $slug => $needles) {
+            foreach ($needles as $needle) {
+                if (str_contains($sw, $needle)) {
+                    return $slug;
+                }
+            }
+        }
+        return 'other';
     }
+
+    /** @var array<string, list<string>> slug => Splitwise substrings, specific first */
+    private const CATEGORY_PATTERNS = [
+        'drinks.liquor' => ['liquor', 'alcohol'],
+        'drinks.wine' => ['wine'],
+        'drinks.beer' => ['beer'],
+        'drinks.coffee' => ['coffee', 'cafe'],
+        'drinks.bar' => ['bar', 'drink', 'pub', 'nightlife'],
+        'dining.groceries' => ['grocer', 'market'],
+        'dining.restaurant' => ['dining', 'restaurant', 'food'],
+        'dining.takeout' => ['takeout', 'delivery'],
+        'dining.dessert' => ['dessert', 'ice cream'],
+        'dining.snacks' => ['snack'],
+        'travel.taxi' => ['taxi', 'uber', 'lyft', 'rideshare', 'cab'],
+        'travel.flights' => ['plane', 'flight', 'airfare', 'airline'],
+        'travel.lodging' => ['hotel', 'lodging', 'airbnb', 'accommodation'],
+        'travel.fuel' => ['gas/fuel', 'fuel', 'petrol'],
+        'travel.transit' => ['bus', 'train', 'transit', 'subway', 'metro'],
+        'travel.rental' => ['car rental', 'rental car'],
+        'travel.parking' => ['parking', 'toll'],
+        'adulting.rent' => ['rent', 'mortgage'],
+        'adulting.utilities' => ['utilit', 'electric', 'water', 'heat', 'gas bill', 'trash'],
+        'adulting.internet' => ['internet', 'phone', 'tv', 'cable'],
+        'adulting.insurance' => ['insurance'],
+        'adulting.household' => ['household', 'home supplies', 'cleaning'],
+        'adulting.maintenance' => ['maintenance', 'repair', 'furniture', 'appliance'],
+        'adulting.medical' => ['medical', 'doctor', 'pharmac', 'health'],
+        'other.entertainment' => ['entertainment', 'movie', 'music', 'game', 'sport'],
+        'other.activities' => ['activit', 'ticket', 'tour', 'museum'],
+        'other.shopping' => ['shopping', 'clothing', 'electronics'],
+        'other.gifts' => ['gift', 'donation'],
+        'other.fees' => ['fee', 'tax', 'service charge', 'bank'],
+        'other.pets' => ['pet', 'dog', 'cat'],
+        // Broad fallbacks — only reached when nothing specific matched.
+        'travel' => ['transport', 'travel', 'car'],
+        'adulting' => ['home', 'life'],
+    ];
 }

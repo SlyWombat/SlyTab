@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { allAssigned as allItemsAssigned, assignedShares, CATEGORIES, CATEGORY_LABELS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, type Category, type SplitMethod } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, resolveCategories, type CategoryOverride, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
+import { CategoriesScreen } from './Categories';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
 export type ScanStage =
@@ -101,6 +102,10 @@ export function GroupScreen({ groupId, user, onBack }: {
   const [inviting, setInviting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Per-group category customisation (#18) — overrides ride on top of the
+  // shipped taxonomy; an empty object simply means "all defaults".
+  const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
+  const [managingCategories, setManagingCategories] = useState(false);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Today's group-home → user-home rate, for the fine print under each
@@ -120,6 +125,7 @@ export function GroupScreen({ groupId, user, onBack }: {
     api.balances(groupId).then(setBalances).catch(() => {});
     api.groupTotals(groupId).then(setTotals).catch(() => {});
     api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
+    api.groupCategories(groupId).then((r) => setCatOverrides(r.overrides ?? {})).catch(() => {});
   }, [groupId]);
   useEffect(reload, [reload]);
 
@@ -139,6 +145,16 @@ export function GroupScreen({ groupId, user, onBack }: {
   );
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? 'Former member';
   const myNet = balances?.net[user.id] ?? 0;
+
+  // "Category management can be a separate page" (owner, #18).
+  if (group !== null && managingCategories) {
+    return (
+      <CategoriesScreen group={group} onBack={() => {
+        setManagingCategories(false);
+        reload();
+      }} />
+    );
+  }
 
   if (group === null) {
     return <div className="shell"><div className="header"><button className="btn sm" onClick={onBack}>‹ Back</button></div>{error && <div className="error">{error}</div>}<p className="muted">Loading…</p></div>;
@@ -186,11 +202,11 @@ export function GroupScreen({ groupId, user, onBack }: {
               style={{ flex: 1, minWidth: 140, background: 'var(--ss-surface-2)', color: 'var(--ss-text)',
                 border: '1px solid var(--ss-outline)', borderRadius: 10, padding: '8px 12px',
                 font: '400 0.84375rem var(--ss-font-body)' }} />
-            {CATEGORIES.map((cat) => (
+            {CATEGORY_HEADINGS.map((cat) => (
               <button key={cat} type="button" className="btn sm"
                 onClick={() => setCatFilter(catFilter === cat ? '' : cat)}
                 style={catFilter === cat ? { background: 'var(--ss-brand)', color: '#fff' } : {}}>
-                {CATEGORY_LABELS[cat]}
+                {categoryLabel(cat, catOverrides)}
               </button>
             ))}
           </div>
@@ -214,7 +230,7 @@ export function GroupScreen({ groupId, user, onBack }: {
                 <div className="grow">
                   <div className="name">{e.description}</div>
                   <div className="meta">
-                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate} · {CATEGORY_LABELS[e.category as Category] ?? e.category}
+                    {e.payers.map((p) => nameOf(p.userId)).join(' + ')} paid · {e.expenseDate} · {categoryLabel(e.category, catOverrides)}
                     {(() => {
                       // Fine print: the expense's value in the viewer's own
                       // home currency (via the group home rate stored on the
@@ -289,10 +305,23 @@ export function GroupScreen({ groupId, user, onBack }: {
             </>
           )}
           <div className="sect">By category</div>
-          {totals.byCategory.map((cat) => (
-            <div className="row" key={cat.category}>
-              <div className="grow" style={{ fontSize: '0.84375rem' }}>{CATEGORY_LABELS[cat.category as Category] ?? cat.category}</div>
-              <Amount minor={cat.minor} currency={group.homeCurrency} />
+          {totals.byHeading.map((h) => (
+            <div key={h.category}>
+              <div className="row">
+                <div className="grow" style={{ fontSize: '0.84375rem' }}>{categoryLabel(h.category, catOverrides)}</div>
+                <Amount minor={h.minor} currency={group.homeCurrency} />
+              </div>
+              {/* Leaves under this heading, so the roll-up stays explorable. */}
+              {totals.byCategory
+                .filter((c) => c.category.startsWith(`${h.category}.`))
+                .map((c) => (
+                  <div className="row" key={c.category} style={{ paddingLeft: 18 }}>
+                    <div className="grow muted" style={{ fontSize: '0.8125rem' }}>
+                      {categoryLabel(c.category, catOverrides)}
+                    </div>
+                    <Amount minor={c.minor} currency={group.homeCurrency} />
+                  </div>
+                ))}
             </div>
           ))}
           <div className="sect">Who paid</div>
@@ -353,6 +382,7 @@ export function GroupScreen({ groupId, user, onBack }: {
         {group.archivedAt === null && (
           <button className="btn sm" onClick={() => setImporting(true)}>Import from Splitwise</button>
         )}
+        <button className="btn sm" onClick={() => setManagingCategories(true)}>Categories</button>
       </div>
 
       {group.archivedAt === null && (
@@ -395,6 +425,16 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
   const [notes, setNotes] = useState((editing as (Expense & { notes?: string | null }) | null)?.notes ?? '');
+  // This sheet opens from Home's quick-add as well as the group screen, so
+  // it fetches the group's category overrides itself (#18).
+  const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
+  useEffect(() => {
+    let live = true;
+    api.groupCategories(group.id)
+      .then((r) => live && setCatOverrides(r.overrides ?? {}))
+      .catch(() => {}); // defaults are a fine fallback
+    return () => { live = false; };
+  }, [group.id]);
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [commentText, setCommentText] = useState('');
   const [amountStr, setAmountStr] = useState(editing ? minorToAmountString(editing.amountMinor, editing.currency) : '');
@@ -711,7 +751,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
                 ? `${payers.length > 1 ? `${payers.length} people` : 'multiple people'} paid`
                 : payerId === user.id ? 'you paid' : `${group.members.find((m) => m.id === payerId)?.displayName ?? 'someone'} paid`}
               {date !== new Date().toISOString().slice(0, 10) ? ` · ${date}` : ''}
-              {` · ${CATEGORY_LABELS[category as Category] ?? category}`}
+              {` · ${categoryLabel(category, catOverrides)}`}
               {notes.trim() !== '' ? ' · note' : ''}
             </span>
           </summary>
@@ -766,7 +806,19 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             </label>
             <label className="field" style={{ flex: 1 }}><span>Category</span>
               <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                {resolveCategories(catOverrides).map((h) => (
+                  // A hidden category still appears if this expense already
+                  // uses it — otherwise editing would silently reassign it.
+                  <optgroup key={h.slug} label={h.label}>
+                    {[h, ...h.children]
+                      .filter((c) => !c.hidden || c.slug === category)
+                      .map((c) => (
+                        <option key={c.slug} value={c.slug}>
+                          {c.slug === h.slug ? h.label : `${c.emoji} ${c.label}`}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
               </select>
             </label>
           </div>

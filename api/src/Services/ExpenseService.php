@@ -7,6 +7,7 @@ namespace SlyTab\Services;
 use PDO;
 use SlyTab\Db\Db;
 use SlyTab\Support\ApiException;
+use SlyTab\Support\Categories;
 use SlyTab\Support\Ulid;
 
 /**
@@ -17,7 +18,6 @@ use SlyTab\Support\Ulid;
  */
 final class ExpenseService
 {
-    private const CATEGORIES = ['drinks', 'dining', 'travel', 'adulting', 'other'];
     private const SPLIT_METHODS = ['equal', 'exact', 'shares', 'percent', 'adjustment'];
 
     public function __construct(
@@ -123,8 +123,17 @@ final class ExpenseService
             $args[] = $like;
         }
         if (($filters['category'] ?? '') !== '') {
-            $sql .= ' AND e.category = ?';
-            $args[] = $filters['category'];
+            // Filtering by a heading includes everything under it, so the
+            // chips keep working now that expenses can sit on a leaf (#18).
+            $category = (string) $filters['category'];
+            if (in_array($category, Categories::HEADINGS, true)) {
+                $sql .= ' AND (e.category = ? OR e.category LIKE ?)';
+                $args[] = $category;
+                $args[] = $category . '.%';
+            } else {
+                $sql .= ' AND e.category = ?';
+                $args[] = $category;
+            }
         }
         if (($filters['member'] ?? '') !== '') {
             $sql .= ' AND (ep.user_id = ? OR es.user_id = ?)';
@@ -293,7 +302,7 @@ final class ExpenseService
             throw new ApiException('VALIDATION', 'expenseDate must be YYYY-MM-DD');
         }
         $category = (string) ($data['category'] ?? 'other');
-        if (!in_array($category, self::CATEGORIES, true)) {
+        if (!Categories::isValid($category)) {
             throw new ApiException('VALIDATION', 'unknown category');
         }
         $splitMethod = (string) ($data['splitMethod'] ?? '');

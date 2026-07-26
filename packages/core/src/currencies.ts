@@ -1,3 +1,5 @@
+import { categoryLabel } from './categories.js';
+
 /**
  * Supported currencies, ordered with the household defaults first, then
  * alphabetical. Most come from the ECB reference feed; the rest (CLP,
@@ -51,10 +53,11 @@ export const GROUP_EMOJI = [
 export const CATEGORIES = ['drinks', 'dining', 'travel', 'adulting', 'other'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-export const CATEGORY_LABELS: Record<Category, string> = {
-  drinks: 'Liquid assets',
-  dining: 'Overpriced calories',
-  travel: 'Getting there',
-  adulting: 'Adulting',
-  other: 'Questionable choices',
-};
+/**
+ * Default heading labels, derived from the taxonomy in categories.ts so the
+ * two can't drift. Prefer `categoryLabel(slug, overrides)` in new code — it
+ * covers subcategories and a group's own renames (#18).
+ */
+export const CATEGORY_LABELS: Record<Category, string> = Object.fromEntries(
+  CATEGORIES.map((c) => [c, categoryLabel(c)]),
+) as Record<Category, string>;

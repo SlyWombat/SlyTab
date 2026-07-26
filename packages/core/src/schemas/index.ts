@@ -6,6 +6,8 @@
 
 import { z } from 'zod';
 
+import { isCategorySlug } from '../categories.js';
+
 export const SCHEMA_VERSION = 1;
 
 export const Id = z.string().min(1).max(64);
@@ -14,7 +16,8 @@ export const MinorAmount = z.number().int().safe();
 export const PositiveMinorAmount = MinorAmount.positive();
 export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-export const CategorySchema = z.enum(['drinks', 'dining', 'travel', 'adulting', 'other']);
+/** Any slug in the taxonomy — the five headings or one of their leaves (#18). */
+export const CategorySchema = z.string().refine(isCategorySlug, 'unknown category');
 
 export const PaymentHandles = z
   .object({

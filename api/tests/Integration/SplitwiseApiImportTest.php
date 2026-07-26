@@ -202,9 +202,9 @@ final class SplitwiseApiImportTest extends TestCase
         self::assertSame(1750, $bal['net'][$ann['id']]);
         self::assertSame(-1750, $bal['net'][$ben['id']]);
 
-        // Category mapped from "Groceries" → food.
+        // Splitwise "Groceries" now lands on the leaf, not just the heading (#18).
         $list = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/expenses", null, $ann['token']));
-        self::assertSame('dining', $list['items'][0]['category']);
+        self::assertSame('dining.groceries', $list['items'][0]['category']);
     }
 
     /** Issue #44: map a Splitwise member to a SlyTab user from another shared group. */

@@ -16,6 +16,7 @@ use SlyTab\Services\AppleAuthService;
 use SlyTab\Services\AuthHandoffService;
 use SlyTab\Services\AuthService;
 use SlyTab\Services\BalanceService;
+use SlyTab\Services\CategoryService;
 use SlyTab\Services\EmailVerificationService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
@@ -45,6 +46,7 @@ final class Api
         $fx = new FxService($pdo);
         $expenses = new ExpenseService($pdo, $groups, $fx, $activity);
         $balances = new BalanceService($pdo);
+        $categories = new CategoryService($pdo, $groups);
         $settlements = new SettlementService($pdo, $groups, $activity);
         $receipts = new ReceiptService($pdo);
         $limiter = new RateLimiter($pdo);
@@ -129,7 +131,7 @@ final class Api
         });
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
-            $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts,
+            $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts,
             $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $handoff, $swApi, $pdo, $notify, $bugs,
         ): void {
             $g->get('/health', fn(Request $rq, Response $rs): Response =>
@@ -216,7 +218,7 @@ final class Api
 
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
-                $auth, $activity, $groups, $fx, $expenses, $balances, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify, $bugs,
+                $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify, $bugs,
             ): void {
                 // Report a bug (profile page): comment + optional screenshot.
                 $p->post('/bugs', function (Request $rq, Response $rs) use ($bugs, $limiter): Response {
@@ -452,6 +454,21 @@ final class Api
                 $p->get('/groups/{id}/totals', function (Request $rq, Response $rs, array $a) use ($groups, $balances): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, $balances->totalsFor($a['id']));
+                });
+
+                // categories: the group's overrides onto the shipped taxonomy (#18)
+                $p->get('/groups/{id}/categories', function (Request $rq, Response $rs, array $a) use ($groups, $categories): Response {
+                    $groups->assertMember($a['id'], Http::user($rq)['id']);
+                    return Http::json($rs, ['overrides' => (object) $categories->overridesFor($a['id'])]);
+                });
+                $p->put('/groups/{id}/categories', function (Request $rq, Response $rs, array $a) use ($groups, $categories): Response {
+                    $groups->assertMember($a['id'], Http::user($rq)['id']);
+                    $body = Http::body($rq);
+                    $overrides = $body['overrides'] ?? [];
+                    if (!is_array($overrides)) {
+                        throw new \SlyTab\Support\ApiException('VALIDATION', 'overrides must be an object', 422);
+                    }
+                    return Http::json($rs, ['overrides' => (object) $categories->replace($a['id'], $overrides)]);
                 });
 
                 // settlements

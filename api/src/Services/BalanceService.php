@@ -6,6 +6,7 @@ namespace SlyTab\Services;
 
 use PDO;
 use SlyTab\Domain\Simplify;
+use SlyTab\Support\Categories;
 use SlyTab\Support\Money;
 
 /**
@@ -36,6 +37,7 @@ final class BalanceService
      * @return array{
      *   totalMinor:int,
      *   byCategory:list<array{category:string,minor:int}>,
+     *   byHeading:list<array{category:string,minor:int}>,
      *   byPayer:list<array{userId:string,minor:int}>,
      *   byShare:list<array{userId:string,minor:int}>,
      *   byMonth:list<array{month:string,minor:int}>
@@ -46,6 +48,7 @@ final class BalanceService
         $home = $this->homeCurrency($groupId);
         $total = 0;
         $byCategory = [];
+        $byHeading = [];
         $byMonth = [];
         $stmt = $this->pdo->prepare(
             'SELECT amount, currency, fx_rate, category, expense_date FROM expenses
@@ -56,6 +59,9 @@ final class BalanceService
             $minor = self::toHome((int) $e['amount'], $e['fx_rate'], (string) $e['currency'], $home);
             $total += $minor;
             $byCategory[$e['category']] = ($byCategory[$e['category']] ?? 0) + $minor;
+            // Subcategories roll up so the summary stays readable (#18).
+            $heading = Categories::heading((string) $e['category']);
+            $byHeading[$heading] = ($byHeading[$heading] ?? 0) + $minor;
             $month = substr($e['expense_date'], 0, 7);
             $byMonth[$month] = ($byMonth[$month] ?? 0) + $minor;
         }
@@ -64,12 +70,17 @@ final class BalanceService
         $byShare = $this->participantTotals($groupId, 'expense_shares', $home);
 
         arsort($byCategory);
+        arsort($byHeading);
         krsort($byMonth);
         return [
             'totalMinor' => $total,
             'byCategory' => array_map(
                 static fn(string $k, int $v): array => ['category' => $k, 'minor' => $v],
                 array_keys($byCategory), array_values($byCategory),
+            ),
+            'byHeading' => array_map(
+                static fn(string $k, int $v): array => ['category' => $k, 'minor' => $v],
+                array_keys($byHeading), array_values($byHeading),
             ),
             'byPayer' => $byPayer,
             'byShare' => $byShare,
