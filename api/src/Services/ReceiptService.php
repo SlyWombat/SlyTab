@@ -311,6 +311,11 @@ final class ReceiptService
                     . ($currencyHint !== ''
                         ? " (if the symbol is ambiguous, e.g. just '\$', the buyer expects {$currencyHint})"
                         : '')
+                    . '; currencyExplicit is true ONLY when the receipt itself pins the '
+                    . 'currency down — a 3-letter code, a currency name like "pesos '
+                    . 'chilenos", or a symbol used by one single currency (€, £, ₹). A '
+                    . 'bare "$" or "peso" fits many currencies, so currencyExplicit is '
+                    . 'false even if you can guess'
                     . '. A "suggested tip"/"Tip 10%"/"propina sugerida" line printed near '
                     . 'the total is tip, never tax. Loyalty/rewards lines ("credits earned", '
                     . 'points, cashback, "Uber One credits") are NOT items and NOT part of '
@@ -341,10 +346,8 @@ final class ReceiptService
         }
         $doc = json_decode($resp['message']['content'], true, 16, JSON_THROW_ON_ERROR);
 
-        $currency = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
-        if ($currency === null && $currencyHint !== '') {
-            $currency = $currencyHint; // model saw only "$" — trust the buyer's context
-        }
+        $model = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
+        $currency = self::resolveCurrency($model, ($doc['currencyExplicit'] ?? null) === true, $currencyHint);
         $scale = \SlyTab\Support\Money::scale($currency ?? 'XXX');
         $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * $scale) : null;
         $items = [];
@@ -399,6 +402,21 @@ final class ReceiptService
         return $delta <= 0.0001 ? 'high' : ($delta <= 0.02 ? 'medium' : 'low');
     }
 
+    /**
+     * Pick the receipt currency. A currency the model actually read off the
+     * paper still wins (FR-4), but the caller's hint — the EXIF-GPS country
+     * when available, else the buyer's chosen currency — outranks a model
+     * *guess*: a Chilean "$"-only receipt came back ARS over a correct CLP
+     * hint (report 01KYFV22E099CMFNW7867SW0FV).
+     */
+    public static function resolveCurrency(?string $modelCurrency, bool $explicit, string $hint): ?string
+    {
+        if ($modelCurrency !== null && ($explicit || $hint === '')) {
+            return $modelCurrency;
+        }
+        return $hint !== '' ? $hint : $modelCurrency;
+    }
+
     /** @return array<string,mixed> decimal-dollars schema for the local model */
     private static function localSchema(): array
     {
@@ -409,6 +427,7 @@ final class ReceiptService
                 'merchant' => ['type' => ['string', 'null']],
                 'date' => ['type' => ['string', 'null']],
                 'currency' => ['type' => ['string', 'null']],
+                'currencyExplicit' => ['type' => 'boolean'],
                 'items' => [
                     'type' => 'array',
                     'items' => [
@@ -426,7 +445,7 @@ final class ReceiptService
                 'tip' => $nullableNumber,
                 'total' => $nullableNumber,
             ],
-            'required' => ['merchant', 'date', 'currency', 'items', 'subtotal', 'tax', 'tip', 'total'],
+            'required' => ['merchant', 'date', 'currency', 'currencyExplicit', 'items', 'subtotal', 'tax', 'tip', 'total'],
         ];
     }
 
@@ -465,7 +484,10 @@ final class ReceiptService
                             . 'cashback) are NOT items and NOT part of the bill — omit them. '
                             . 'quantity may be fractional (weighed goods). '
                             . 'confidence is "low" when items+tax+tip differ from the total by more '
-                            . 'than 2%.'
+                            . 'than 2%. currencyExplicit is true ONLY when the receipt itself pins '
+                            . 'the currency down — a 3-letter code, a currency name like "pesos '
+                            . 'chilenos", or a symbol used by one single currency (€, £, ₹); a bare '
+                            . '"$" or "peso" fits many currencies, so it is false even if you can guess.'
                             . ($currencyHint !== ''
                                 ? " If the currency symbol is ambiguous (e.g. just '\$'), the buyer expects {$currencyHint}."
                                 : ''),
@@ -486,10 +508,9 @@ final class ReceiptService
         foreach ($message->content as $block) {
             if ($block->type === 'text') {
                 $doc = json_decode($block->text, true, 16, JSON_THROW_ON_ERROR);
-                $currency = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
-                if ($currency === null && $currencyHint !== '') {
-                    $currency = $currencyHint;
-                }
+                $model = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
+                $currency = self::resolveCurrency($model, ($doc['currencyExplicit'] ?? null) === true, $currencyHint);
+                unset($doc['currencyExplicit']);
                 $doc['currency'] = $currency;
                 $doc['scale'] = \SlyTab\Support\Money::scale($currency ?? 'XXX');
                 return $doc;
@@ -508,6 +529,7 @@ final class ReceiptService
                 'merchant' => ['type' => ['string', 'null']],
                 'date' => ['type' => ['string', 'null']],
                 'currency' => ['type' => ['string', 'null']],
+                'currencyExplicit' => ['type' => 'boolean'],
                 'items' => [
                     'type' => 'array',
                     'items' => [
@@ -527,7 +549,7 @@ final class ReceiptService
                 'totalMinor' => $nullableInt,
                 'confidence' => ['type' => 'string', 'enum' => ['high', 'medium', 'low']],
             ],
-            'required' => ['merchant', 'date', 'currency', 'items', 'subtotalMinor', 'taxMinor', 'tipMinor', 'totalMinor', 'confidence'],
+            'required' => ['merchant', 'date', 'currency', 'currencyExplicit', 'items', 'subtotalMinor', 'taxMinor', 'tipMinor', 'totalMinor', 'confidence'],
             'additionalProperties' => false,
         ];
     }

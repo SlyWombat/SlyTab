@@ -118,7 +118,9 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-4.7 (SHOULD)** The receipt photo's EXIF GPS supplies the currency
   hint (photographed-in-Chile → CLP), read client-side so location never
   leaves the device as anything but a currency code. A currency printed
-  on the receipt still wins; line items the parser misreads from
+  on the receipt still wins, but only one the receipt states explicitly
+  (a code, currency name, or single-currency symbol) — the hint outranks
+  a parser *guess* from an ambiguous "$"; line items the parser misreads from
   non-bill content (loyalty credits) are individually ignorable in the
   assign step.
 
