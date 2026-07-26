@@ -54,13 +54,13 @@ IOS=$(EAS_BUILD_PLATFORM=ios "$REPO/scripts/ops/eas.sh" build -p ios \
       --profile ios-testflight --non-interactive --no-wait --json 2>>"$LOG" | ejson || true)
 say "build ids -> android=$AND ios=$IOS"
 
-python3 - "$STATE" "$IOS" "$AND" "${IOSV% *}" "$ISSUES" <<'PY'
+python3 - "$STATE" "$IOS" "$AND" "${IOSV% *}" "${IOSV#* }" "$ISSUES" <<'PY'
 import json, sys
-state, ios, android, ver, reports = sys.argv[1:6]
+state, ios, android, ver, iosbn, reports = sys.argv[1:7]
 json.dump({
     "version": ver,
     "reports": [i.strip() for i in reports.split(',') if i.strip()],
-    "ios": {"build": ios, "stage": "building" if ios else "error"},
+    "ios": {"build": ios, "buildNumber": iosbn, "stage": "building" if ios else "error"},
     "android": {"build": android, "stage": "building" if android else "error"},
 }, open(state, 'w'), indent=2)
 PY

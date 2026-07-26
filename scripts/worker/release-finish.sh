@@ -59,12 +59,16 @@ if [ "$(get "['android']['stage']")" = "building" ]; then
     BASE="https://$CPANEL_HOST:${CPANEL_PORT:-2083}"; AUTH="Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN"
     enc() { python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$1"; }
     curl -sS -m 60 "$BASE/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=mkdir&path=$(enc "$WEB_ROOT")&name=downloads" -H "$AUTH" >/dev/null || true
+    # Both public link names must stay current: the web sign-in page links
+    # slytab.apk, the marketing "Get the apps" page links slytab-latest.apk.
     OK=$(curl -sS -m 300 "$BASE/execute/Fileman/upload_files" -H "$AUTH" \
       -F "dir=$WEB_ROOT/downloads" -F "overwrite=1" \
       -F "file-1=@$TMP;filename=slytab.apk" \
+      -F "file-2=@$TMP;filename=slytab-latest.apk" \
+      -F "file-3=@$TMP;filename=slytab-$VER.apk" \
       | python3 -c "import json,sys;print(json.load(sys.stdin).get('status'))")
     rm -f "$TMP"
-    [ "$OK" = "1" ] && { setstage android done; say "APK uploaded -> downloads/slytab.apk"; } || say "APK upload failed (retry next cycle)"
+    [ "$OK" = "1" ] && { setstage android done; say "APK uploaded -> downloads/slytab.apk + slytab-latest.apk + slytab-$VER.apk"; } || say "APK upload failed (retry next cycle)"
   fi
 fi
 
@@ -91,7 +95,10 @@ fi
 
 if [ "$(get "['ios']['stage']")" = "uploaded" ]; then
   # Find the freshly uploaded ASC build; submit it for beta review once VALID.
-  read -r BID BSTATE < <("$OPS/asc-api.sh" GET "/v1/builds?filter%5Bapp%5D=$APP_ID&filter%5Bversion%5D=$(get "['ios']['stage']" >/dev/null; python3 -c "import json;print(json.load(open('$STATE'))['version'])")&sort=-uploadedDate&limit=1" \
+  # ASC's build "version" attribute is the CFBundleVersion (build NUMBER, e.g.
+  # "4"), not the marketing version — filter by the recorded buildNumber.
+  IOSBN=$(get "['ios']['buildNumber']")
+  read -r BID BSTATE < <("$OPS/asc-api.sh" GET "/v1/builds?filter%5Bapp%5D=$APP_ID&filter%5Bversion%5D=$IOSBN&sort=-uploadedDate&limit=1" \
       | python3 -c "import json,sys;d=json.load(sys.stdin).get('data',[]);b=d[0] if d else {};print(b.get('id',''), b.get('attributes',{}).get('processingState',''))")
   say "asc build: id=${BID:-none} state=${BSTATE:-?}"
   if [ -n "$BID" ] && [ "$BSTATE" = "VALID" ]; then
