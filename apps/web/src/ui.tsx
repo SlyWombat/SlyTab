@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, type Currency } from '@slytab/core';
 
 const BADGE_HUES = ['#79aaff', '#6ee0d2', '#f5a05e', '#ff8fb2', '#b78cff', '#6fc2ff'];
@@ -30,6 +30,14 @@ export function Amount({
 }
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  // Lock the page behind the sheet: without this, a downward swipe with the
+  // sheet's scroller already at the top chains into the document and mobile
+  // Chrome's pull-to-refresh reloads the app, discarding the sheet (#42).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   return (
     <>
       <div className="sheet-back" onClick={onClose} />

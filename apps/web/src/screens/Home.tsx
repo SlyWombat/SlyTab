@@ -512,28 +512,6 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </label>
         <button className="btn primary block">Save profile</button>
       </form>
-      {sessions !== null && sessions.length > 0 && (
-        <>
-          <div className="sect" style={{ paddingLeft: 0 }}>Where you're signed in</div>
-          {sessions.map((sess) => (
-            <div className="row" key={sess.id}>
-              <div className="grow">
-                <div className="name" style={{ fontSize: '0.84375rem' }}>
-                  {deviceName(sess.deviceLabel)}{sess.current && <span className="muted"> · this device</span>}
-                </div>
-                <div className="meta">last active {ago(sess.lastSeenAt)}</div>
-              </div>
-              {!sess.current && (
-                <button className="btn sm" onClick={() => {
-                  api.revokeSession(sess.id)
-                    .then(() => setSessions(sessions.filter((x) => x.id !== sess.id)))
-                    .catch((e) => setError(e.message));
-                }}>Sign out</button>
-              )}
-            </div>
-          ))}
-        </>
-      )}
       {/* Issue #27: the phone apps, for people using the web app. */}
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
         href={`${import.meta.env.BASE_URL}marketing/apps/`} target="_blank" rel="noreferrer">
@@ -570,6 +548,30 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
             </button>
           </div>
         </div>
+      )}
+      {/* Loads async, so it lives below every button: inserted higher up it
+          shifted the layout and moved the button being pressed (#42). */}
+      {sessions !== null && sessions.length > 0 && (
+        <>
+          <div className="sect" style={{ paddingLeft: 0 }}>Where you're signed in</div>
+          {sessions.map((sess) => (
+            <div className="row" key={sess.id}>
+              <div className="grow">
+                <div className="name" style={{ fontSize: '0.84375rem' }}>
+                  {deviceName(sess.deviceLabel)}{sess.current && <span className="muted"> · this device</span>}
+                </div>
+                <div className="meta">last active {ago(sess.lastSeenAt)}</div>
+              </div>
+              {!sess.current && (
+                <button className="btn sm" onClick={() => {
+                  api.revokeSession(sess.id)
+                    .then(() => setSessions(sessions.filter((x) => x.id !== sess.id)))
+                    .catch((e) => setError(e.message));
+                }}>Sign out</button>
+              )}
+            </div>
+          ))}
+        </>
       )}
       <p className="muted" style={{ textAlign: 'center', paddingTop: 10 }}>
         Account: {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>

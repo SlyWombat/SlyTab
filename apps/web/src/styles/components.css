@@ -62,9 +62,13 @@ button.row:hover { background: var(--ss-surface-2); }
   border: 1px solid var(--ss-danger); color: var(--ss-text);
   border-radius: 10px; padding: 10px 12px; font-size: 0.8125rem; margin-bottom: var(--ss-space-3); }
 
-.sheet-back { position: fixed; inset: 0; background: rgb(4 7 14 / 0.62); z-index: 10; }
+.sheet-back { position: fixed; inset: 0; background: rgb(4 7 14 / 0.62); z-index: 10;
+  touch-action: none; }
 .sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 11;
-  width: min(480px, 100vw); max-height: 88vh; overflow-y: auto;
+  /* dvh, not vh: with the mobile URL bar shown, 88vh overflows the visible
+     viewport upward and the sheet header is unreachable (#42). */
+  width: min(480px, 100vw); max-height: 88vh; max-height: 88dvh;
+  overflow-y: auto; overscroll-behavior-y: contain;
   background: var(--ss-surface); border-radius: 20px 20px 0 0;
   padding: var(--ss-space-4) var(--ss-space-4)
            calc(var(--ss-space-4) + env(safe-area-inset-bottom, 0px));
