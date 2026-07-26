@@ -40,6 +40,19 @@ Date,Description,Category,Cost,Currency,Dave S,Alice R,Marc T
 ,Total balance,,,,,,
 CSV;
 
+    /**
+     * A zero-decimal group (CLP has scale 1, not 100). Splitwise still
+     * writes decimal shares for it, so the importer has to round to whole
+     * pesos AND keep the row balance-exact.
+     */
+    private const CLP_CSV = <<<CSV
+Date,Description,Category,Cost,Currency,Ana P,Bruno L,Caro M
+2026-06-10,Airport Cabify,Taxi,42400,CLP,-14133.33,-14133.33,28266.66
+2026-06-11,Wine bar,Liquor,21670,CLP,14446.67,-7223.33,-7223.34
+
+,Total balance,,,,,,
+CSV;
+
     public static function setUpBeforeClass(): void
     {
         try {
@@ -179,5 +192,85 @@ CSV;
         $verbs = array_count_values(array_column($activity['items'], 'verb'));
         self::assertSame(1, $verbs['imported'] ?? 0);
         self::assertArrayNotHasKey('added', $verbs);
+    }
+
+    /**
+     * Regression: amounts were converted with a hardcoded x100, so every
+     * row in a zero-decimal currency imported 100x too large (a 42,400
+     * CLP cab ride became 4,240,000 CLP) — self-consistently, so balances
+     * still summed to zero and nothing looked wrong until you read one.
+     */
+    public function testZeroDecimalCurrencyKeepsItsScale(): void
+    {
+        $users = [];
+        foreach (['ana' => 'Ana P', 'bruno' => 'Bruno L', 'caro' => 'Caro M'] as $k => $display) {
+            $r = self::json($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$k}@example.com", 'password' => 'a-long-enough-password', 'displayName' => $display,
+            ]));
+            $users[$k] = ['id' => $r['user']['id'], 'token' => $r['token']];
+        }
+        $tok = $users['ana']['token'];
+        $group = self::json($this->request('POST', '/api/v1/groups', [
+            'name' => 'Santiago', 'emoji' => '🇨🇱', 'homeCurrency' => 'CLP',
+        ], $tok));
+        $invite = self::json($this->request('POST', "/api/v1/groups/{$group['id']}/invites", [], $tok));
+        foreach (['bruno', 'caro'] as $k) {
+            $this->request('POST', "/api/v1/join/{$invite['token']}", [], $users[$k]['token']);
+        }
+
+        $mapping = json_encode([
+            'Ana P' => $users['ana']['id'], 'Bruno L' => $users['bruno']['id'], 'Caro M' => $users['caro']['id'],
+        ], JSON_THROW_ON_ERROR);
+        $result = self::json($this->request(
+            'POST', "/api/v1/groups/{$group['id']}/import/splitwise",
+            ['mapping' => $mapping], $tok, self::csvUpload(self::CLP_CSV),
+        ));
+        self::assertSame([], $result['errors'], json_encode($result));
+        self::assertSame(2, $result['imported']['expenses']);
+
+        // Whole pesos, not pesos x100.
+        $expenses = self::json($this->request('GET', "/api/v1/groups/{$group['id']}/expenses", null, $tok));
+        $byDesc = array_column($expenses['items'], 'amountMinor', 'description');
+        self::assertSame(42400, $byDesc['Airport Cabify']);
+        self::assertSame(21670, $byDesc['Wine bar']);
+
+        // Still balance-exact after the rounding residuals are absorbed.
+        $net = self::json($this->request('GET', "/api/v1/groups/{$group['id']}/balances", null, $tok))['net'];
+        self::assertSame(0, array_sum($net));
+        self::assertSame(313, $net[$users['ana']['id']]);
+        self::assertSame(-21356, $net[$users['bruno']['id']]);
+        self::assertSame(21043, $net[$users['caro']['id']]);
+    }
+
+    /**
+     * Regression: a file that isn't UTF-8 text made preg_replace('/u')
+     * return null, which the BOM strip fed straight into preg_split() —
+     * a TypeError, so the user got a 500 instead of being told what to
+     * upload. Excel re-saving the export as Windows-1252 or .xlsx is the
+     * way people actually hit this.
+     */
+    public function testNonCsvAndNonUtf8UploadsGetAClearError(): void
+    {
+        $r = self::json($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'enc@example.com', 'password' => 'a-long-enough-password', 'displayName' => 'Enc',
+        ]));
+        $tok = $r['token'];
+        $group = self::json($this->request('POST', '/api/v1/groups', [
+            'name' => 'Encoding', 'emoji' => '📄', 'homeCurrency' => 'CAD',
+        ], $tok));
+        $path = "/api/v1/groups/{$group['id']}/import/splitwise";
+
+        // A .xlsx workbook (zip magic) — not a 500.
+        $xlsx = $this->request('POST', $path, ['dryRun' => '1'], $tok,
+            self::csvUpload("PK\x03\x04" . str_repeat("\x00\x01", 32)));
+        self::assertSame(422, $xlsx->getStatusCode());
+        self::assertStringContainsString('spreadsheet', (string) $xlsx->getBody());
+
+        // Windows-1252 (what Excel writes): accented names must survive.
+        $latin1 = "Date,Description,Category,Cost,Currency,Jos\xe9 R,Ana P\n"
+            . "2026-06-01,Caf\xe9,Dining out,10.00,CAD,5.00,-5.00\n";
+        $ok = $this->request('POST', $path, ['dryRun' => '1'], $tok, self::csvUpload($latin1));
+        self::assertSame(200, $ok->getStatusCode(), (string) $ok->getBody());
+        self::assertSame(['José R', 'Ana P'], self::json($ok)['members']);
     }
 }

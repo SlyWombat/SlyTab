@@ -7,6 +7,7 @@ namespace SlyTab\Services;
 use PDO;
 use SlyTab\Db\Db;
 use SlyTab\Support\ApiException;
+use SlyTab\Support\Money;
 use SlyTab\Support\Ulid;
 
 /**
@@ -127,13 +128,17 @@ class SplitwiseApiImportService
      */
     private function importOne(array $group, string $userId, array $e, array $mapping, array &$imported): void
     {
+        $date = substr((string) $e['date'], 0, 10);
+        $currency = strtoupper((string) ($e['currency_code'] ?? $group['homeCurrency']));
+        $cost = self::minor((string) $e['cost'], $currency);
+
         $payers = [];
         $shares = [];
         foreach ($e['users'] ?? [] as $u) {
             $swId = (string) ($u['user_id'] ?? $u['user']['id'] ?? '');
             $mapped = $mapping[$swId] ?? null;
-            $paid = self::cents((string) ($u['paid_share'] ?? '0'));
-            $owed = self::cents((string) ($u['owed_share'] ?? '0'));
+            $paid = self::minor((string) ($u['paid_share'] ?? '0'), $currency);
+            $owed = self::minor((string) ($u['owed_share'] ?? '0'), $currency);
             if ($mapped === null) {
                 if ($paid !== 0 || $owed !== 0) {
                     throw new ApiException('VALIDATION', "Splitwise member {$swId} is not mapped", 422);
@@ -151,10 +156,9 @@ class SplitwiseApiImportService
             $imported['skipped']++;
             return;
         }
-
-        $date = substr((string) $e['date'], 0, 10);
-        $cost = self::cents((string) $e['cost']);
-        $currency = strtoupper((string) ($e['currency_code'] ?? $group['homeCurrency']));
+        $label = "\"{$e['description']}\"";
+        $payers = self::settle($payers, $cost, "payer amounts on {$label}");
+        $shares = self::settle($shares, $cost, "share amounts on {$label}");
 
         if (($e['payment'] ?? false) === true) {
             if (count($payers) !== 1 || count($shares) !== 1) {
@@ -188,10 +192,44 @@ class SplitwiseApiImportService
         $imported['expenses']++;
     }
 
-    /** Splitwise decimals arrive as strings ("12.34") — convert exactly. */
-    private static function cents(string $decimal): int
+    /**
+     * Splitwise decimals arrive as strings ("12.34") — convert at the
+     * expense's own currency scale, not a hardcoded 100, or every
+     * zero-decimal row (CLP, JPY, KRW…) lands 100x too large.
+     */
+    private static function minor(string $decimal, string $currency): int
     {
-        return (int) round(((float) $decimal) * 100);
+        return (int) round(((float) $decimal) * Money::scale($currency));
+    }
+
+    /**
+     * Splitwise splits a zero-decimal cost into decimal shares ("7223.33"
+     * CLP), so rounding each to whole units can miss the total by a unit
+     * or two — nudge the largest entry, which is what the CSV importer's
+     * fixResidual() does, so the expense still validates.
+     *
+     * @param list<array{userId:string, amountMinor:int}> $rows
+     * @return list<array{userId:string, amountMinor:int}>
+     */
+    private static function settle(array $rows, int $cost, string $label): array
+    {
+        $residual = $cost - array_sum(array_column($rows, 'amountMinor'));
+        if ($residual === 0 || $rows === []) {
+            return $rows;
+        }
+        if (abs($residual) > count($rows)) {
+            throw new ApiException('VALIDATION', "{$label} miss the total by more than rounding ({$residual})", 422);
+        }
+        $target = 0;
+        foreach ($rows as $i => $r) {
+            $best = $rows[$target];
+            if ($r['amountMinor'] > $best['amountMinor']
+                || ($r['amountMinor'] === $best['amountMinor'] && $r['userId'] < $best['userId'])) {
+                $target = $i;
+            }
+        }
+        $rows[$target]['amountMinor'] += $residual;
+        return $rows;
     }
 
     /**

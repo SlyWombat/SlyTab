@@ -7,6 +7,7 @@ namespace SlyTab\Services;
 use PDO;
 use SlyTab\Db\Db;
 use SlyTab\Support\ApiException;
+use SlyTab\Support\Money;
 use SlyTab\Support\Ulid;
 
 /**
@@ -228,10 +229,41 @@ final class ImportService
 
     // ---- CSV parsing ----
 
+    /**
+     * Uploads are not always the UTF-8 CSV Splitwise handed out: people
+     * open it in Excel first, which re-saves as Windows-1252 (any accented
+     * name then breaks) or as a .xlsx workbook. Both used to reach the BOM
+     * strip below, where preg_* with /u returns null on invalid UTF-8 and
+     * the request 500'd. Fail with something the user can act on instead.
+     */
+    private static function asUtf8Text(string $csv): string
+    {
+        if (str_starts_with($csv, "PK\x03\x04") || str_contains($csv, "\0")) {
+            throw new ApiException(
+                'VALIDATION',
+                'that looks like a spreadsheet, not a CSV — in Splitwise use Export as CSV and upload that file',
+                422,
+            );
+        }
+        if (mb_check_encoding($csv, 'UTF-8')) {
+            return $csv;
+        }
+        $converted = mb_convert_encoding($csv, 'UTF-8', 'Windows-1252');
+        if (!mb_check_encoding($converted, 'UTF-8')) {
+            throw new ApiException(
+                'VALIDATION',
+                'this file is not readable as text — re-download the CSV export from Splitwise',
+                422,
+            );
+        }
+        return $converted;
+    }
+
     /** @return array{members: list<string>, rows: list<array<string,mixed>>} */
     private static function parse(string $csv): array
     {
-        $csv = preg_replace('/^\x{FEFF}/u', '', $csv); // strip BOM
+        $csv = self::asUtf8Text($csv);
+        $csv = preg_replace('/^\x{FEFF}/u', '', $csv) ?? $csv; // strip BOM
         $lines = preg_split('/\r\n|\r|\n/', $csv);
         if ($lines === false || count($lines) < 2) {
             throw new ApiException('VALIDATION', 'this does not look like a Splitwise CSV export', 422);
@@ -267,14 +299,14 @@ final class ImportService
             }
             $nets = [];
             foreach ($members as $k => $name) {
-                $nets[$name] = self::cents($f[5 + $k] ?? '0');
+                $nets[$name] = self::minor($f[5 + $k] ?? '0', $currency);
             }
             $rows[] = [
                 'line' => $i + 2,
                 'date' => $date,
                 'description' => $description === '' ? '(no description)' : $description,
                 'category' => trim($f[2] ?? ''),
-                'cost' => self::cents($f[3] ?? '0'),
+                'cost' => self::minor($f[3] ?? '0', $currency),
                 'currency' => $currency,
                 'nets' => $nets,
                 'isPayment' => strcasecmp(trim($f[2] ?? ''), 'Payment') === 0,
@@ -283,13 +315,19 @@ final class ImportService
         return ['members' => $members, 'rows' => $rows];
     }
 
-    private static function cents(string $value): int
+    /**
+     * Decimal text → minor units at the ROW's currency scale. Splitwise
+     * writes decimals even for zero-decimal currencies ("-7223.33" CLP),
+     * so those round to whole units here and fixResidual() absorbs the
+     * leftover; assuming cents made every CLP/JPY/KRW row 100x too big.
+     */
+    private static function minor(string $value, string $currency): int
     {
         $value = str_replace(',', '', trim($value));
         if ($value === '' || !is_numeric($value)) {
             return 0;
         }
-        return (int) round(((float) $value) * 100);
+        return (int) round(((float) $value) * Money::scale($currency));
     }
 
     public static function mapCategory(string $splitwise): string
