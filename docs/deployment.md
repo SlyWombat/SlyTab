@@ -38,7 +38,7 @@ Browser ── https://electricrv.ca/slytab ────────────
 | Admin endpoints | `POST /slytab/api/internal/{migrate,fetch-rates}` with `X-Admin-Token` |
 | Prod DB | `slytab_prod` on kdocker2's `slytab-mysql`, via VM `147.5.121.145:3307`, TLS required, CA pinned (`scripts/prod/mysql-ca.pem` — public cert) |
 | Secrets | Local repo `.env` holds `CPANEL_*`, `WEB_ROOT`, and all `PROD_*` values; the host's copy lives in `~/slytab/config.env` (0644, above web root) |
-| Receipt scanning | **Local vision model** (qwen2.5vl:7b on kdocker2's Ollama) via VM `:3308` — photos never leave home; ~6s/scan. `RECEIPT_ENGINE=auto` prefers local, uses Claude only if `ANTHROPIC_API_KEY` is set |
+| Receipt scanning | **Local vision model** (qwen2.5vl:7b on kdocker2's Ollama) via VM `:3308` — photos never leave home; ~3-6s/scan warm. The API pins the model (`keep_alive: -1`) because a cold load adds ~20s and pushes the synchronous parse response past the host's ~30s limit (scan then fails client-side though the parse succeeds). After an Ollama restart the first scan still pays one cold load. `RECEIPT_ENGINE=auto` prefers local, uses Claude only if `ANTHROPIC_API_KEY` is set |
 | Rathole configs | VM `/etc/rathole/server.toml` (systemd `rathole-server`); kdocker2 `/data/stacks/tesla-log/relay/client.toml` (`tesla-relay-client`, watched by `relay-guard.sh`) — both have `.bak` copies from before the SlyTab service was added |
 | OCI | Port 3307 opened in the VM's security list ("SlyTab MySQL tunnel" rules); backup of prior rules at kdocker2 `/tmp/sl-ingress-backup.json` |
 

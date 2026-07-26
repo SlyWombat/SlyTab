@@ -290,6 +290,12 @@ final class ReceiptService
         $body = json_encode([
             'model' => Env::get('LOCAL_LLM_MODEL', 'qwen2.5vl:7b'),
             'stream' => false,
+            // Pin the model in memory. A cold load adds ~20s, pushing the
+            // synchronous upload+parse response past the shared host's ~30s
+            // limit — the client then reports a network failure even though
+            // the parse completed (bug report 01KYDXM6JR, 2026-07-26).
+            // Warm scans (~3-6s) stay far under it.
+            'keep_alive' => -1,
             'format' => self::localSchema(),
             'options' => ['temperature' => 0],
             'messages' => [[
