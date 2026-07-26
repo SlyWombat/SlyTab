@@ -188,7 +188,15 @@ function AppShell() {
   }, [nav.screen]);
 
   return (
-    <View style={[s.app, { paddingTop: insets.top }]}>
+    // The TAB BAR owns the bottom inset so its surface reaches the screen
+    // edge (#46) — but only the tab screens have one. Group detail, sign-in
+    // and onboarding are full-screen routes, so the shell pads for them or
+    // their content runs under the gesture bar, which is #40 all over again.
+    <View style={[s.app, {
+      paddingTop: insets.top,
+      paddingBottom: (user !== null && user.onboardedAt !== null && nav.screen !== 'group')
+        ? 0 : insets.bottom,
+    }]}>
       {restoring ? (
         <View style={[s.screen, { justifyContent: 'center' }]}>
           <ActivityIndicator color={c.brand} />
@@ -605,7 +613,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
         keyExtractor={(i) => i.group.id}
         onRefresh={reload}
         refreshing={false}
-        contentContainerStyle={{ paddingBottom: 96 }}
+        contentContainerStyle={{ paddingBottom: 150 }}
         ListHeaderComponent={(
           <View>
             {chrome}
@@ -1380,7 +1388,7 @@ function GroupScreen({ groupId, user, onBack }: {
             {!group.isDirect && <Text style={[s.meta, { fontSize: 12 }]}> ✎</Text>}
           </Text>
           <Text style={s.meta}>
-            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} members · ${group.homeCurrency}`}
+            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} member${group.members.length === 1 ? '' : 's'} · ${group.homeCurrency}`}
           </Text>
         </Pressable>
         {myNet === 0 ? <Text style={s.meta}>settled ✓</Text>
@@ -1436,7 +1444,7 @@ function GroupScreen({ groupId, user, onBack }: {
           keyExtractor={(e) => e.id}
           onRefresh={reload}
           refreshing={false}
-          contentContainerStyle={{ paddingBottom: 96 }}
+          contentContainerStyle={{ paddingBottom: 150 }}
           ListEmptyComponent={<Text style={s.meta}>No expenses yet.</Text>}
           ListFooterComponent={actions}
           ListHeaderComponent={(
@@ -1493,7 +1501,7 @@ function GroupScreen({ groupId, user, onBack }: {
           }}
         />
       ) : tab === 'activity' ? (
-        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
           {chrome}
           {feed.length === 0 && <Text style={s.meta}>Nothing yet.</Text>}
           {feed.map((ev) => (
@@ -1511,7 +1519,7 @@ function GroupScreen({ groupId, user, onBack }: {
           {actions}
         </ScrollView>
       ) : tab === 'totals' ? (
-        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
           {chrome}
           {totals === null ? <ActivityIndicator color={c.brand} /> : (
             <>
@@ -1570,7 +1578,7 @@ function GroupScreen({ groupId, user, onBack }: {
           {actions}
         </ScrollView>
       ) : (
-        <ScrollView contentContainerStyle={{ paddingBottom: 96 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
           {chrome}
           {group.members.map((m) => (
             <View style={s.row} key={m.id}>

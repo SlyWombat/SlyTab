@@ -177,7 +177,7 @@ export function GroupScreen({ groupId, user, onBack }: {
             {!group.isDirect && <span className="muted" style={{ fontSize: '0.75rem' }}> ✎</span>}
           </h1>
           <div className="muted">
-            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} members · ${group.homeCurrency}`}
+            {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} member${group.members.length === 1 ? '' : 's'} · ${group.homeCurrency}`}
           </div>
         </button>
         <div className="spacer" />
