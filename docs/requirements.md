@@ -46,7 +46,11 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   the address is already registered. On mobile (issue #39), Google sign-in
   runs in the system browser via a one-time handoff: the app keeps a secret
   verifier and polls to claim the session, so the browser page (and anything
-  that sees its URL) never holds a session token.
+  that sees its URL) never holds a session token. The button's availability
+  is cached on-device so it renders immediately on later launches, and after
+  the browser half completes the page bounces back via `slytab://signed-in`
+  (with a manual "Open SlyTab" fallback); the app claims the session the
+  moment it returns to the foreground (issue #40).
 
 ### 2.2 Groups & membership
 

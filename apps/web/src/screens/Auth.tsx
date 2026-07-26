@@ -114,7 +114,13 @@ export function AppSignIn({ state }: { state: string }) {
           </p>
           {error && <div className="error" role="alert">{error}</div>}
           <GoogleButton
-            onCredential={(credential) => api.handoffGoogle(state, credential).then(() => setDone(true))}
+            onCredential={(credential) => api.handoffGoogle(state, credential).then(() => {
+              setDone(true);
+              // Issue #40: bounce straight back into the app. Browsers may
+              // block scheme navigation without a fresh gesture — the
+              // "Open SlyTab" button below stays as the fallback.
+              location.assign('slytab://signed-in');
+            })}
             onError={setError}
           />
         </>

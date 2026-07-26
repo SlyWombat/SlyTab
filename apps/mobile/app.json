@@ -3,6 +3,7 @@
     "name": "SlyTab",
     "slug": "slytab",
     "scheme": "slytab",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0c1220",
@@ -18,6 +19,7 @@
     "android": {
       "package": "com.slywombat.slytab",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0c1220"
       }
     },

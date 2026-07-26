@@ -15,6 +15,13 @@ Mobile: bottom tab bar with four tabs — **Home**, **Groups**, **Activity**,
 Web: left sidebar with the same four destinations; the same FAB pattern
 applies (plus the `n` shortcut, §3).
 
+Interim mobile shell (until the tab bar lands): Home is the root, groups
+open as a pushed screen, and Profile opens as a sheet from the user's
+avatar badge (initial on their badge colour) in the Home header — an
+icon, not a text button (issue #40). All screens and sheets respect the
+device safe areas; nothing may render under the Android gesture bar or
+the status bar (issue #40, SDK 54 edge-to-edge).
+
 Deep links: `slytab://join/<token>` (and
 `electricrv.ca/slytab/join/<token>`) → Join Group screen;
 `slytab://expense/<id>` → Expense Detail (used by push notifications).
@@ -49,7 +56,10 @@ the server reports it configured). On mobile, `Continue with Google`
 (issue #39) opens the system browser to the web `/app-signin/<state>`
 page; the button shows "Waiting for your browser…" with a `Cancel` link
 until the app claims the session, and the browser page ends on "You're
-signed in ✓ — switch back to the SlyTab app" with an `Open SlyTab` link.
+signed in ✓ — switch back to the SlyTab app", auto-opening
+`slytab://signed-in` with an `Open SlyTab` link as fallback (issue #40).
+The mobile button renders immediately from the cached last-known server
+answer rather than waiting on the config fetch.
 
 **First-run setup** (create only) — pick avatar colour/emoji, default
 currency (pre-set CAD), optional payment handles with a "you can add these

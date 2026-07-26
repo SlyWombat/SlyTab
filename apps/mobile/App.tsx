@@ -1,9 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
+  ActivityIndicator, Alert, AppState, FlatList, Image, KeyboardAvoidingView, Linking, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -74,6 +75,9 @@ function Field({ label, ...input }: { label: string } & React.ComponentProps<typ
 function SheetModal({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode;
 }) {
+  // The modal covers the full screen (statusBarTranslucent), so the sheet
+  // must keep its own content above the Android gesture bar (issue #40).
+  const insets = useSafeAreaInsets();
   return (
     <Modal transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView
@@ -81,7 +85,7 @@ function SheetModal({ title, onClose, children }: {
         style={{ flex: 1, justifyContent: 'flex-end' }}
       >
         <Pressable style={s.sheetBack} onPress={onClose} />
-        <View style={s.sheet}>
+        <View style={[s.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <View style={s.grabber} />
           <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
             <Text style={[s.sheetTitle, { flex: 1 }]}>{title}</Text>
@@ -104,8 +108,19 @@ function SheetModal({ title, onClose, children }: {
 type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
 
 const TOKEN_KEY = 'slytab.session';
+// Last server answer to "is Google sign-in configured?" — shows the button
+// instantly on later launches instead of after a network round-trip (#40).
+const GOOGLE_READY_KEY = 'slytab.googleReady';
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppShell />
+    </SafeAreaProvider>
+  );
+}
+
+function AppShell() {
   const [user, setUser] = useState<User | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
@@ -146,8 +161,12 @@ export default function App() {
     })();
   }, [user]);
 
+  // SDK 54 draws edge-to-edge on Android, so the app itself keeps content
+  // clear of the status bar and gesture bar (issue #40: bottom overprint).
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={s.app}>
+    <View style={[s.app, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       {restoring ? (
         <View style={[s.screen, { justifyContent: 'center' }]}>
           <ActivityIndicator color={c.brand} />
@@ -187,8 +206,17 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   const [waitingGoogle, setWaitingGoogle] = useState(false);
   const handoff = useRef<{ state: string; verifier: string } | null>(null);
 
+  // Issue #40: the Google button used to appear only after a network
+  // round-trip (seconds on a cold start). Trust the last-known answer
+  // right away, then reconcile with the server.
   useEffect(() => {
-    api.googleConfig().then((cfg) => setGoogleReady(cfg.enabled)).catch(() => {});
+    SecureStore.getItemAsync(GOOGLE_READY_KEY)
+      .then((v) => { if (v === '1') setGoogleReady(true); })
+      .catch(() => {});
+    api.googleConfig().then((cfg) => {
+      setGoogleReady(cfg.enabled);
+      SecureStore.setItemAsync(GOOGLE_READY_KEY, cfg.enabled ? '1' : '0').catch(() => {});
+    }).catch(() => {});
   }, []);
 
   // Issue #39: while the user signs in with Google in the system browser,
@@ -198,8 +226,11 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
     if (!waitingGoogle || handoff.current === null) return;
     const { state, verifier } = handoff.current;
     let active = true;
+    let inFlight = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const r = await api.handoffClaim(state, verifier);
         if (!active) return;
@@ -215,11 +246,21 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
           setError("Google sign-in didn't finish — try again");
           return;
         }
+      } finally {
+        inFlight = false;
       }
       timer = setTimeout(poll, 3000);
     };
     timer = setTimeout(poll, 3000);
-    return () => { active = false; clearTimeout(timer); };
+    // Issue #40: when the browser bounces back to the app (slytab://signed-in
+    // or a manual switch), claim immediately instead of waiting out the timer.
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active' && active && !inFlight) {
+        clearTimeout(timer);
+        void poll();
+      }
+    });
+    return () => { active = false; clearTimeout(timer); sub.remove(); };
   }, [waitingGoogle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function googleSignIn() {
@@ -413,7 +454,10 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       <View style={s.header}>
         <Text style={s.h1}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
         <View style={{ flex: 1 }} />
-        <Btn small label="Profile" onPress={() => setProfileOpen(true)} />
+        <Pressable onPress={() => setProfileOpen(true)} accessibilityRole="button"
+          accessibilityLabel="Profile" hitSlop={8}>
+          <Badge id={user.id} name={user.displayName} size={34} />
+        </Pressable>
       </View>
       {error && <Text style={s.error}>{error}</Text>}
 
@@ -2399,7 +2443,8 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
 
 const s = StyleSheet.create({
   app: { flex: 1, backgroundColor: c.bg },
-  screen: { flex: 1, backgroundColor: c.bg, paddingHorizontal: 16, paddingTop: 56 },
+  // Top/bottom system-bar clearance comes from the AppShell insets.
+  screen: { flex: 1, backgroundColor: c.bg, paddingHorizontal: 16, paddingTop: 12 },
   center: { flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 14 },
   wordmark: { color: c.text, fontSize: 34, fontWeight: '600', letterSpacing: -0.5 },
