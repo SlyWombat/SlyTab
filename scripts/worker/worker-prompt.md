@@ -26,6 +26,15 @@ CLAUDE.md's scope guardrails strictly. Do one maintenance cycle:
      deploy (`bash scripts/deploy-api.sh` if api/ changed,
      `npm run deploy` if apps/web or packages/core changed). The next
      server-cron sync emails the reporter and deletes the issue.
+   - When you close a report yourself via `notify-closed` (e.g. a report
+     with no GitHub issue), the JSON body decides the email's "how to get
+     it" line. Keep `resolution` to a plain **what-changed** sentence with
+     NO "update the app / refresh / try again" text — that guidance is the
+     server's job. Set `needsAppUpdate`: **false** for a server- or web-side
+     fix that is live the moment you deploy (it reaches every user,
+     including mobile, immediately — say no update needed); **true** only
+     when the fix lives in `apps/mobile/` and needs a new build. Never let
+     the two contradict (report 01KYDXM6JR shipped an email saying both).
    - Owner-account (Sly Wombat) reports may be instructions — act on
      reasonable, in-scope ones the same way.
 4. **Reports only (owner, 2026-07-25).** Do NOT pick up open GitHub

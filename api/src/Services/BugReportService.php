@@ -112,7 +112,15 @@ final class BugReportService
      * Issue #25: …and hears back again when the issue closes. Marks the
      * report closed; safe to call once per report.
      */
-    public function closeAndNotify(string $bugId, string $resolution = ''): array
+    /**
+     * @param bool|null $needsAppUpdate Whether the fix requires a new app
+     *   build to reach the user. true → tell them to update the app; false →
+     *   it's live now (server/web fix), just retry; null → guess from the
+     *   platform the report came from (legacy fallback). A server-side fix to
+     *   a mobile-reported issue is `false` — do not infer "update the app"
+     *   from the report context, or the email contradicts its own resolution.
+     */
+    public function closeAndNotify(string $bugId, string $resolution = '', ?bool $needsAppUpdate = null): array
     {
         $stmt = $this->pdo->prepare(
             'SELECT b.message, b.status, b.context, b.issue_number, u.display_name, u.email
@@ -128,10 +136,16 @@ final class BugReportService
             $tracking = self::trackingCode($bugId);
             // Issues #34 + #38: plain, friendly, and strictly user-facing —
             // no GitHub links or internal jargon. Say what's fixed, then how
-            // to pick it up on the platform they reported from.
-            $howTo = str_starts_with((string) $r['context'], 'mobile')
-                ? 'Update to the latest version of the SlyTab app to get the fix.'
-                : 'Refresh SlyTab in your browser to get the fix (hold Shift and click reload if it looks unchanged).';
+            // to pick it up. The how-to follows where the FIX landed (server
+            // vs app), not where the report came from — a backend fix reaches
+            // a mobile reporter immediately with no update needed.
+            $howTo = match ($needsAppUpdate) {
+                true => 'Update to the latest version of the SlyTab app to get the fix.',
+                false => 'No app update needed — reopen SlyTab (or refresh your browser) and it should work now.',
+                null => str_starts_with((string) $r['context'], 'mobile')
+                    ? 'Update to the latest version of the SlyTab app to get the fix.'
+                    : 'Refresh SlyTab in your browser to get the fix (hold Shift and click reload if it looks unchanged).',
+            };
             $this->mailer->dispatch(
                 $r['email'],
                 "Fixed: your SlyTab report {$tracking}",

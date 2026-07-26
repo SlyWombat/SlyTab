@@ -77,8 +77,12 @@ final class Api
                 return Http::json($rs, ['ok' => true]);
             });
             $g->post('/bugs/{id}/notify-closed', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
-                $resolution = (string) (($rq->getParsedBody() ?? [])['resolution'] ?? '');
-                return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution));
+                $b = $rq->getParsedBody() ?? [];
+                $resolution = (string) ($b['resolution'] ?? '');
+                // Where the fix landed decides the "how to get it" line. Omit
+                // to fall back to the report-platform guess (legacy).
+                $needsAppUpdate = array_key_exists('needsAppUpdate', $b) ? (bool) $b['needsAppUpdate'] : null;
+                return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution, $needsAppUpdate));
             });
             // Manual trigger for the feedback pipeline (cron runs it too).
             $g->post('/bug-sync', fn(Request $rq, Response $rs): Response =>

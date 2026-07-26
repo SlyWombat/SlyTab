@@ -130,12 +130,42 @@ final class BugReportTest extends TestCase
         self::assertSame(0, $r['filed']);
         self::assertSame(0, $r['notified']);
     }
+
+    /**
+     * A backend fix to a mobile-reported bug reaches the user immediately —
+     * the email must say so, not tell them to update the app (report
+     * 01KYDXM6JR: the two lines contradicted each other).
+     */
+    public function testCloseNotifyHowToFollowsWhereFixLanded(): void
+    {
+        $r = self::json($this->request('POST', '/api/v1/auth/register', [
+            'email' => 'scanfail@example.com', 'password' => 'a-long-enough-password', 'displayName' => 'Scanner',
+        ]));
+        $token = $r['token'];
+        $res = $this->request('POST', '/api/v1/bugs', [
+            'message' => 'Receipt scan failed on wifi',
+            'context' => 'mobile android 37 app v0.1.2(3)',
+        ], $token);
+        $reportId = self::json($res)['id'];
+
+        $mailer = new CapturingBugMailer();
+        $svc = new \SlyTab\Services\BugReportService(\SlyTab\Db\Db::pdo(), $mailer);
+
+        // Server-side fix on a mobile report: no app update, and no contradiction.
+        $svc->closeAndNotify($reportId, 'The receipt reader now stays warm, so scans return in seconds.', false);
+        self::assertStringContainsString('No app update needed', $mailer->lastBody);
+        self::assertStringContainsString('stays warm', $mailer->lastBody);
+        self::assertStringNotContainsString('Update to the latest version', $mailer->lastBody);
+    }
 }
 
 final class CapturingBugMailer extends \SlyTab\Services\Mailer
 {
+    public string $lastBody = '';
+
     public function dispatch(string $to, string $subject, string $body): bool
     {
-        return true; // swallow — sync tests only count outcomes
+        $this->lastBody = $body;
+        return true; // swallow the send — tests assert on the captured body
     }
 }
