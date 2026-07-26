@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, resolveCategories, type CategoryOverride, type SplitMethod } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, resolveCategories, type CategoryOverride, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
@@ -711,12 +711,12 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
               // "950000.00" reparsed as CLP would become 95,000,000.
               const next = e.target.value;
               setAmountStr((s) => rescaleAmountString(s, currency, next));
-              setExact((m) => Object.fromEntries(
-                Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
-              ));
-              setPayerAmounts((m) => Object.fromEntries(
-                Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
-              ));
+              // Exact shares and payer amounts have to keep summing to the
+              // total, so they rescale as a set rather than one at a time
+              // (issue #74) — otherwise each rounds half-up on its own and
+              // Save locks behind a "remaining: -1" nobody typed.
+              setExact((m) => rescaleAmountFields(m, amountStr, currency, next));
+              setPayerAmounts((m) => rescaleAmountFields(m, amountStr, currency, next));
               // Adjustment offsets are amounts too; share counts and
               // percents are scale-free.
               setWeights((w) => w.adjustment === undefined ? w : { ...w,

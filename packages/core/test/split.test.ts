@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { computeSplit, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, type SplitMember, type SplitMethod } from '../src/split.js';
+import { computeSplit, rescaleAmountFields, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, type SplitMember, type SplitMethod } from '../src/split.js';
+import { parseAmount, rescaleAmountString } from '../src/money.js';
 
 interface Vector {
   name: string;
@@ -111,5 +112,47 @@ describe('split form-input bridging (issue #13)', () => {
   it('stores nothing for equal and exact — the shares list restores those', () => {
     expect(splitInputsToStored('equal', ['a'], {}, 'CAD')).toBeNull();
     expect(splitInputsToStored('exact', ['a'], { a: '5.00' }, 'CAD')).toBeNull();
+  });
+});
+
+describe('rescaleAmountFields — a balanced split survives a scale change (#74)', () => {
+  // The reported expense: ARS 45920.00 split exact three ways. Rescaling
+  // each share on its own rounds all three up to 15307 = 45921, one peso
+  // over the 45920 total, and the form refuses to save.
+  const shares = { a: '15306.67', b: '15306.67', c: '15306.66' };
+
+  it('keeps the shares summing to the rescaled total', () => {
+    const out = rescaleAmountFields(shares, '45920.00', 'ARS', 'CLP');
+    const sum = Object.values(out).reduce((a, v) => a + parseAmount(v, 'CLP'), 0);
+    expect(sum).toBe(parseAmount(rescaleAmountString('45920.00', 'ARS', 'CLP'), 'CLP'));
+    expect(out).toEqual({ a: '15307', b: '15307', c: '15306' });
+  });
+
+  it('rounds the other way too, and back again', () => {
+    // 0-decimal → 2-decimal is exact, so nothing has to move.
+    expect(rescaleAmountFields({ a: '15307', b: '15307', c: '15306' }, '45920', 'CLP', 'ARS'))
+      .toEqual({ a: '15307.00', b: '15307.00', c: '15306.00' });
+    // Down-scaling a split whose thirds each round down: 10.00 / 3.
+    const out = rescaleAmountFields({ a: '3.34', b: '3.33', c: '3.33' }, '10.00', 'CAD', 'CLP');
+    expect(Object.values(out).reduce((a, v) => a + parseAmount(v, 'CLP'), 0)).toBe(10);
+  });
+
+  it('leaves same-scale switches and blank fields alone', () => {
+    expect(rescaleAmountFields(shares, '45920.00', 'ARS', 'CAD')).toEqual(shares);
+    expect(rescaleAmountFields({ a: '10.00', b: '' }, '10.00', 'CAD', 'CLP'))
+      .toEqual({ a: '10', b: '' });
+  });
+
+  it('does not even out a half-typed split — those numbers are the user\'s', () => {
+    // Shares that don't reconcile yet fall back to per-field rescaling.
+    expect(rescaleAmountFields({ a: '15306.67', b: '15306.67' }, '45920.00', 'ARS', 'CLP'))
+      .toEqual({ a: '15307', b: '15307' });
+    // …as does an empty or not-yet-entered total.
+    expect(rescaleAmountFields({ a: '5.00' }, '', 'CAD', 'CLP')).toEqual({ a: '5' });
+  });
+
+  it('ignores fields that carry no amount', () => {
+    const out = rescaleAmountFields({ a: '5.00', b: '5.00', c: '0' }, '10.00', 'CAD', 'CLP');
+    expect(out).toEqual({ a: '5', b: '5', c: '0' });
   });
 });

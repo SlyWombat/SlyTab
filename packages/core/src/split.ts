@@ -6,7 +6,10 @@
  * must pass packages/core/test-vectors/split.json. Change them together.
  */
 
-import { assertMinor, minorToAmountString, parseAmount, parseSignedAmount } from './money.js';
+import {
+  assertMinor, bridgeMinor, minorToAmountString, minorUnitScale, parseAmount,
+  parseSignedAmount, rescaleAmountString,
+} from './money.js';
 
 export type SplitMethod = 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment';
 
@@ -116,6 +119,56 @@ export function splitInputsToStored(
     if (v !== 0) out[m.id] = v;
   }
   return out;
+}
+
+/**
+ * Rescale a set of amount fields that has to keep summing to `totalStr`
+ * when the currency picker moves between minor-unit scales (issue #74).
+ *
+ * `rescaleAmountString` on its own rounds every field independently, so a
+ * balanced split comes apart on the way down to a zero-decimal currency:
+ * ARS 15306.67 / 15306.67 / 15306.66 (= 45920.00) each round half-up to
+ * CLP 15307, which is 45921 against a 45920 total. The form then shows
+ * `remaining: -1` and disables Save for something the user never typed.
+ *
+ * So when the fields reconcile against the total before the switch, the
+ * total is rescaled first and re-apportioned across them by their old
+ * weights (largest remainder, as everywhere else) — the split stays
+ * balanced and stays as close to the old proportions as integers allow.
+ * When they don't reconcile (a half-typed split), each field is rescaled
+ * on its own as before: mid-edit numbers are the user's, not ours to
+ * even out.
+ *
+ * Blank fields stay blank. Only ids present in `inputs` take part.
+ */
+export function rescaleAmountFields(
+  inputs: Readonly<Record<string, string>>,
+  totalStr: string,
+  from: string,
+  to: string,
+): Record<string, string> {
+  const each = (): Record<string, string> => Object.fromEntries(
+    Object.entries(inputs).map(([id, v]) => [id, rescaleAmountString(v, from, to)]),
+  );
+  const fromScale = minorUnitScale(from);
+  if (fromScale === minorUnitScale(to)) return { ...inputs };
+  try {
+    const total = parseAmount(totalStr, from);
+    const filled = Object.entries(inputs).filter(([, v]) => v.trim() !== '');
+    const entries = filled.map(([id, v]) => ({ id, weight: parseAmount(v, from) }));
+    const sum = entries.reduce((a, e) => a + e.weight, 0);
+    // Nothing to preserve unless the fields genuinely balance the total.
+    if (total <= 0 || sum !== total
+      || entries.some((e) => e.weight < 0) || !entries.some((e) => e.weight > 0)) return each();
+    const parts = apportion(bridgeMinor(total, fromScale, to),
+      entries.filter((e) => e.weight > 0));
+    return Object.fromEntries(Object.entries(inputs).map(([id, v]) => [
+      id,
+      parts[id] === undefined ? rescaleAmountString(v, from, to) : minorToAmountString(parts[id], to),
+    ]));
+  } catch {
+    return each(); // unparseable mid-edit input: leave the old behaviour
+  }
 }
 
 /** Persisted `splitInput` numbers → the form strings they came from. */

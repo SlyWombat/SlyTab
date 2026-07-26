@@ -9,7 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure, appVersion, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -2253,12 +2253,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // become 95,000,000 pesos.
   function switchCurrency(next: string) {
     setAmountStr((s) => rescaleAmountString(s, currency, next));
-    setExact((m) => Object.fromEntries(
-      Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
-    ));
-    setPayerAmounts((m) => Object.fromEntries(
-      Object.entries(m).map(([id, v]) => [id, rescaleAmountString(v, currency, next)]),
-    ));
+    // Exact shares and payer amounts have to keep summing to the total, so
+    // they rescale as a set rather than one at a time (issue #74) —
+    // otherwise each rounds half-up on its own and Save locks behind a
+    // "remaining: -1" nobody typed.
+    setExact((m) => rescaleAmountFields(m, amountStr, currency, next));
+    setPayerAmounts((m) => rescaleAmountFields(m, amountStr, currency, next));
     // Adjustment offsets are amounts too; share counts and percents are
     // scale-free.
     setWeights((w) => w.adjustment === undefined ? w : { ...w,

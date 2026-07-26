@@ -150,6 +150,13 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   the card's actual FX rate).
 - **FR-5.5 (MUST)** Supported currencies: the ~30 in the ECB feed. CAD is the
   app-wide default.
+- **FR-5.6 (MUST)** Changing an expense's currency in the form keeps the
+  number the user is looking at, re-reading it at the new currency's
+  minor-unit scale (CLP and the other zero-decimal currencies write
+  thousands with "." — never a decimal point). Amount fields that must
+  reconcile — exact shares, per-payer amounts — rescale as a *set*: a split
+  that balanced before the switch still balances after it, re-apportioned by
+  largest remainder. A split still being typed is left as typed.
 
 ### 2.6 Balances & debt simplification
 
