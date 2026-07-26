@@ -15,12 +15,13 @@ Mobile: bottom tab bar with four tabs — **Home**, **Groups**, **Activity**,
 Web: left sidebar with the same four destinations; the same FAB pattern
 applies (plus the `n` shortcut, §3).
 
-Interim mobile shell (until the tab bar lands): Home is the root, groups
-open as a pushed screen, and Profile opens as a sheet from the user's
-avatar badge (initial on their badge colour) in the Home header — an
-icon, not a text button (issue #40). All screens and sheets respect the
-device safe areas; nothing may render under the Android gesture bar or
-the status bar (issue #40, SDK 54 edge-to-edge).
+Mobile shell status: the four-tab bar shipped in v0.1.3 (issue #40
+follow-up) — Home, Groups, Activity (client-side merge of the per-group
+feeds until a global endpoint exists; no unread dot yet), and Profile
+(tab icon is the user's avatar badge; the former profile sheet is now a
+screen). Groups open as a pushed screen over the shell. All screens and
+sheets respect the device safe areas; nothing may render under the
+Android gesture bar or the status bar (issue #40, SDK 54 edge-to-edge).
 
 Deep links: `slytab://join/<token>` (and
 `electricrv.ca/slytab/join/<token>`) → Join Group screen;

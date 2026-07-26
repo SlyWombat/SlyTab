@@ -106,6 +106,9 @@ function SheetModal({ title, onClose, children }: {
 // ---------- screens ----------
 
 type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
+// UI spec §1: bottom tab bar with four destinations (issue #40 follow-up —
+// this replaces the interim avatar-sheet shell).
+type Tab = 'home' | 'groups' | 'activity' | 'profile';
 
 const TOKEN_KEY = 'slytab.session';
 // Last server answer to "is Google sign-in configured?" — shows the button
@@ -124,6 +127,7 @@ function AppShell() {
   const [user, setUser] = useState<User | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
+  const [tab, setTab] = useState<Tab>('home');
 
   // Stay signed in: the session token lives in the device keystore.
   useEffect(() => {
@@ -178,19 +182,58 @@ function AppShell() {
       ) : nav.screen === 'group' ? (
         <GroupScreen groupId={nav.groupId} user={user} onBack={() => setNav({ screen: 'home' })} />
       ) : (
-        <HomeScreen
-          user={user}
-          onUserUpdated={setUser}
-          onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
-          onSignOut={() => {
-            api.logout().catch(() => {});
-            setToken(null);
-            setUser(null);
-            SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
-          }}
-        />
+        // The four tab screens stay mounted (hidden, not unmounted) so
+        // half-typed profile edits or an open sheet survive a tab switch;
+        // each screen refetches when its tab regains focus.
+        <>
+          <View style={{ flex: 1, display: tab === 'home' ? 'flex' : 'none' }}>
+            <HomeScreen active={tab === 'home'} user={user}
+              onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })} />
+          </View>
+          <View style={{ flex: 1, display: tab === 'groups' ? 'flex' : 'none' }}>
+            <GroupsScreen active={tab === 'groups'} user={user}
+              onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })} />
+          </View>
+          <View style={{ flex: 1, display: tab === 'activity' ? 'flex' : 'none' }}>
+            <ActivityScreen active={tab === 'activity'} user={user}
+              onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })} />
+          </View>
+          <View style={{ flex: 1, display: tab === 'profile' ? 'flex' : 'none' }}>
+            <ProfileScreen active={tab === 'profile'} user={user} onSaved={setUser}
+              onSignOut={() => {
+                api.logout().catch(() => {});
+                setToken(null);
+                setUser(null);
+                SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+              }} />
+          </View>
+          <TabBar tab={tab} onTab={setTab} user={user} />
+        </>
       )}
       <StatusBar style="light" />
+    </View>
+  );
+}
+
+function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user: User }) {
+  const items: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: 'home', label: 'Home', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>🏠</Text> },
+    { key: 'groups', label: 'Groups', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>👥</Text> },
+    { key: 'activity', label: 'Activity', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>🕓</Text> },
+    // The Profile tab is the user's avatar badge (UI spec §1 / issue #40).
+    { key: 'profile', label: 'Profile', icon: <Badge id={user.id} name={user.displayName} size={22} /> },
+  ];
+  return (
+    <View style={s.tabbar}>
+      {items.map((it) => (
+        <Pressable key={it.key} style={s.tabItem} onPress={() => onTab(it.key)}
+          accessibilityRole="tab" accessibilityLabel={it.label}
+          accessibilityState={{ selected: tab === it.key }}>
+          <View style={{ opacity: tab === it.key ? 1 : 0.45 }}>{it.icon}</View>
+          <Text style={[s.tabBarLabel, tab === it.key && { color: c.text }]}
+            maxFontSizeMultiplier={1.2}>{it.label}</Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -391,13 +434,11 @@ function OnboardingScreen({ user, onDone }: { user: User; onDone: (u: User) => v
 // picker defaults to the group you're living in right now (issue #20).
 const LAST_GROUP_KEY = 'slytab.lastGroup';
 
-function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
-  user: User; onOpenGroup: (id: string) => void; onSignOut: () => void;
-  onUserUpdated: (u: User) => void;
+function HomeScreen({ user, onOpenGroup, active }: {
+  user: User; onOpenGroup: (id: string) => void; active: boolean;
 }) {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [creating, setCreating] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [addingFriend, setAddingFriend] = useState(false);
   const [verifySent, setVerifySent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -410,7 +451,8 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
   const reload = useCallback(() => {
     api.homeBalances().then(setData).catch((e) => setError(e.message));
   }, []);
-  useEffect(reload, [reload, user.defaultCurrency]);
+  // Refetch whenever the tab regains focus (spec §2.2 auto-refetch).
+  useEffect(() => { if (active) reload(); }, [active, reload, user.defaultCurrency]);
   useEffect(() => {
     SecureStore.getItemAsync(LAST_GROUP_KEY).then(setLastGroupId).catch(() => {});
   }, []);
@@ -453,11 +495,6 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
     <View style={s.screen}>
       <View style={s.header}>
         <Text style={s.h1}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
-        <View style={{ flex: 1 }} />
-        <Pressable onPress={() => setProfileOpen(true)} accessibilityRole="button"
-          accessibilityLabel="Profile" hitSlop={8}>
-          <Badge id={user.id} name={user.displayName} size={34} />
-        </Pressable>
       </View>
       {error && <Text style={s.error}>{error}</Text>}
 
@@ -616,10 +653,6 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         <Text style={{ color: '#fff', fontSize: 18 }} maxFontSizeMultiplier={1.3}>＋</Text>
         <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={1.3}>Add expense</Text>
       </Pressable>
-      <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 10 }}>
-        <Btn small label="New group" onPress={() => setCreating(true)} />
-        <Btn small label="Split with a friend" onPress={() => setAddingFriend(true)} />
-      </View>
       {picking && (
         <SheetModal title="Add an expense" onClose={() => setPicking(false)}>
           {pickerItems.length === 0 ? (
@@ -675,10 +708,6 @@ function HomeScreen({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         <CreateGroupSheet defaultCurrency={user.defaultCurrency}
           onClose={() => setCreating(false)}
           onCreated={(id) => { setCreating(false); openGroup(id); }} />
-      )}
-      {profileOpen && (
-        <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
-          onSaved={(u) => { onUserUpdated(u); setProfileOpen(false); }} />
       )}
     </View>
   );
@@ -761,8 +790,8 @@ function BugReportSection() {
   );
 }
 
-function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
-  user: User; onClose: () => void; onSaved: (u: User) => void; onSignOut: () => void;
+function ProfileScreen({ user, onSaved, onSignOut, active }: {
+  user: User; onSaved: (u: User) => void; onSignOut: () => void; active: boolean;
 }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
@@ -775,25 +804,20 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   const [venmo, setVenmo] = useState(user.paymentHandles.venmo ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
 
   useEffect(() => {
-    api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
-  }, []);
+    if (active) api.listSessions().then((r) => setSessions(r.items)).catch(() => {});
+  }, [active]);
 
-  // Issue #22: closing with unsaved edits warns instead of discarding.
+  // Unsaved-edit tracking (issue #22): as a tab there's no close to guard,
+  // but it still powers the "Saved ✓" confirmation below the button.
   const dirty = displayName !== user.displayName
     || currency !== user.defaultCurrency
     || notifyLevel !== (user.notifyLevel ?? 'all')
     || interac !== (user.paymentHandles.interacEmail ?? '')
     || paypal !== (user.paymentHandles.paypalMe ?? '')
     || venmo !== (user.paymentHandles.venmo ?? '');
-  function guardedClose() {
-    if (!dirty) { onClose(); return; }
-    Alert.alert('Unsaved changes', 'Discard your unsaved profile changes?', [
-      { text: 'Keep editing', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: onClose },
-    ]);
-  }
 
   async function save() {
     setBusy(true);
@@ -809,6 +833,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
           ...(venmo ? { venmo } : {}),
         },
       });
+      setSavedOk(true);
       onSaved(updated);
     } catch (e) {
       setError((e as Error).message);
@@ -818,7 +843,12 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
   }
 
   return (
-    <SheetModal title="Profile" onClose={guardedClose}>
+    <View style={s.screen}>
+      <View style={s.header}>
+        <Badge id={user.id} name={user.displayName} size={34} />
+        <Text style={s.h1}>Profile</Text>
+      </View>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
       {error && <Text style={s.error}>{error}</Text>}
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
@@ -840,6 +870,13 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
       <Field label="Venmo username" value={venmo} onChangeText={setVenmo} placeholder="yourname" />
       <Btn primary label={busy ? 'Saving…' : 'Save profile'} disabled={busy || displayName.trim() === ''}
         onPress={() => void save()} />
+      {savedOk && !dirty && (
+        <Text style={[s.meta, { textAlign: 'center', paddingBottom: 4 }]}>Profile saved ✓</Text>
+      )}
+      <View style={{ height: 8 }} />
+      {/* Report a bug sits above the session list (report #42 ordering —
+          the async list otherwise pushes the button around as it loads). */}
+      <BugReportSection />
       {sessions !== null && sessions.length > 0 && (
         <>
           <Text style={[s.cap, { marginTop: 14 }]}>WHERE YOU'RE SIGNED IN</Text>
@@ -863,7 +900,6 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </>
       )}
       <View style={{ height: 8 }} />
-      <BugReportSection />
       <Btn label="Sign out" onPress={onSignOut} />
       <View style={{ height: 8 }} />
       {!deleting ? (
@@ -895,7 +931,171 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </View>
       )}
       <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>Account: {user.email}</Text>
-    </SheetModal>
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Groups tab (UI spec §2.3): cards with member badges + your net. */
+function GroupsScreen({ user, onOpenGroup, active }: {
+  user: User; onOpenGroup: (id: string) => void; active: boolean;
+}) {
+  const [data, setData] = useState<HomeBalances | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [addingFriend, setAddingFriend] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    api.homeBalances().then(setData).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => { if (active) reload(); }, [active, reload]);
+
+  const groups = (data?.items ?? []).filter((i) => !i.group.isDirect);
+  const activeGroups = groups.filter((i) => !i.group.archivedAt);
+  const archived = groups.filter((i) => i.group.archivedAt);
+
+  return (
+    <View style={s.screen}>
+      <View style={s.header}>
+        <Text style={s.h1}>Groups</Text>
+        <View style={{ flex: 1 }} />
+        <Btn small label="New group" onPress={() => setCreating(true)} />
+      </View>
+      {error && <Text style={s.error}>{error}</Text>}
+      <FlatList
+        data={[...activeGroups, ...(showArchived ? archived : [])]}
+        keyExtractor={(i) => i.group.id}
+        onRefresh={reload}
+        refreshing={false}
+        ListEmptyComponent={data
+          ? <Text style={s.meta}>No groups yet. Start a group and invite your people.</Text>
+          : null}
+        ListFooterComponent={
+          <View>
+            {archived.length > 0 && !showArchived && (
+              <Btn small label={`Show ${archived.length} archived group${archived.length === 1 ? '' : 's'}`}
+                onPress={() => setShowArchived(true)} />
+            )}
+            <View style={{ height: 8 }} />
+            <Btn label="Split with a friend" onPress={() => setAddingFriend(true)} />
+          </View>
+        }
+        renderItem={({ item }) => {
+          const members = item.group.members;
+          return (
+            <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
+              <View style={s.tile}>
+                <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rowName}>
+                  {item.group.name}{item.group.archivedAt ? ' (archived)' : ''}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingTop: 4 }}>
+                  {members.slice(0, 5).map((m) => (
+                    <Badge key={m.id} id={m.id} name={m.displayName} size={20} />
+                  ))}
+                  {members.length > 5 && (
+                    <Text style={s.meta}>+{members.length - 5}</Text>
+                  )}
+                </View>
+              </View>
+              {item.netMinor === 0
+                ? <Text style={s.meta}>settled ✓</Text>
+                : (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Amount minor={item.netMinor} currency={item.currency} signed />
+                    <Text style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
+                  </View>
+                )}
+            </Pressable>
+          );
+        }}
+      />
+      {addingFriend && (
+        <AddFriendSheet onClose={() => setAddingFriend(false)}
+          onCreated={(id) => { setAddingFriend(false); onOpenGroup(id); }} />
+      )}
+      {creating && (
+        <CreateGroupSheet defaultCurrency={user.defaultCurrency}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => { setCreating(false); onOpenGroup(id); }} />
+      )}
+    </View>
+  );
+}
+
+/**
+ * Activity tab (UI spec §2.9): one feed across every group, newest first,
+ * grouped by day. There is no global endpoint yet, so the per-group feeds
+ * are merged client-side — fine at family-beta scale.
+ */
+function ActivityScreen({ user, onOpenGroup, active }: {
+  user: User; onOpenGroup: (id: string) => void; active: boolean;
+}) {
+  type FeedRow = ActivityItem & { groupId: string; groupLabel: string; who: string };
+  const [rows, setRows] = useState<FeedRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    api.homeBalances().then(async (r) => {
+      const feeds = await Promise.all(r.items.map(async ({ group }) => {
+        try {
+          const f = await api.activity(group.id);
+          const other = group.members.find((m) => m.id !== user.id);
+          const label = group.isDirect ? `with ${other?.displayName ?? 'a friend'}` : group.name;
+          return f.items.map((ev): FeedRow => ({
+            ...ev, groupId: group.id, groupLabel: label,
+            who: ev.userId === user.id ? 'You'
+              : group.members.find((m) => m.id === ev.userId)?.displayName ?? 'Former member',
+          }));
+        } catch { return []; }
+      }));
+      setRows(feeds.flat()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 100));
+    }).catch((e) => setError(e.message));
+  }, [user.id]);
+  useEffect(() => { if (active) reload(); }, [active, reload]);
+
+  return (
+    <View style={s.screen}>
+      <View style={s.header}>
+        <Text style={s.h1}>Activity</Text>
+      </View>
+      {error && <Text style={s.error}>{error}</Text>}
+      <FlatList
+        data={rows ?? []}
+        keyExtractor={(ev) => ev.id}
+        onRefresh={reload}
+        refreshing={false}
+        ListEmptyComponent={rows === null
+          ? <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+          : <Text style={s.meta}>Nothing yet — activity from all your groups lands here.</Text>}
+        renderItem={({ item: ev, index }) => {
+          const day = ev.createdAt.slice(0, 10);
+          const prev = index > 0 ? (rows ?? [])[index - 1] : undefined;
+          const newDay = prev === undefined || prev.createdAt.slice(0, 10) !== day;
+          return (
+            <View>
+              {newDay && <Text style={s.cap}>{day}</Text>}
+              <Pressable style={s.row} onPress={() => onOpenGroup(ev.groupId)}>
+                <Badge id={ev.userId} name={ev.who === 'You' ? user.displayName : ev.who} size={22} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.body, { fontSize: 13 }]}>
+                    <Text style={{ fontWeight: '700' }}>{ev.who}</Text>
+                    {' '}{activityText(ev)}
+                    <Text style={{ color: c.text3 }}> · {ev.groupLabel}</Text>
+                  </Text>
+                  <Text style={s.meta}>{ago(ev.createdAt)}</Text>
+                </View>
+              </Pressable>
+            </View>
+          );
+        }}
+      />
+    </View>
   );
 }
 
@@ -2508,4 +2708,13 @@ const s = StyleSheet.create({
   },
   // Labelled variant — the primary "Add expense" action on Home (issue #20).
   fabWide: { width: 'auto', paddingHorizontal: 20, flexDirection: 'row', gap: 7 },
+  // Bottom tab shell (UI spec §1). The AppShell already pads for the
+  // gesture bar, so the bar only needs its own height. 44pt+ targets.
+  tabbar: {
+    flexDirection: 'row', backgroundColor: c.surface,
+    borderTopWidth: 1, borderTopColor: c.outline,
+  },
+  tabItem: { flex: 1, alignItems: 'center', paddingTop: 7, paddingBottom: 6, gap: 2, minHeight: 52 },
+  tabIcon: { fontSize: 19, lineHeight: 24 },
+  tabBarLabel: { color: c.text3, fontSize: 10.5, fontWeight: '600' },
 });
