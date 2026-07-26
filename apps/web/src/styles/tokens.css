@@ -12,10 +12,16 @@
   /* Text */
   --ss-text: #eef2fa;
   --ss-text-2: #a9b4cc;
-  --ss-text-3: #6b7794;
+  /* WCAG AA: #6b7794 measured 4.18:1 on bg and 3.80:1 on surface — this
+     value clears 4.5:1 on both (5.98 / 5.43). Issue #69. */
+  --ss-text-3: #8592ad;
 
   /* Brand & accents */
   --ss-brand: #4f8ef7;
+  /* Ink for text sitting ON a brand fill: white measured 3.21:1 on the
+     brand blue, below AA for 12-15px button labels. Dark ink gives 5.94:1
+     and keeps the brand colour itself unchanged. Issue #70. */
+  --ss-on-brand: #08101c;
   --ss-brand-strong: #79aaff;
   --ss-owed: #34c98e;
   --ss-owe: #f5a623;
@@ -65,6 +71,7 @@
   --ss-text-2: #4a5878;
   --ss-text-3: #8592ad;
   --ss-brand: #2f6fe0;
+  --ss-on-brand: #ffffff; /* 4.70:1 on the light-theme brand — already AA */
   --ss-brand-strong: #1d5ccb;
   --ss-owed: #148f63;
   --ss-owe: #b57408;

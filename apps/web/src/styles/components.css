@@ -1,12 +1,21 @@
 /* Ledger components (DESIGN.md §6) used by the web screens. */
 
+/* The bottom pad clears the floating action button: without it the last
+   row of any list sits under the FAB with no way to scroll it clear.
+   Issue #73 (web) — the same defect exists on mobile as #53/#58. */
 .shell { max-width: 640px; margin: 0 auto; min-height: 100vh;
   padding: calc(var(--ss-space-4) + env(safe-area-inset-top, 0px))
            calc(var(--ss-space-4) + env(safe-area-inset-right, 0px))
-           var(--ss-space-4)
+           calc(96px + env(safe-area-inset-bottom, 0px))
            calc(var(--ss-space-4) + env(safe-area-inset-left, 0px)); }
-.header { display: flex; align-items: center; gap: var(--ss-space-3); padding: var(--ss-space-3) 0 var(--ss-space-5); }
-.header h1 { font: 600 1.375rem var(--ss-font-display); letter-spacing: -0.01em; }
+.header { display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--ss-space-3); padding: var(--ss-space-3) 0 var(--ss-space-5); }
+/* At 200% zoom the title used to be squeezed to a 0px-wide box whose glyphs
+   painted outside the header, taking the group-settings entry point with it.
+   Wrapping + a floor on the title keeps it hit-testable. Issue #67. */
+.header h1 { font: 600 1.375rem var(--ss-font-display); letter-spacing: -0.01em;
+  min-width: 0; overflow-wrap: anywhere; }
+.header > button { min-width: 44px; }
 .header .spacer { flex: 1; }
 
 .hero { background: var(--ss-surface); border: 1px solid var(--ss-outline);
@@ -25,10 +34,13 @@
   margin-bottom: var(--ss-space-2); width: 100%; text-align: left; color: inherit; }
 button.row { cursor: pointer; transition: background var(--ss-dur-tap) var(--ss-ease); }
 button.row:hover { background: var(--ss-surface-2); }
-.row .grow { flex: 1; min-width: 0; }
-.row .name { font-weight: 600; font-size: 0.875rem; }
+/* min-width: 0 lets this shrink below its content; without a wrapping rule
+   a long display name then paints straight over the amount column and the
+   money becomes unreadable — the worst failure this app has. Issue #66. */
+.row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.row .name { font-weight: 600; font-size: 0.875rem; overflow-wrap: anywhere; }
 .row .meta { font-size: 0.75rem; color: var(--ss-text-3); }
-.row .right { text-align: right; }
+.row .right { text-align: right; flex: 0 0 auto; }
 .row .right .dir { font-size: 0.65625rem; color: var(--ss-text-3); display: block; }
 
 .badge { width: 32px; height: 32px; border-radius: 50%; flex: 0 0 auto;
@@ -39,9 +51,14 @@ button.row:hover { background: var(--ss-surface-2); }
 .btn { display: inline-block; border: none; border-radius: var(--ss-radius-md);
   font: 600 0.875rem/2.75rem var(--ss-font-body); padding: 0 var(--ss-space-5);
   background: var(--ss-surface-2); color: var(--ss-text); }
-.btn.primary { background: var(--ss-brand); color: #fff; }
+.btn.primary { background: var(--ss-brand); color: var(--ss-on-brand); }
 .btn.block { display: block; width: 100%; text-align: center; }
-.btn.sm { line-height: 32px; padding: 0 var(--ss-space-3); font-size: 0.75rem; border-radius: 9px; }
+/* Keep the compact look but give it a real 44px hit area (issue #72): the
+   pseudo-element expands what the finger can land on, not what is drawn. */
+.btn.sm { line-height: 32px; padding: 0 var(--ss-space-3); font-size: 0.75rem;
+  border-radius: 9px; position: relative; }
+.btn.sm::after { content: ''; position: absolute; left: 0; right: 0;
+  top: 50%; height: 44px; transform: translateY(-50%); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .field { display: block; margin-bottom: var(--ss-space-3); min-width: 0; }
@@ -75,23 +92,32 @@ button.row:hover { background: var(--ss-surface-2); }
   box-shadow: 0 -12px 34px rgb(0 0 0 / 0.5); }
 .sheet h2 { font: 600 1.0625rem var(--ss-font-display); margin-bottom: var(--ss-space-4); }
 
-.tabs { display: flex; background: var(--ss-surface-2); border-radius: 10px;
-  padding: 3px; margin-bottom: var(--ss-space-4); }
-.tabs button { flex: 1; border: none; background: none; color: var(--ss-text-2);
+/* Flex items keep min-width: auto, so at larger fonts the strip grew past
+   its container and body's overflow-x: hidden made the clipped tab
+   permanently unreachable. Wrapping keeps every destination on screen —
+   scrolling would have hidden the affordance instead. Issue #65. */
+.tabs { display: flex; flex-wrap: wrap; background: var(--ss-surface-2);
+  border-radius: 10px; padding: 3px; margin-bottom: var(--ss-space-4); gap: 2px; }
+.tabs button { flex: 1 1 auto; min-width: max-content; min-height: 44px;
+  border: none; background: none; color: var(--ss-text-2);
   font: 600 0.8125rem/1.875rem var(--ss-font-body); border-radius: 8px; }
 .tabs button.on { background: var(--ss-surface); color: var(--ss-text);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
 
+/* The whole row is a <label>, so making the row itself 44px tall gives the
+   17px checkbox a compliant target without inflating the tick. Issue #72. */
 .checkrow { display: flex; align-items: center; gap: var(--ss-space-2);
-  padding: 8px 2px; font-size: 0.875rem; }
-.checkrow input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--ss-brand); }
+  padding: 8px 2px; font-size: 0.875rem; min-height: 44px; }
+.checkrow input[type='checkbox'] { width: 22px; height: 22px; flex: 0 0 auto;
+  accent-color: var(--ss-brand); }
 .checkrow .amt-in { width: 110px; margin-left: auto; }
 .checkrow .amt-in input { text-align: right; }
 
 .fab { position: fixed; right: max(16px, calc(50vw - 304px));
   bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 5;
   width: 56px; height: 56px; border-radius: 50%; border: none;
-  background: var(--ss-brand); color: #fff; font: 300 1.875rem/3.375rem var(--ss-font-body);
+  background: var(--ss-brand); color: var(--ss-on-brand);
+  font: 300 1.875rem/3.375rem var(--ss-font-body);
   box-shadow: 0 8px 20px rgb(0 0 0 / 0.35); }
 /* Labelled variant — the primary "Add expense" action on Home (issue #20). */
 .fab.wide { display: inline-flex; align-items: center; gap: 7px;
@@ -106,7 +132,8 @@ button.row:hover { background: var(--ss-surface-2); }
   display: flex; align-items: center; justify-content: center; font-size: 1.375rem;
   background: var(--ss-surface-2); border: 1px solid var(--ss-outline);
   font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', var(--ss-font-body); }
-.pairline { font-size: 0.75rem; color: var(--ss-text-2); line-height: 1.5; }
+.pairline { font-size: 0.75rem; color: var(--ss-text-2); line-height: 1.5;
+  min-width: 0; overflow-wrap: anywhere; }
 .pairline b { font: 600 0.75rem var(--ss-font-mono); font-variant-numeric: tabular-nums; }
 .hero .split { display: flex; gap: 14px; padding-top: 4px; font-size: 0.8125rem;
   color: var(--ss-text-2); }
@@ -126,3 +153,14 @@ button.row:hover { background: var(--ss-surface-2); }
   padding: var(--ss-space-6); text-align: center; }
 .muted { color: var(--ss-text-3); font-size: 0.8125rem; }
 .link-btn { background: none; border: none; color: var(--ss-brand); font-size: 0.8125rem; padding: 4px; }
+
+/* Skeleton rows for lists that haven't loaded (spec §3, issue #68). The
+   pulse respects prefers-reduced-motion. */
+.row.skeleton { pointer-events: none; }
+.row.skeleton .badge { background: var(--ss-surface-2); }
+.row.skeleton .bar { height: 11px; border-radius: 6px; background: var(--ss-surface-2); }
+.row.skeleton .badge, .row.skeleton .bar { animation: ss-pulse 1.4s var(--ss-ease) infinite; }
+@keyframes ss-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  .row.skeleton .badge, .row.skeleton .bar { animation: none; }
+}

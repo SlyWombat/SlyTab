@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, type Currency } from '@slytab/core';
 
 const BADGE_HUES = ['#79aaff', '#6ee0d2', '#f5a05e', '#ff8fb2', '#b78cff', '#6fc2ff'];
@@ -29,7 +29,32 @@ export function Amount({
   return <span className={cls} style={{ fontSize: `${size / 16}rem` }} aria-label={label}>{text}</span>;
 }
 
+/**
+ * Placeholder rows for a list that hasn't loaded yet (spec §3: "skeleton
+ * rows for lists — never spinners on full screens"). Issue #68: without
+ * these, an unfetched list is indistinguishable from an empty one and the
+ * screen tells the user their expenses are gone.
+ */
+export function SkeletonRows({ count = 3 }: { count?: number }) {
+  return (
+    <div aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <div className="row skeleton" key={i}>
+          <div className="badge" />
+          <div className="grow">
+            <div className="bar" style={{ width: '55%' }} />
+            <div className="bar" style={{ width: '32%', height: 9, marginTop: 6 }} />
+          </div>
+          <div className="bar" style={{ width: 62 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+
   // Lock the page behind the sheet: without this, a downward swipe with the
   // sheet's scroller already at the top chains into the document and mobile
   // Chrome's pull-to-refresh reloads the app, discarding the sheet (#42).
@@ -38,10 +63,50 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
+
+  // Escape closes, focus moves into the dialog on open and returns to
+  // whatever opened it on close, and Tab stays inside while it is open.
+  // Before this a keyboard user was left tabbing the page behind the sheet
+  // with no way to dismiss it (issue #71, spec §3 web parity).
+  useEffect(() => {
+    const returnTo = document.activeElement as HTMLElement | null;
+    const focusable = 'input:not([disabled]), select:not([disabled]),'
+      + ' textarea:not([disabled]), button:not([disabled]), a[href],'
+      + ' [tabindex]:not([tabindex="-1"])';
+    const stops = (): HTMLElement[] =>
+      [...(panel.current?.querySelectorAll<HTMLElement>(focusable) ?? [])]
+        .filter((el) => el.offsetParent !== null);
+
+    (stops()[0] ?? panel.current)?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = stops();
+      if (items.length === 0) return;
+      const edge = e.shiftKey ? items[0] : items[items.length - 1];
+      if (document.activeElement === edge) {
+        e.preventDefault();
+        (e.shiftKey ? items[items.length - 1] : items[0])?.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      returnTo?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <>
       <div className="sheet-back" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-label={title}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label={title}
+        ref={panel} tabIndex={-1}>
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
           <h2 style={{ flex: 1, minWidth: 0 }}>{title}</h2>
           <button type="button" className="btn sm" aria-label="Close" onClick={onClose}>✕</button>

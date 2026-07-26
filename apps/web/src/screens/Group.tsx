@@ -6,7 +6,7 @@ import {
   type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { CategoriesScreen } from './Categories';
-import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
+import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet, SkeletonRows } from '../ui';
 
 export type ScanStage =
   | { stage: 'upload'; fraction: number }
@@ -89,7 +89,9 @@ export function GroupScreen({ groupId, user, onBack }: {
 }) {
   const [group, setGroup] = useState<Group | null>(null);
   const [tab, setTab] = useState<'expenses' | 'balances' | 'totals' | 'activity'>('expenses');
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  // null until the first fetch lands: [] used to mean both "loading" and
+  // "empty", so a group with expenses briefly claimed it had none (#68).
+  const [expenses, setExpenses] = useState<Expense[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
@@ -134,7 +136,7 @@ export function GroupScreen({ groupId, user, onBack }: {
     const t = setTimeout(() => {
       api.expenses(groupId, { q: search, category: catFilter })
         .then((r) => { setExpenses(r.items); setNextCursor(r.nextCursor); })
-        .catch(() => {});
+        .catch(() => setExpenses([]));
     }, search !== '' ? 300 : 0);
     return () => clearTimeout(t);
   }, [groupId, search, catFilter, group, feed]);
@@ -219,8 +221,11 @@ export function GroupScreen({ groupId, user, onBack }: {
               }}>Undo</button>
             </div>
           )}
-          {expenses.length === 0 && <p className="muted" style={{ padding: 8 }}>No expenses yet — add the first one.</p>}
-          {expenses.map((e) => {
+          {expenses === null && <SkeletonRows />}
+          {expenses !== null && expenses.length === 0 && (
+            <p className="muted" style={{ padding: 8 }}>No expenses yet — add the first one.</p>
+          )}
+          {(expenses ?? []).map((e) => {
             const paid = e.payers.filter((p) => p.userId === user.id).reduce((a, p) => a + p.amountMinor, 0);
             const owed = e.shares.filter((s) => s.userId === user.id).reduce((a, s) => a + s.amountMinor, 0);
             const effect = paid - owed;
@@ -263,7 +268,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           {nextCursor !== null && (
             <button type="button" className="btn block" onClick={() => {
               api.expenses(groupId, { q: search, category: catFilter }, nextCursor)
-                .then((r) => { setExpenses([...expenses, ...r.items]); setNextCursor(r.nextCursor); })
+                .then((r) => { setExpenses([...(expenses ?? []), ...r.items]); setNextCursor(r.nextCursor); })
                 .catch(() => {});
             }}>Show older expenses</button>
           )}
@@ -272,7 +277,8 @@ export function GroupScreen({ groupId, user, onBack }: {
 
       {tab === 'activity' && (
         <>
-          {(feed ?? []).length === 0 && <p className="muted" style={{ padding: 8 }}>Nothing yet.</p>}
+          {feed === null && <SkeletonRows />}
+          {feed !== null && feed.length === 0 && <p className="muted" style={{ padding: 8 }}>Nothing yet.</p>}
           {(feed ?? []).map((ev) => (
             <div className="row" key={ev.id}>
               <Badge id={ev.userId} name={nameOf(ev.userId)} sm />
@@ -390,7 +396,7 @@ export function GroupScreen({ groupId, user, onBack }: {
       )}
       {adding && (
         <AddExpenseSheet group={group} user={user} onClose={() => setAdding(false)}
-          lastCurrency={expenses[0]?.currency}
+          lastCurrency={expenses?.[0]?.currency}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
       {editing !== null && (
