@@ -173,11 +173,19 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   default; opt-in per category.
 - **FR-8.3 (MAY)** Email digests.
 
-### 2.9 Data export
+### 2.9 Data export & import
 
 - **FR-9.1 (MUST)** Any member can export a group's full history as CSV.
 - **FR-9.2 (SHOULD)** JSON export of everything a user can see (data
   portability / PIPEDA access requests).
+- **FR-9.3 (SHOULD)** Splitwise import into an existing group, two
+  sources: the Splitwise CSV export, or their REST API with the user's
+  personal key (never stored). Each Splitwise member is mapped to a
+  current group member, to a SlyTab user from one of the importer's
+  other groups (added under the FR-2.6 consent model; issue #44), or —
+  API source — invited by email (placeholder account holds their
+  history until they register with that email; issue #2). Payments
+  import as confirmed settlements; rows import balance-exactly.
 
 ### 2.10 Feedback
 

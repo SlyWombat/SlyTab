@@ -206,4 +206,63 @@ final class SplitwiseApiImportTest extends TestCase
         $list = $this->ok($this->request('GET', "/api/v1/groups/{$g['id']}/expenses", null, $ann['token']));
         self::assertSame('dining', $list['items'][0]['category']);
     }
+
+    /** Issue #44: map a Splitwise member to a SlyTab user from another shared group. */
+    public function testKnownUserMappingAddsThemToTheGroup(): void
+    {
+        $mk = function (string $name): array {
+            $r = $this->ok($this->request('POST', '/api/v1/auth/register', [
+                'email' => "{$name}@example.com", 'password' => 'password-123',
+                'displayName' => ucfirst($name), 'deviceLabel' => 'test',
+            ]), 201);
+            return ['token' => $r['token'], 'id' => $r['user']['id']];
+        };
+        $eve = $mk('eve');
+        $cara = $mk('cara');
+        $stranger = $mk('stranger');
+
+        // Eve and Cara share "Other"; the import target holds only Eve.
+        $other = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Other', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $eve['token']), 201);
+        $invite = $this->ok($this->request('POST', "/api/v1/groups/{$other['id']}/invites", [], $eve['token']), 201);
+        $this->ok($this->request('POST', "/api/v1/join/{$invite['token']}", [], $cara['token']));
+        $target = $this->ok($this->request('POST', '/api/v1/groups', [
+            'name' => 'Target', 'emoji' => '', 'homeCurrency' => 'CAD',
+        ], $eve['token']), 201);
+
+        self::$sw->responses = [
+            'get_expenses' => ['expenses' => [[
+                'description' => 'Firewood', 'cost' => '40.00', 'currency_code' => 'CAD',
+                'date' => '2026-07-20T12:00:00Z', 'payment' => false, 'deleted_at' => null,
+                'category' => ['name' => 'General'],
+                'users' => [
+                    ['user_id' => 11, 'paid_share' => '40.00', 'owed_share' => '20.00'],
+                    ['user_id' => 22, 'paid_share' => '0.00', 'owed_share' => '20.00'],
+                ],
+            ]]],
+        ];
+
+        $result = self::$sw->import($target['id'], $eve['id'], 'key', 888, [
+            '11' => $eve['id'], '22' => ['userId' => $cara['id']],
+        ]);
+        self::assertSame(1, $result['imported']['expenses']);
+        self::assertSame([], $result['invited']);
+
+        $group = $this->ok($this->request('GET', "/api/v1/groups/{$target['id']}", null, $eve['token']));
+        self::assertContains('Cara', array_column($group['members'], 'displayName'));
+        $bal = $this->ok($this->request('GET', "/api/v1/groups/{$target['id']}/balances", null, $eve['token']));
+        self::assertSame(2000, $bal['net'][$eve['id']]);
+        self::assertSame(-2000, $bal['net'][$cara['id']]);
+
+        // No shared group with the stranger → consent check refuses.
+        try {
+            self::$sw->import($target['id'], $eve['id'], 'key', 888, [
+                '11' => $eve['id'], '22' => ['userId' => $stranger['id']],
+            ]);
+            self::fail('expected FORBIDDEN');
+        } catch (\SlyTab\Support\ApiException $e) {
+            self::assertSame(403, $e->status);
+        }
+    }
 }

@@ -419,7 +419,7 @@ export const api = {
   splitwiseApiGroups: (groupId: string, apiKey: string) =>
     req<{ groups: SplitwiseGroup[] }>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey }),
   splitwiseApiImport: (groupId: string, apiKey: string, swGroupId: number,
-    mapping: Record<string, string | { email: string; name: string }>) =>
+    mapping: Record<string, string | { email: string; name: string } | { userId: string }>) =>
     req<ImportResult>('POST', `/groups/${groupId}/import/splitwise-api`, { apiKey, swGroupId, mapping }),
   activity: (groupId: string, cursor?: string) =>
     req<{ items: ActivityItem[]; nextCursor: string | null }>(

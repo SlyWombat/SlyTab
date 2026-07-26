@@ -375,7 +375,7 @@ export function GroupScreen({ groupId, user, onBack }: {
           onSaved={() => { setSettingsOpen(false); reload(); }} />
       )}
       {importing && (
-        <ImportSheet group={group} onClose={() => setImporting(false)}
+        <ImportSheet group={group} user={user} onClose={() => setImporting(false)}
           onDone={() => { setImporting(false); reload(); }} />
       )}
       {settling && (
@@ -1303,8 +1303,8 @@ function InviteSheet({ group, user, onClose, onChanged }: {
 
 // ---- Splitwise import: pick CSV → map members → import ----
 
-function ImportSheet({ group, onClose, onDone }: {
-  group: Group; onClose: () => void; onDone: () => void;
+function ImportSheet({ group, user, onClose, onDone }: {
+  group: Group; user: User; onClose: () => void; onDone: () => void;
 }) {
   const [source, setSource] = useState<'api' | 'csv'>('api');
   const [apiKey, setApiKey] = useState('');
@@ -1319,6 +1319,21 @@ function ImportSheet({ group, onClose, onDone }: {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Issue #44: people from your other groups can be mapped directly —
+  // same consent model as the invite sheet's "people you know" (#24).
+  const [people, setPeople] = useState<Member[]>([]);
+  useEffect(() => {
+    api.groups().then((r) => {
+      const inGroup = new Set(group.members.map((m) => m.id));
+      const seen = new Map<string, Member>();
+      for (const g of r.items) {
+        for (const m of g.members) {
+          if (m.id !== user.id && !inGroup.has(m.id) && !seen.has(m.id)) seen.set(m.id, m);
+        }
+      }
+      setPeople([...seen.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)));
+    }).catch(() => setPeople([]));
+  }, [group.members, user.id]);
 
   async function pick(f: File) {
     setBusy(true);
@@ -1376,12 +1391,14 @@ function ImportSheet({ group, onClose, onDone }: {
     setBusy(true);
     setError(null);
     try {
-      const mapping: Record<string, string | { email: string; name: string }> = {};
+      const mapping: Record<string, string | { email: string; name: string } | { userId: string }> = {};
       for (const m of swGroup.members) {
         const v = apiMapping[String(m.id)] ?? '';
         mapping[String(m.id)] = v === '__invite'
           ? { email: (inviteEmails[String(m.id)] ?? '').trim(), name: m.name }
-          : v;
+          : v.startsWith('__known:')
+            ? { userId: v.slice('__known:'.length) }
+            : v;
       }
       setResult(await api.splitwiseApiImport(group.id, apiKey.trim(), swGroupId, mapping));
     } catch (err) {
@@ -1485,6 +1502,13 @@ function ImportSheet({ group, onClose, onDone }: {
                           {group.members.map((gm) => (
                             <option key={gm.id} value={gm.id}>{gm.displayName}</option>
                           ))}
+                          {people.length > 0 && (
+                            <optgroup label="From your other groups">
+                              {people.map((p) => (
+                                <option key={p.id} value={`__known:${p.id}`}>{p.displayName}</option>
+                              ))}
+                            </optgroup>
+                          )}
                           <option value="__invite">Not here yet — invite by email…</option>
                         </select>
                       </label>

@@ -55,12 +55,15 @@ class SplitwiseApiImportService
     /**
      * Import every non-deleted expense of a Splitwise group.
      *
-     * Mapping values are either an existing member's user id, or (issue
-     * #2) an object {email, name}: that person isn't on SlyTab yet, so a
+     * Mapping values are one of: an existing member's user id; (issue
+     * #2) an object {email, name} — that person isn't on SlyTab yet, so a
      * placeholder member is created to hold their history and an invite
-     * email goes out; registering with the email claims the account.
+     * email goes out (registering with the email claims the account); or
+     * (issue #44) an object {userId} — a SlyTab user the importer already
+     * shares a group with, added to this group under the issue-#24
+     * "people you know" consent model.
      *
-     * @param array<string,mixed> $mapping Splitwise user id => user id | {email, name}
+     * @param array<string,mixed> $mapping Splitwise user id => user id | {email, name} | {userId}
      * @return array{imported: array{expenses:int, settlements:int, skipped:int}, invited: list<string>, errors: list<string>}
      */
     public function import(string $groupId, string $userId, string $apiKey, int $swGroupId, array $mapping): array
@@ -74,11 +77,16 @@ class SplitwiseApiImportService
                     $groupId, $userId, (string) $mapped['email'], (string) ($mapped['name'] ?? ''),
                 );
                 $invited[] = strtolower(trim((string) $mapped['email']));
+            } elseif (is_array($mapped) && isset($mapped['userId'])) {
+                // addKnownMember enforces the shared-group consent check
+                // and is a no-op if they already joined meanwhile.
+                $this->groups->addKnownMember($groupId, $userId, (string) $mapped['userId']);
+                $resolved[(string) $swId] = (string) $mapped['userId'];
             } elseif (is_string($mapped) && $mapped !== '') {
                 $this->groups->assertMemberParticipant($groupId, $mapped);
                 $resolved[(string) $swId] = $mapped;
             } else {
-                throw new ApiException('VALIDATION', 'each Splitwise member needs a group member or an email', 422);
+                throw new ApiException('VALIDATION', 'each Splitwise member needs a group member, a known person, or an email', 422);
             }
         }
         $mapping = $resolved;
