@@ -59,16 +59,19 @@ if [ "$(get "['android']['stage']")" = "building" ]; then
     BASE="https://$CPANEL_HOST:${CPANEL_PORT:-2083}"; AUTH="Authorization: cpanel $CPANEL_USER:$CPANEL_TOKEN"
     enc() { python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$1"; }
     curl -sS -m 60 "$BASE/json-api/cpanel?cpanel_jsonapi_apiversion=2&cpanel_jsonapi_module=Fileman&cpanel_jsonapi_func=mkdir&path=$(enc "$WEB_ROOT")&name=downloads" -H "$AUTH" >/dev/null || true
-    # Both public link names must stay current: the web sign-in page links
-    # slytab.apk, the marketing "Get the apps" page links slytab-latest.apk.
-    OK=$(curl -sS -m 300 "$BASE/execute/Fileman/upload_files" -H "$AUTH" \
-      -F "dir=$WEB_ROOT/downloads" -F "overwrite=1" \
-      -F "file-1=@$TMP;filename=slytab.apk" \
-      -F "file-2=@$TMP;filename=slytab-latest.apk" \
-      -F "file-3=@$TMP;filename=slytab-$VER.apk" \
-      | python3 -c "import json,sys;print(json.load(sys.stdin).get('status'))")
-    rm -f "$TMP"
-    [ "$OK" = "1" ] && { setstage android done; say "APK uploaded -> downloads/slytab.apk + slytab-latest.apk + slytab-$VER.apk"; } || say "APK upload failed (retry next cycle)"
+    # Uploading the APK directly does NOT work: cPanel appends the multipart
+    # boundary to the stored file and Android then refuses it with
+    # INSTALL_PARSE_FAILED_NOT_APK (the 1.0.0 download shipped broken that
+    # way). upload-apk.sh zips it, extracts server-side and verifies the
+    # served sha256 — never publish an APK any other way.
+    if bash "$REPO/scripts/ops/upload-apk.sh" "$TMP" "$VER" >>"$LOG" 2>&1; then
+      rm -f "$TMP"
+      setstage android done
+      say "APK uploaded + verified -> downloads/slytab.apk + slytab-latest.apk + slytab-$VER.apk"
+    else
+      rm -f "$TMP"
+      say "APK upload failed verification (retry next cycle)"
+    fi
   fi
 fi
 

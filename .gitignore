@@ -49,3 +49,6 @@ Splitwise expenses*.xlsx
 api/tests/fixtures/receipts/*.jpg
 api/tests/fixtures/receipts/*.jpeg
 api/tests/fixtures/receipts/*.png
+
+# Store bundles built for manual upload (build artifacts)
+*.aab

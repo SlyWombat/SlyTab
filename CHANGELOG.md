@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-07-27
+
+### Fixed
+
+- **Receipt scans lost thousands separators** (#75): a Chilean receipt for
+  `$88.930` imported as 89 CLP. Amounts now cross the vision-model boundary
+  as printed text and the currency decides what a separator means — in a
+  zero-decimal currency (CLP, JPY, KRW…) sub-units do not exist, so every
+  separator groups.
+- **Duplicate expenses** (#76): saving twice created two identical
+  expenses, silently doubling someone's spending. Save is disabled while a
+  create is in flight, an identical expense is refused with a warning you
+  can override deliberately, and re-running an import drops rows the group
+  already has instead of filing them again.
+- **The Android download was serving an APK that could not be installed.**
+  cPanel's upload appends the multipart boundary to the stored file; a zip
+  survives that, an APK does not, and Android rejected it with
+  INSTALL_PARSE_FAILED_NOT_APK. APKs are now published by uploading a zip,
+  extracting server-side, and verifying the served sha256 against the
+  build — `scripts/ops/upload-apk.sh`.
+
+### Changed
+
+- **Simpler expense entry**: scanning a receipt fills in the merchant,
+  total, currency and date and leaves the split on equal, so the next thing
+  you do is press Save. It used to drop you straight into item assignment,
+  which meant every receipt cost a decision before it could be saved.
+  Splitting item by item is now an optional "Split by item" button.
+
 ## [1.0.0] — 2026-07-26
 
 First stable release: both mobile apps and the web app ship together.
