@@ -100,3 +100,17 @@ policy. Always give the stores the `/marketing/` paths.
 Both pages describe real behaviour and are checked against it by the
 stores: if account deletion, sign-in providers, or what leaves the device
 ever change, update these pages **before** shipping the change.
+
+## Store listing artefacts
+
+Generated, gitignored, rebuilt on demand — they are not source:
+
+| Artefact | Where | Notes |
+|---|---|---|
+| Feature graphic | `SlyTab-play-feature-1024x500.png` | 1024x500, brand palette |
+| Play icon | `SlyTab-play-icon-512.png` | exactly 512x512 RGBA — Play rejects other sizes |
+| Screenshots | `store-screenshots/*.png` | 1080x1920; Play's max ratio is 2:1, so do NOT use the emulator's native 1440x3040 |
+| Play bundle | `SlyTab-<ver>-build<N>.aab` | see docs/private/android-play-setup.md |
+
+Listing copy (short and full description, release notes) lives in
+`docs/private/android-play-setup.md`.

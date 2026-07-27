@@ -55,3 +55,7 @@ api/tests/fixtures/receipts/*.png
 
 # Generated store listing artwork
 SlyTab-play-feature-*.png
+
+# Generated store screenshots
+store-screenshots/
+SlyTab-play-icon-*.png
