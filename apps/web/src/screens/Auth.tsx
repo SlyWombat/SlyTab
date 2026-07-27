@@ -312,6 +312,23 @@ export function Auth({ onSignedIn, joinPending }: {
           Get the Android app
         </a>
         <span className="muted" style={{ fontSize: '0.75rem' }}>Direct download (APK) — same account as the web app</span>
+        {/* The iPhone app is TestFlight-only while it is in testing, and
+            getting testers signed up there is the bottleneck. */}
+        <a
+          className="btn"
+          href="https://testflight.apple.com/join/eK9sm1jH"
+          target="_blank"
+          rel="noreferrer"
+          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+            gap: 'var(--ss-space-2)', marginTop: 'var(--ss-space-2)' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M16.1 12.6c0-2 1.6-3 1.7-3.1-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7s-1.6-.7-2.6-.7c-1.3 0-2.6.8-3.3 2-1.4 2.4-.4 6 1 8 .7 1 1.5 2 2.5 2s1.3-.6 2.5-.6 1.5.6 2.6.6 1.7-1 2.4-1.9c.7-1.1 1-2.2 1-2.2s-1.9-.7-1.9-3.2z" />
+            <path fill="currentColor" d="M14.3 6.3c.5-.7.9-1.6.8-2.6-.8 0-1.8.5-2.4 1.2-.5.6-1 1.6-.8 2.5.9.1 1.8-.4 2.4-1.1z" />
+          </svg>
+          Get the iPhone app
+        </a>
+        <span className="muted" style={{ fontSize: '0.75rem' }}>Through TestFlight while it's in testing</span>
       </div>
     </div>
   );

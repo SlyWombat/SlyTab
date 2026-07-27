@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
 import { api, type Group, type HomeBalances, type Session, type User } from '../api';
+import { GetTheApp } from '../GetTheApp';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
@@ -97,6 +98,10 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       </div>
 
       {error && <div className="error" role="alert">{error}</div>}
+
+      {/* Getting testers onto TestFlight is the bottleneck while the apps
+          are in testing — this only shows on iPhone/iPad browsers. */}
+      <GetTheApp />
 
       {user.emailVerifiedAt === null && (
         <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
