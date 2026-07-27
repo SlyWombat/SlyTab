@@ -82,3 +82,21 @@ Both read the repo `.env`. New SQL migrations ship with the API deploy —
   exposure — revisit with an auth proxy if that ever matters.
 - If the home connection's IP changes, nothing breaks (kdocker2 dials *out*
   to the VM); only the extra "home IP" debug rules on 3307 go stale.
+
+## Store compliance pages
+
+Two static pages under `apps/web/public/marketing/` ship with `npm run
+deploy` and are required by the app stores. Both are referenced from
+App Store Connect and the Play Console, so treat their URLs as stable:
+
+| Page | URL | Source |
+|---|---|---|
+| Privacy policy | `/slytab/marketing/privacy/` | `apps/web/public/marketing/privacy/` |
+| Account & data deletion | `/slytab/marketing/delete-account/` | `apps/web/public/marketing/delete-account/` |
+
+Note `/slytab/privacy` also returns 200 — that is the SPA fallback, not the
+policy. Always give the stores the `/marketing/` paths.
+
+Both pages describe real behaviour and are checked against it by the
+stores: if account deletion, sign-in providers, or what leaves the device
+ever change, update these pages **before** shipping the change.

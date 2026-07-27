@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — Delete your account and data</title>
+<style>
+  :root { --bg:#0c1220; --surface:#141c2e; --outline:#2e3d5e; --text:#eef2fa;
+    --text2:#a9b4cc; --brand:#4f8ef7; color-scheme: dark; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --surface:#fff; --outline:#d4dbe8; --text:#16203a;
+      --text2:#4a5878; --brand:#2f6fe0; color-scheme: light; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 400 15.5px/1.6 Inter, "Segoe UI", system-ui, sans-serif;
+    padding: 48px 20px 80px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font: 600 26px/1.25 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.02em; margin-bottom: 4px; }
+  h2 { font: 600 17px/1.3 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    margin: 28px 0 8px; }
+  p, li { color: var(--text2); }
+  strong { color: var(--text); }
+  ul, ol { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  a { color: var(--brand); }
+  .updated { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--outline);
+    border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Delete your SlyTab account</h1>
+  <p class="updated">App: <strong>SlyTab</strong> (ca.electricrv.slytab) · Last updated: July 27, 2026</p>
+
+  <p>You can delete your SlyTab account and personal data at any time. There
+  are two ways to do it — one inside the app, one by email if you can't sign
+  in.</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">In the app (immediate)</h2>
+    <ol>
+      <li>Open SlyTab and go to <strong>Profile</strong>.</li>
+      <li>Scroll to the bottom and tap <strong>Delete my account…</strong></li>
+      <li>Type your email address to confirm, then tap <strong>Delete forever</strong>.</li>
+    </ol>
+    <p>This takes effect straight away. It works the same in the web app at
+    <a href="https://electricrv.ca/slytab/">electricrv.ca/slytab</a>.</p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">By email (if you can't sign in)</h2>
+    <p>Email <a href="mailto:dave@drscapital.com?subject=SlyTab%20account%20deletion%20request">dave@drscapital.com</a>
+    from the address on the account, with the subject
+    <strong>SlyTab account deletion request</strong>. We'll confirm and
+    delete it within <strong>30 days</strong>, usually much sooner.</p>
+  </div>
+
+  <h2>What gets deleted</h2>
+  <ul>
+    <li>Your <strong>email address</strong>, <strong>display name</strong> and avatar.</li>
+    <li>Your <strong>password</strong> and any Google or Apple sign-in link.</li>
+    <li>Your <strong>payment handles</strong> (Interac e-Transfer email, PayPal.Me, Venmo).</li>
+    <li>Every <strong>session</strong> — you're signed out everywhere immediately.</li>
+    <li>Your <strong>push notification tokens</strong>, so the app can no longer reach your devices.</li>
+    <li>Your <strong>group memberships</strong>: you leave every group.</li>
+  </ul>
+
+  <h2>What stays, and why</h2>
+  <p>Expenses you shared with other people are not erased, because they are
+  also <em>their</em> records — deleting them would silently change what your
+  friends owe each other. Those entries remain in the group with your name
+  replaced by <strong>“Deleted user”</strong>, so the maths still adds up but
+  nothing identifies you.</p>
+  <p>If you want an expense removed as well as your account, delete it in the
+  app first, or ask another member of the group to. Receipt photos you
+  uploaded belong to the expense and follow the same rule.</p>
+
+  <h2>Backups</h2>
+  <p>Nightly database backups are kept for <strong>30 days</strong>, so a copy
+  of your data can persist in those for up to a month before ageing out. They
+  are only ever used to restore the service after a failure.</p>
+
+  <h2>Questions</h2>
+  <p>Ask at <a href="mailto:dave@drscapital.com">dave@drscapital.com</a>, or
+  read the <a href="../privacy/">privacy policy</a> for what we collect and
+  why. Data controller: Electric RV, Ontario, Canada.</p>
+</main>
+</body>
+</html>
