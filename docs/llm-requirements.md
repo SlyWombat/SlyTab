@@ -50,6 +50,49 @@ in `LOCAL_LLM_MODEL` and update it deliberately.
    shared host's ~30 s limit; the client then reports a network failure
    even though the parse succeeded. Warm scans run 3–6 s.
 6. **Fits the timeout.** `LOCAL_LLM_TIMEOUT=90` seconds, end to end.
+7. **Has room to actually run.** Being resident is not the same as having
+   headroom — see below.
+
+## VRAM: it needs room, not just a slot
+
+Observed on 2026-07-27 at ~23:00, during benchmarking on the model host:
+
+```
+qwen2.5vl:7b          vram=8GB    until=2318   (ours, keep_alive -1)
+laguna-xs-2.1:q8_0    vram=33GB   until=23:41  (benchmark)
+```
+
+With the 33 GB model co-resident, our model stayed loaded but **stopped
+reading images**. A receipt that parses correctly in isolation came back as
+
+```json
+{"merchant": "Someoile", "total": ""}
+```
+
+— 20 tokens in 573 ms, against the usual 3–6 s. Under the full production
+schema it degraded further and returned malformed JSON
+(`Control character error`). `ReceiptCorpusTest` went from a clean pass to
+two failures and an error, with the model file itself unchanged (same
+digest, same timestamp).
+
+So the failure mode to watch for is not "model missing" but **model present
+and quietly wrong**, which is the worse one: the app still gets a reply, it
+is just nonsense, and nonsense here becomes wrong money.
+
+**What SlyTab needs:** enough free VRAM alongside `qwen2.5vl:7b` that its
+image encoder is not starved. If a large model has to be loaded for
+benchmarking, either accept that receipt scanning is degraded for the
+duration, or unload it afterwards and re-run the corpus:
+
+```bash
+vendor/bin/phpunit --filter 'ReceiptCorpusTest'   # ~15s, confirms recovery
+```
+
+A quick way to check the host's current state:
+
+```bash
+curl -s $LOCAL_LLM_URL/api/ps | python3 -m json.tool   # what is resident
+```
 
 ## Acceptance test before switching models
 
