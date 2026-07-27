@@ -316,3 +316,10 @@ practice, plain `.env` is the v1.0 mechanism.
 | 3 | Venmo deep-link format churn | Behind one `paymentLinks.ts` module; degrade to copyable handle |
 | 4 | TS/PHP duplicated money algorithms drift apart | Shared JSON test vectors run by both Vitest and PHPUnit; CI fails on divergence |
 | 5 | Expo push requires Expo's service (external call) | Opt-in only; documented in privacy policy |
+
+## Receipt scanning model
+
+The vision model SlyTab depends on, what a replacement must do, and the
+acceptance test to run before switching: **[docs/llm-requirements.md](llm-requirements.md)**.
+Read it before upgrading the model host — a changed model returns
+plausible JSON with wrong numbers, and wrong numbers are wrong money.
