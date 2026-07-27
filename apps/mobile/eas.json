@@ -1,5 +1,8 @@
 {
-  "cli": { "version": ">= 13.0.0", "appVersionSource": "local" },
+  "cli": {
+    "version": ">= 13.0.0",
+    "appVersionSource": "local"
+  },
   "build": {
     "ios-testflight": {
       "extends": "production",
@@ -9,10 +12,16 @@
       "autoIncrement": false
     },
     "android-apk": {
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      },
+      "credentialsSource": "local"
     },
     "android-play": {
-      "android": { "buildType": "app-bundle" }
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "credentialsSource": "local"
     }
   },
   "submit": {

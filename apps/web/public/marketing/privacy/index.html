@@ -31,7 +31,7 @@
 <body>
 <main>
   <h1>SlyTab Privacy Policy</h1>
-  <p class="updated">Last updated: July 22, 2026 · Data controller: Electric RV, Ontario, Canada</p>
+  <p class="updated">Last updated: July 27, 2026 · Data controller: Electric RV, Ontario, Canada</p>
 
   <p>SlyTab is a private expense-sharing app made for families and friends.
   Our privacy position is simple: <strong>your data is yours, it stays on our
@@ -44,16 +44,30 @@
     <li><strong>Expense data:</strong> the groups you're in, expenses, splits, settlements, and any notes you enter — visible only to members of the same group.</li>
     <li><strong>Payment handles (optional):</strong> an Interac e-Transfer email, PayPal.Me, or Venmo username you choose to save so group members can pay you. SlyTab never processes, holds, or has access to money or banking credentials.</li>
     <li><strong>Receipt photos (optional):</strong> stored with the expense, visible only to the group.</li>
+    <li><strong>Sign-in identity, if you use it:</strong> if you sign in with Google or with Apple, we receive the email address that provider gives us (which may be Apple's private relay address) and store it as your account email, along with an identifier linking the account. We never receive your Google or Apple password.</li>
+    <li><strong>Devices you're signed in on:</strong> a device label and timestamps, so you can review and revoke sessions from your profile. If you allow notifications, a push token for your device.</li>
   </ul>
 
   <h2>What we don't collect</h2>
-  <p>No analytics, no telemetry, no advertising or tracking SDKs, no location
-  data, no contact-list access, no third-party sign-in.</p>
+  <p>No analytics, no telemetry, no advertising or tracking SDKs, no
+  contact-list access, and no selling or sharing of anything for advertising.</p>
+
+  <h2>About location</h2>
+  <p>We don't track your location and we never store it. One narrow
+  exception, which happens <em>on your device</em>: when you attach a receipt
+  photo, the app reads the photo's GPS tag (if the photo has one) purely to
+  guess which currency you were spending in. Only the resulting three-letter
+  currency code is sent to us — never the coordinates. The photo itself is
+  uploaded with whatever tags your camera wrote into it, so if you'd rather
+  not include them, strip the photo's metadata before attaching it.</p>
 
   <h2>Third parties we use</h2>
   <ul>
     <li><strong>Receipt scanning runs on our own hardware.</strong> Photos are itemized by a vision model we host ourselves — they are never sent to any third-party AI service. (A Claude API fallback exists in the code but is disabled unless we explicitly enable it; this policy will be updated first if that ever changes.)</li>
     <li><strong>Frankfurter/ECB:</strong> currency codes only, to fetch daily exchange rates. No user data is sent.</li>
+    <li><strong>Google and Apple</strong>, only if you choose to sign in with them: they tell us an email address and an account identifier. Signing in with Apple lets you hide your real address behind Apple's private relay, and that works fine here.</li>
+    <li><strong>Expo push service</strong>, only if you turn on notifications: delivers the notification to your device. It receives the device token and the text of the notification (for example "Dave added an expense"), not your account data.</li>
+    <li><strong>Splitwise</strong>, only if you choose to import from it: you paste a Splitwise API key, we use it to read the group history you asked to import, and we don't keep the key afterwards.</li>
   </ul>
 
   <h2>Where your data lives</h2>
