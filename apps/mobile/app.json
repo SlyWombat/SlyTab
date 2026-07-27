@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "package": "com.slywombat.slytab",
+      "package": "ca.electricrv.slytab",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0c1220"

@@ -28,9 +28,9 @@ docker exec slytab-emu adb install -r /tmp/app.apk >/dev/null
 
 for SCALE in 1.0 1.3 2.0; do
   docker exec slytab-emu adb shell settings put system font_scale "$SCALE"
-  docker exec slytab-emu adb shell am force-stop com.slywombat.slytab
+  docker exec slytab-emu adb shell am force-stop ca.electricrv.slytab
   sleep 2
-  docker exec slytab-emu adb shell monkey -p com.slywombat.slytab -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  docker exec slytab-emu adb shell monkey -p ca.electricrv.slytab -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   sleep 12
   docker exec slytab-emu adb exec-out screencap -p > "/tmp/fontscale-$SCALE.png"
   echo "scale $SCALE: fatals=$(docker exec slytab-emu adb logcat -d | grep -c 'FATAL EXCEPTION' || true)"

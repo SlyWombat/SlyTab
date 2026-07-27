@@ -270,7 +270,7 @@ with version + git SHA.
 
 Expo (managed workflow) + Expo Router; same Zustand/TanStack Query stack;
 tokens consumed from `packages/core/src/tokens.ts`. IDs follow the family
-convention: Android `com.slywombat.slytab`, iOS `ca.electricrv.slytab`
+convention: both stores use `ca.electricrv.slytab`
 (SlyLED precedent). Camera via `expo-camera`/`expo-image-picker`; push via
 Expo notifications (opt-in).
 
