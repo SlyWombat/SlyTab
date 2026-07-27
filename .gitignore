@@ -42,3 +42,10 @@ docs/private/
 # names and amounts; never belongs in the repo.
 Splitwise expenses*.csv
 Splitwise expenses*.xlsx
+
+# Receipt fixtures are photos of real receipts (card tails, merchant tax
+# ids) — the corpus is rebuilt from prod with
+# scripts/dev/fetch-receipt-fixtures.sh, never committed. expected.json is.
+api/tests/fixtures/receipts/*.jpg
+api/tests/fixtures/receipts/*.jpeg
+api/tests/fixtures/receipts/*.png

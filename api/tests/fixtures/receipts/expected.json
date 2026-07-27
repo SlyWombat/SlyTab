@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Human-verified truth for the receipt corpus (issue #75). The images",
+    "themselves are NOT committed — they are photos of real receipts with card",
+    "tails and merchant tax ids on them. Rebuild the corpus with",
+    "scripts/dev/fetch-receipt-fixtures.sh; ReceiptCorpusTest skips whatever",
+    "is missing.",
+    "Every amount below was read off the paper by eye, not by the parser."
+  ],
+  "receipts": {
+    "01KYGKYR05GYMHD12CPZT68TTF": {
+      "note": "Transbank credit slip, Valle Nevado. The receipt that exposed #75: printed $88.930, imported as 89 CLP.",
+      "merchantContains": "MONTE BLANCO",
+      "currency": "CLP",
+      "date": "2026-07-26",
+      "totalMinor": 88930,
+      "subtotalMinor": 69700,
+      "tipMinor": 19230,
+      "itemsIncludeMinor": [58571, 11129]
+    },
+    "01KYGC5D97VWY4STFM913V19C2": {
+      "note": "Second Transbank slip, same trip: printed $80.190, imported as 80 CLP.",
+      "merchantContains": "VALLE LOUNGE",
+      "currency": "CLP",
+      "date": "2026-07-26",
+      "totalMinor": 80190,
+      "subtotalMinor": 72900,
+      "tipMinor": 7290,
+      "itemsIncludeMinor": [61261, 11639],
+      "mayMiss": ["tipMinor"],
+      "mayMissReason": "qwen2.5vl:7b reads this layout's PROPINA line as an item rather than the tip, reproducibly at temperature 0. The total is still exact, so no money is wrong — but the itemised split shows a line the user has to reclassify by hand."
+    },
+    "01KYG7S5TAPPS9PPBJAJP22D2E": {
+      "note": "Payment confirmation page, not a till receipt. Prints the grouped $450.000 AND an unseparated 450000, which is why this one happened to import correctly — a good control case.",
+      "merchantContains": "CLOS APALTA",
+      "currency": "CLP",
+      "date": "2026-07-26",
+      "totalMinor": 450000
+    }
+  }
+}

@@ -280,8 +280,10 @@ final class ReceiptService
 
     /**
      * Local vision model via Ollama (default qwen2.5vl:7b). The model
-     * transcribes decimal amounts exactly as printed; we convert to minor
-     * units and recompute confidence server-side — no model arithmetic.
+     * transcribes amounts as printed TEXT, separators and all; the server
+     * turns that into minor units using the currency's rules and recomputes
+     * confidence — no model arithmetic, and no model guessing at locales
+     * (it got Chilean grouping wrong even when told, issue #75).
      *
      * @return array<string,mixed>
      */
@@ -300,12 +302,13 @@ final class ReceiptService
             'options' => ['temperature' => 0],
             'messages' => [[
                 'role' => 'user',
-                'content' => 'Transcribe this receipt into JSON. Copy every amount as the '
-                    . 'number printed on the receipt (e.g. 12.99); do not convert units. '
-                    . 'CAREFUL with separators: in many countries "." or a space groups '
-                    . 'thousands and "," is the decimal mark — e.g. Chilean "$4.240" means '
-                    . 'four thousand two hundred forty pesos (output 4240), and "12,50" '
-                    . 'means twelve and a half (output 12.5). quantity is the item count '
+                'content' => 'Transcribe this receipt into JSON. Every amount is a STRING '
+                    . 'copied CHARACTER FOR CHARACTER as printed, keeping its separators '
+                    . 'and dropping only the currency symbol: "$4.240" → "4.240", '
+                    . '"12,50" → "12,50", "$1,234.56" → "1234.56" is WRONG, it is '
+                    . '"1,234.56". Do not convert, round, reformat or interpret the '
+                    . 'separators — we decide what they mean from the currency. If an '
+                    . 'amount is unreadable use null. quantity is the item count '
                     . '(default 1; may be fractional for weighed goods). date is '
                     . 'YYYY-MM-DD; currency is the 3-letter code'
                     . ($currencyHint !== ''
@@ -349,7 +352,15 @@ final class ReceiptService
         $model = preg_match('/^[A-Z]{3}$/', (string) ($doc['currency'] ?? '')) ? $doc['currency'] : null;
         $currency = self::resolveCurrency($model, ($doc['currencyExplicit'] ?? null) === true, $currencyHint);
         $scale = \SlyTab\Support\Money::scale($currency ?? 'XXX');
-        $toMinor = static fn(mixed $v): ?int => is_numeric($v) ? (int) round(((float) $v) * $scale) : null;
+        // Amounts arrive as printed text ("88.930"); the currency decides
+        // whether a separator groups or divides (issue #75). Numbers are
+        // still accepted so a model that ignores the schema, or a parse
+        // stored before this change, keeps working.
+        $toMinor = static fn(mixed $v): ?int => match (true) {
+            is_string($v) => \SlyTab\Support\Money::parsePrinted($v, $currency ?? 'XXX'),
+            is_numeric($v) => (int) round(((float) $v) * $scale),
+            default => null,
+        };
         $items = [];
         foreach (($doc['items'] ?? []) as $item) {
             $minor = $toMinor($item['total'] ?? null);
@@ -418,9 +429,18 @@ final class ReceiptService
     }
 
     /** @return array<string,mixed> decimal-dollars schema for the local model */
+    /**
+     * Amounts come back as STRINGS, exactly as printed on the paper.
+     *
+     * They used to be JSON numbers, which silently destroyed the one clue
+     * that tells a thousands separator from a decimal point: "88.930" and
+     * "88.93" are the same number, so a Chilean receipt for 88,930 pesos
+     * arrived as 88.93 and stored as 89 (issue #75). Keeping the printed
+     * text lets Money::parsePrinted() decide, with the currency in hand.
+     */
     private static function localSchema(): array
     {
-        $nullableNumber = ['type' => ['number', 'null']];
+        $nullableAmount = ['type' => ['string', 'null']];
         return [
             'type' => 'object',
             'properties' => [
@@ -435,15 +455,15 @@ final class ReceiptService
                         'properties' => [
                             'name' => ['type' => 'string'],
                             'quantity' => ['type' => 'number'],
-                            'total' => ['type' => 'number'],
+                            'total' => ['type' => 'string'],
                         ],
                         'required' => ['name', 'quantity', 'total'],
                     ],
                 ],
-                'subtotal' => $nullableNumber,
-                'tax' => $nullableNumber,
-                'tip' => $nullableNumber,
-                'total' => $nullableNumber,
+                'subtotal' => $nullableAmount,
+                'tax' => $nullableAmount,
+                'tip' => $nullableAmount,
+                'total' => $nullableAmount,
             ],
             'required' => ['merchant', 'date', 'currency', 'currencyExplicit', 'items', 'subtotal', 'tax', 'tip', 'total'],
         ];
