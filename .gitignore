@@ -52,3 +52,6 @@ api/tests/fixtures/receipts/*.png
 
 # Store bundles built for manual upload (build artifacts)
 *.aab
+
+# Generated store listing artwork
+SlyTab-play-feature-*.png
