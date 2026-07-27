@@ -112,7 +112,7 @@ export interface SplitwiseGroup {
   id: number; name: string; members: { id: number; name: string }[];
 }
 export interface ImportResult {
-  imported: { expenses: number; settlements: number; skipped: number };
+  imported: { expenses: number; settlements: number; skipped: number; duplicates?: number };
   invited?: string[];
   errors: string[];
 }
@@ -374,7 +374,7 @@ export const api = {
     }>(`/groups/${groupId}/import/splitwise`, 'csv', file, { dryRun: '1' }),
   importSplitwise: (groupId: string, file: File, mapping: Record<string, string>) =>
     upload<{
-      imported: { expenses: number; settlements: number; skipped: number };
+      imported: { expenses: number; settlements: number; skipped: number; duplicates?: number };
       errors: string[];
     }>(`/groups/${groupId}/import/splitwise`, 'csv', file, { mapping: JSON.stringify(mapping) }),
   homeBalances: () => req<HomeBalances>('GET', '/me/balances'),

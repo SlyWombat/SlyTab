@@ -81,7 +81,7 @@ final class ImportService
         }
 
         $group = $this->groups->get($groupId);
-        $imported = ['expenses' => 0, 'settlements' => 0, 'skipped' => 0];
+        $imported = ['expenses' => 0, 'settlements' => 0, 'skipped' => 0, 'duplicates' => 0];
         $errors = [];
 
         foreach ($doc['rows'] as $n => $row) {
@@ -105,6 +105,13 @@ final class ImportService
                     continue;
                 }
                 [$payers, $shares] = self::reconstruct($row['cost'], $nets, $label);
+                // Re-importing the same export must not double the group's
+                // spending: rows already present are dropped, not re-filed
+                // (owner, issue #76).
+                if ($this->alreadyImported($groupId, $row)) {
+                    $imported['duplicates']++;
+                    continue;
+                }
                 $this->expenses->create($groupId, $userId, [
                     'description' => $row['description'],
                     'amountMinor' => $row['cost'],
@@ -115,6 +122,11 @@ final class ImportService
                     'splitInput' => ['imported' => 'splitwise'],
                     'payers' => $payers,
                     'shares' => $shares,
+                    // The dedup above already compared this row against what
+                    // the group holds. Two IDENTICAL rows within one export
+                    // are legitimate (the same round bought twice), so the
+                    // per-expense guard must not reject the second one.
+                    'allowDuplicate' => true,
                 ], recordActivity: false);
                 $imported['expenses']++;
             } catch (ApiException $e) {
@@ -126,6 +138,29 @@ final class ImportService
             'source' => 'splitwise',
         ] + $imported);
         return ['imported' => $imported, 'errors' => $errors];
+    }
+
+    /**
+     * Has this CSV row already been imported into the group? Matched on
+     * date + description + amount + currency, the fields the export
+     * carries; the split is not compared, since a row whose shares were
+     * edited after import is still that row (issue #76).
+     *
+     * @param array<string,mixed> $row
+     */
+    private function alreadyImported(string $groupId, array $row): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM expenses
+             WHERE group_id = ? AND deleted_at IS NULL AND expense_date = ?
+               AND description = ? AND amount = ? AND currency = ? LIMIT 1',
+        );
+        $stmt->execute([
+            $groupId, $row['date'],
+            $row['description'] === '' ? '(no description)' : $row['description'],
+            $row['cost'], $row['currency'],
+        ]);
+        return $stmt->fetchColumn() !== false;
     }
 
     // ---- reconstruction ----

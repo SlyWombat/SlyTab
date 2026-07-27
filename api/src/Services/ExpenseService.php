@@ -27,11 +27,59 @@ final class ExpenseService
         private readonly ActivityService $activity,
     ) {}
 
+    /**
+     * Is there already an expense in this group that looks like this one?
+     *
+     * Same day, same description, same amount and currency, same payer.
+     * The SPLIT is deliberately not compared: a row whose shares were
+     * edited afterwards is still the same expense, and re-filing it would
+     * double someone's spending (issue #76).
+     *
+     * @param array<string,mixed> $v a validated expense
+     */
+    private function duplicateOf(string $groupId, array $v): ?string
+    {
+        $payers = array_column($v['payers'], 'userId');
+        sort($payers);
+        $stmt = $this->pdo->prepare(
+            'SELECT e.id FROM expenses e
+             WHERE e.group_id = ? AND e.deleted_at IS NULL
+               AND e.expense_date = ? AND e.description = ?
+               AND e.amount = ? AND e.currency = ?',
+        );
+        $stmt->execute([$groupId, $v['date'], $v['description'], $v['amount'], $v['currency']]);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $candidateId) {
+            $p = $this->pdo->prepare('SELECT user_id FROM expense_payers WHERE expense_id = ?');
+            $p->execute([$candidateId]);
+            $existing = $p->fetchAll(PDO::FETCH_COLUMN);
+            sort($existing);
+            if ($existing === $payers) {
+                return (string) $candidateId;
+            }
+        }
+        return null;
+    }
+
     /** @param array<string,mixed> $data @return array<string,mixed> */
     public function create(string $groupId, string $userId, array $data, bool $recordActivity = true): array
     {
         $this->groups->assertWritable($groupId);
         $v = $this->validate($groupId, $data);
+
+        // Refuse to file the same expense twice unless the user has been
+        // shown the existing one and said to go ahead anyway. This is what
+        // stops a double-tapped Save — or a retry on a flaky connection —
+        // from quietly doubling someone's spending (issue #76).
+        if (($data['allowDuplicate'] ?? false) !== true) {
+            $twin = $this->duplicateOf($groupId, $v);
+            if ($twin !== null) {
+                throw new ApiException(
+                    'DUPLICATE_EXPENSE',
+                    "\"{$v['description']}\" is already in this group on {$v['date']} for the same amount",
+                    409,
+                );
+            }
+        }
 
         $id = Ulid::generate();
         $this->pdo->beginTransaction();

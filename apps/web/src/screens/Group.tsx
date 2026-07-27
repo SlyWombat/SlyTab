@@ -494,6 +494,10 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [fxOverride, setFxOverride] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [needsRate, setNeedsRate] = useState(false);
+  // Save is disabled while a create is in flight, and once the server says
+  // this looks like a duplicate the button becomes an explicit confirm (#76).
+  const [saving, setSaving] = useState(false);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
   // Seed from the expense being edited so a previously scanned receipt
   // stays linked on save and can be viewed/rescanned here.
   const [receiptId, setReceiptId] = useState<string | null>(editing?.receiptId ?? null);
@@ -504,6 +508,11 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [scan, setScan] = useState<ScanStage | null>(null);
   const scanAbort = useRef<AbortController | null>(null);
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
+  // Kept so "Split by item" stays available without re-scanning. A scan
+  // fills the form directly now: it used to drop you into item assignment,
+  // so every receipt cost an extra decision before it could be saved
+  // (owner, 2026-07-27).
+  const [lastParsed, setLastParsed] = useState<ParsedReceipt | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const scanBusy = scan !== null;
 
@@ -541,9 +550,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         // Pin the parse to a definite currency before any math on it: a
         // parse without one is scaled at 100, which is 100x off for
         // zero-decimal currencies (the 95,000,000-peso Boragó).
-        const cur = r.parsed.currency && /^[A-Z]{3}$/.test(r.parsed.currency)
-          ? r.parsed.currency : currency;
-        setAssigning(normalizeParsedReceipt(r.parsed, cur));
+        applyParse(r.parsed);
       }
     } catch (err) {
       if (!(err instanceof ApiFailure && err.error.code === 'CANCELED')) {
@@ -565,9 +572,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt');
       } else {
-        const cur = r.parsed.currency && /^[A-Z]{3}$/.test(r.parsed.currency)
-          ? r.parsed.currency : currency;
-        setAssigning(normalizeParsedReceipt(r.parsed, cur));
+        applyParse(r.parsed);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -598,6 +603,21 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
       if (v?.url) URL.revokeObjectURL(v.url);
       return null;
     });
+  }
+
+  /**
+   * Put a parse into the form: merchant, total, currency, date. The split
+   * is deliberately left alone, so it stays on the default equal split and
+   * the next thing the user does is press Save.
+   */
+  function applyParse(parsed: ParsedReceipt) {
+    const cur = parsed.currency && /^[A-Z]{3}$/.test(parsed.currency) ? parsed.currency : currency;
+    const pinned = normalizeParsedReceipt(parsed, cur);
+    setLastParsed(pinned);
+    if (pinned.totalMinor !== null) setAmountStr(minorToAmountString(pinned.totalMinor, cur));
+    if (pinned.currency && /^[A-Z]{3}$/.test(pinned.currency)) setCurrency(pinned.currency);
+    if (pinned.merchant) setDescription(pinned.merchant);
+    if (pinned.date && /^\d{4}-\d{2}-\d{2}$/.test(pinned.date)) setDate(pinned.date);
   }
 
   function applyAssignment(result: {
@@ -664,8 +684,12 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!valid || shares === null) return;
+    // Ignore a second submit while the first is still in flight: a
+    // double-tapped Save is exactly what filed the same expense twice
+    // (issue #76).
+    if (!valid || shares === null || saving) return;
     setError(null);
+    setSaving(true);
     try {
       const payload = {
         description: description.trim(),
@@ -686,13 +710,22 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
           ? { receiptIds: [...(receiptId !== null ? [receiptId] : []), ...extraReceiptIds] }
           : {}),
       };
-      await (editing ? api.updateExpense(editing.id, payload) : api.addExpense(group.id, payload));
+      await (editing
+        ? api.updateExpense(editing.id, payload)
+        : api.addExpense(group.id, { ...payload, ...(allowDuplicate ? { allowDuplicate: true } : {}) }));
       onSaved();
     } catch (err) {
       if (err instanceof ApiFailure && err.error.code === 'FX_RATE_UNAVAILABLE') {
         setNeedsRate(true);
       }
+      // The server found the same expense already in this group. Say so
+      // and let the user decide, rather than filing it silently (#76).
+      if (err instanceof ApiFailure && err.error.code === 'DUPLICATE_EXPENSE') {
+        setAllowDuplicate(true);
+      }
       setError((err as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -923,14 +956,23 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             </button>
           </div>
         )}
+        {/* Splitting item by item is a choice now, not a toll gate: a
+            scanned receipt lands filled in and splittable equally, and this
+            is here for the times somebody only ate the starter. */}
+        {lastParsed !== null && lastParsed.items.length > 0 && (
+          <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={scanBusy}
+            onClick={() => setAssigning(lastParsed)}>
+            🍽 Split by item ({lastParsed.items.length})
+          </button>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button type="button" className="btn" disabled={scanBusy}
             style={{ flex: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             onClick={() => fileInput.current?.click()}>
             {scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}
           </button>
-          <button className="btn primary" style={{ flex: 2 }} disabled={!valid}>
-            {editing ? 'Save changes' : 'Save expense'}
+          <button className="btn primary" style={{ flex: 2 }} disabled={!valid || saving}>
+            {saving ? 'Saving…' : allowDuplicate ? 'Add it anyway' : editing ? 'Save changes' : 'Save expense'}
           </button>
         </div>
         {editing && (
@@ -1490,7 +1532,10 @@ function ImportSheet({ group, user, onClose, onDone }: {
           <p style={{ fontSize: '0.875rem', paddingBottom: 8 }}>
             Imported <b>{result.imported.expenses}</b> expenses and{' '}
             <b>{result.imported.settlements}</b> settlements
-            {result.imported.skipped > 0 && <> · {result.imported.skipped} personal expenses skipped</>}.
+            {result.imported.skipped > 0 && <> · {result.imported.skipped} personal expenses skipped</>}
+            {(result.imported.duplicates ?? 0) > 0 && (
+              <> · <b>{result.imported.duplicates}</b> already in this group, not added again</>
+            )}.
           </p>
           {(result.invited ?? []).length > 0 && (
             <p className="muted" style={{ fontSize: '0.8125rem', paddingBottom: 8 }}>

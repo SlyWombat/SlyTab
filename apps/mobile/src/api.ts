@@ -115,7 +115,7 @@ export interface SplitwiseGroup {
   id: number; name: string; members: { id: number; name: string }[];
 }
 export interface ImportResult {
-  imported: { expenses: number; settlements: number; skipped: number };
+  imported: { expenses: number; settlements: number; skipped: number; duplicates?: number };
   invited?: string[];
   errors: string[];
 }
