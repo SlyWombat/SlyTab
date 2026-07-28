@@ -135,37 +135,29 @@ drop-ins alone, so `OLLAMA_MODELS` / `OLLAMA_HOST` survive. It does **not**
 preserve `keep_alive: -1` pins — the model unloads on restart and reloads cold
 on the next scan, so re-run the corpus after any version change.
 
-## The engine version bind (2026-07-28)
+## The engine version bind
 
 The ollama version is not a free choice: each one breaks something. Verified
-by A/B on this host with the same model files and ample free VRAM, and
-independently reproduced with SlyTab's own `ReceiptCorpusTest`.
+by A/B on this host and independently reproduced with SlyTab's own
+`ReceiptCorpusTest`.
 
 | | ollama 0.30.10 **(current)** | ollama 0.32.5 |
 |---|---|---|
-| `qwen2.5vl:7b` (our model) | **3/3 exact, all line items** | **broken** — degenerate token salad on real photos |
-| `qwen3-vl:8b-instruct` | 3/3 exact, but **64–78 s** — past our 90 s timeout in practice | 3/3 exact, **3.5–8.0 s** |
+| `qwen2.5vl:7b` (in production) | **3/3 exact, all line items** | **broken** — see the regression section above |
+| `qwen3-vl:8b-instruct` | 3/3 exact, but 64–78 s — past the 90 s timeout in practice | 3/3 exact, **3.5–8.0 s** |
 | `laguna-xs-2.1:q8_0` | fails to load (`missing tensor blk.0.attn_g.weight`) | works |
 
-**There is no version where everything works.** Today the host runs
-**0.30.10** and receipt scanning is correct and fast. If the host is moved to
-0.32.5 for laguna's sake, SlyTab must move to `qwen3-vl:8b-instruct` in the
-same change, and that carries a known regression:
+**There is no version where everything works**, and the choice is a package
+deal, not two independent decisions:
 
-> `qwen3-vl:8b-instruct` drops the **smaller of two line items** on
-> multi-item receipts (misses 11129 and 11639 on our fixtures). Totals,
-> subtotals and tip stay exact, so no money is wrong — but "Split by item"
-> shows one line short and the user has to add it. `ReceiptCorpusTest`
-> fails on `itemsIncludeMinor` for 2 of 3 fixtures, which is the correct
-> behaviour: it is a real regression, not a test to relax.
+- **Staying on 0.30.10** keeps receipt scanning correct, complete and fast,
+  and costs laguna.
+- **Moving to 0.32.5** obliges SlyTab to move to `qwen3-vl:8b-instruct` in
+  the same change — on 0.30.10 that model takes 64–78 s, which users would
+  experience as a hang. And it means accepting the dropped-line-item gap
+  detailed under "Candidate evaluated" below.
 
-It does read the tip that `qwen2.5vl:7b` misses on the Valle Lounge layout,
-so the `mayMiss: ["tipMinor"]` waiver in `expected.json` would no longer be
-needed.
-
-**The 0.32.5 breakage was NOT VRAM starvation.** It failed with 54 GiB free
-and nothing else resident. The starvation effect documented below is real and
-separate — the two are additive, and either alone produces wrong numbers.
+Whoever changes the engine version owns both halves. Run the corpus after.
 
 ## Acceptance test before switching models
 
