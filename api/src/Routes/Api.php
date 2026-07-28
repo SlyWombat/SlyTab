@@ -39,7 +39,30 @@ final class Api
 {
     public static function register(SlimApp $app): void
     {
-        $pdo = Db::pdo();
+        // Liveness is answered before the database is touched, and its answer
+        // does not depend on it. Registering it after `Db::pdo()` made every
+        // request — including this one, whose reply is a constant — hang
+        // whenever MySQL was unreachable, so an outage in the database looked
+        // exactly like a dead web host (incident 2026-07-28).
+        $app->get('/api/v1/health', fn(Request $rq, Response $rs): Response =>
+            Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
+
+        try {
+            $pdo = Db::pdo();
+        } catch (\Throwable $e) {
+            // Say so in one place rather than failing route by route: every
+            // other endpoint genuinely needs the database.
+            error_log('slytab-api: database unreachable at boot: ' . $e->getMessage());
+            $app->any('/api/{rest:.*}', function (): Response {
+                throw new ApiException(
+                    'DB_UNAVAILABLE',
+                    'SlyTab is temporarily unavailable — please try again shortly',
+                    503,
+                );
+            });
+            return;
+        }
+
         $auth = new AuthService($pdo);
         $activity = new ActivityService($pdo);
         $groups = new GroupService($pdo, $activity);
@@ -134,8 +157,8 @@ final class Api
             $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts,
             $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $handoff, $swApi, $pdo, $notify, $bugs,
         ): void {
-            $g->get('/health', fn(Request $rq, Response $rs): Response =>
-                Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
+            // /health is registered above, outside this group, so that it
+            // answers without a database connection.
 
             // ---- auth (public, rate-limited per client IP) ----
             $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth, $limiter, $ip, $verifier): Response {

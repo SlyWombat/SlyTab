@@ -23,6 +23,11 @@ final class Db
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
+                // Fail fast when the database is unreachable. Without this,
+                // a dead tunnel left every PHP worker blocked on connect for
+                // 20s+ and the whole API timed out — including endpoints that
+                // never touch the database (incident 2026-07-28).
+                PDO::ATTR_TIMEOUT => (int) Env::get('DB_CONNECT_TIMEOUT', '5'),
             ];
             // Production reaches MySQL over a public tunnel: encrypt with the
             // server's own CA (self-signed, so hostname verification is off —
