@@ -27,10 +27,13 @@ in `LOCAL_LLM_MODEL` and update it deliberately.
 ## Hard requirements for any replacement model
 
 1. **Vision.** It must accept an image in the `images` array of Ollama's
-   `/api/chat`. Text-only models cannot do this job at all. As of
-   2026-07-27 the other models on the host (`gpt-oss:120b`,
-   `qwen3.6:35b-a3b`, `gemma4:31b`, the qwen3 text models) are **not**
-   vision models — none of them can replace this one.
+   `/api/chat`. Text-only models cannot do this job at all. Checked with
+   `ollama show` on 2026-07-27: `gpt-oss:120b`, `laguna-xs-2.1` and the
+   qwen3 text models are **not** vision models. `qwen3.6:35b-a3b` and
+   `gemma4:31b` **are** (both report `completion vision tools thinking`) —
+   an earlier revision of this file said otherwise. Neither has been
+   corpus-tested: both are *thinking* builds, so they would need
+   `think: false` added to `parseLocal` before they could be considered.
 2. **Structured output.** It must honour Ollama's `format` parameter with
    a JSON schema. SlyTab sends a strict schema and parses the reply with
    `json_decode(..., JSON_THROW_ON_ERROR)`; a model that emits prose or
@@ -42,15 +45,19 @@ in `LOCAL_LLM_MODEL` and update it deliberately.
    for 88,930 pesos import as 89 (issue #75). The server decides what the
    separators mean from the currency. A model that "helpfully" normalises
    amounts to numbers reintroduces that bug.
-4. **Deterministic enough.** Called with `temperature: 0`. A model that
+4. **An `-instruct` build, not a thinking one.** Bare `qwen3-vl:*` tags
+   resolve to *thinking* builds, which spend 50–290 s per receipt — far
+   past `LOCAL_LLM_TIMEOUT=90` — on what is a deterministic extraction
+   task. The same model as `-instruct` answers in ~3.5 s.
+5. **Deterministic enough.** Called with `temperature: 0`. A model that
    varies its answer between identical calls makes the money unreliable
    and the corpus test flaky.
-5. **Stays resident.** Called with `keep_alive: -1`. A cold load costs
+6. **Stays resident.** Called with `keep_alive: -1`. A cold load costs
    ~20 s, which pushes the synchronous upload-and-parse response past the
    shared host's ~30 s limit; the client then reports a network failure
    even though the parse succeeded. Warm scans run 3–6 s.
-6. **Fits the timeout.** `LOCAL_LLM_TIMEOUT=90` seconds, end to end.
-7. **Has room to actually run.** Being resident is not the same as having
+7. **Fits the timeout.** `LOCAL_LLM_TIMEOUT=90` seconds, end to end.
+8. **Has room to actually run.** Being resident is not the same as having
    headroom — see below.
 
 ## VRAM: it needs room, not just a slot
@@ -94,6 +101,72 @@ A quick way to check the host's current state:
 curl -s $LOCAL_LLM_URL/api/ps | python3 -m json.tool   # what is resident
 ```
 
+## Ollama 0.32.5 breaks `qwen2.5vl:7b` — do not upgrade past 0.30.10
+
+Confirmed by A/B on the model host on 2026-07-27, same model file, same
+digest, same three corpus fixtures, ample free VRAM in both runs:
+
+| Ollama | Corpus result |
+|---|---|
+| 0.32.5 | **0/3** — degenerate multilingual token salad, empty replies, or truncated JSON; `done_reason` and `eval_count` absent from the response |
+| 0.30.10 | **3/3 pass** — 88930 / 80190 / 450000, all exact, currency `CLP`, merchant matched |
+
+The host was upgraded to 0.32.5 during unrelated benchmarking and **has been
+rolled back to 0.30.10**, which restored a clean corpus pass. Receipt scanning
+was broken for roughly 50 minutes (23:04–23:55 UTC).
+
+This is distinct from the VRAM starvation described above, though the symptom
+(model present and quietly wrong) is the same. The 0.32.5 failure persisted
+with 54 GiB free and nothing else resident, so headroom was not the cause.
+
+Note it fails specifically on the real ~1200×1600 **JPEG** photographs; a
+small synthetic 620 px PNG still parsed correctly on 0.32.5. That is why the
+symptom could be mistaken for a bad receipt rather than a bad engine.
+
+To pin or restore the working version:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=0.30.10 sh
+ollama -v   # expect 0.30.10
+```
+
+The installer rewrites `ollama.service` but leaves `ollama.service.d/`
+drop-ins alone, so `OLLAMA_MODELS` / `OLLAMA_HOST` survive. It does **not**
+preserve `keep_alive: -1` pins — the model unloads on restart and reloads cold
+on the next scan, so re-run the corpus after any version change.
+
+## The engine version bind (2026-07-28)
+
+The ollama version is not a free choice: each one breaks something. Verified
+by A/B on this host with the same model files and ample free VRAM, and
+independently reproduced with SlyTab's own `ReceiptCorpusTest`.
+
+| | ollama 0.30.10 **(current)** | ollama 0.32.5 |
+|---|---|---|
+| `qwen2.5vl:7b` (our model) | **3/3 exact, all line items** | **broken** — degenerate token salad on real photos |
+| `qwen3-vl:8b-instruct` | 3/3 exact, but **64–78 s** — past our 90 s timeout in practice | 3/3 exact, **3.5–8.0 s** |
+| `laguna-xs-2.1:q8_0` | fails to load (`missing tensor blk.0.attn_g.weight`) | works |
+
+**There is no version where everything works.** Today the host runs
+**0.30.10** and receipt scanning is correct and fast. If the host is moved to
+0.32.5 for laguna's sake, SlyTab must move to `qwen3-vl:8b-instruct` in the
+same change, and that carries a known regression:
+
+> `qwen3-vl:8b-instruct` drops the **smaller of two line items** on
+> multi-item receipts (misses 11129 and 11639 on our fixtures). Totals,
+> subtotals and tip stay exact, so no money is wrong — but "Split by item"
+> shows one line short and the user has to add it. `ReceiptCorpusTest`
+> fails on `itemsIncludeMinor` for 2 of 3 fixtures, which is the correct
+> behaviour: it is a real regression, not a test to relax.
+
+It does read the tip that `qwen2.5vl:7b` misses on the Valle Lounge layout,
+so the `mayMiss: ["tipMinor"]` waiver in `expected.json` would no longer be
+needed.
+
+**The 0.32.5 breakage was NOT VRAM starvation.** It failed with 54 GiB free
+and nothing else resident. The starvation effect documented below is real and
+separate — the two are additive, and either alone produces wrong numbers.
+
 ## Acceptance test before switching models
 
 There is a real test for this. Do not switch on vibes.
@@ -114,6 +187,52 @@ tip are classification rather than arithmetic, so a model may decline to
 label them (the current one misreads one layout's `PROPINA` as an item);
 that is recorded per-fixture in `expected.json` rather than waved through
 globally.
+
+## Candidate evaluated: `qwen3-vl:8b-instruct`
+
+Screened 2026-07-27 against all three corpus fixtures using the real
+`parseLocal` prompt and schema, `Money::parsePrinted` replicated, currency
+hint `CLP`. **Not adopted — offered for you to gate on the PHPUnit suite.**
+
+| | `qwen2.5vl:7b` (current) | `qwen3-vl:8b-instruct` |
+|---|---|---|
+| Size | 6.0 GB | 6.1 GB |
+| Totals (the money) | 3/3 exact | **3/3 exact** |
+| Subtotal / tip | tip waived on Valle Lounge | **both exact, waiver unneeded** |
+| Line items captured | 2 / 4 / 1 | **1 / 1 / 1** |
+| Determinism @ temp 0 | assumed | **byte-identical over 3 runs** |
+| Latency on 0.30.10 | 4–23 s | 3.9 / 78 / 64 s |
+| Latency on 0.32.5 | broken | **3.5–8.0 s** |
+
+**In its favour:** it reads the `PROPINA` tip that the current model misreads
+as an item (exactly 7290), so the `mayMiss` waiver in `expected.json` would no
+longer be needed. Output was byte-identical across three runs at
+`temperature: 0`, satisfying requirement 4 properly rather than by assumption.
+
+**Against it:** it drops one line item on each multi-item receipt — captured
+58571 but missed 11129, captured 61261 but missed 11639, in both cases the
+smaller of two items. Subtotal and total stay exact, so no money is wrong, but
+`itemsIncludeMinor` in `ReceiptCorpusTest` **would fail on 2 of 3 fixtures**,
+and the user sees an itemised split one line short. This reproduces on both
+Ollama versions, so it is a property of the model, not the engine.
+
+**The version bind.** The candidate is only *fast* on 0.32.5 (3.5–8.0 s); on
+0.30.10 it runs 64–78 s, uncomfortably close to `LOCAL_LLM_TIMEOUT=90`. But
+0.32.5 is the version that breaks `qwen2.5vl:7b`. So the two cannot be
+mixed and matched — adopting the candidate means moving to 0.32.5 *and*
+accepting the line-item gap, in one deliberate step, with the corpus re-run
+after. Staying on 0.30.10 means keeping the current model.
+
+Other candidates rejected outright:
+
+- **`glm-ocr`** — fast (1.3 s) and #1 on OmniDocBench, but normalised
+  `1,333.32` → `1333.32`. That is requirement 3, and it is issue #75 again.
+- **`qwen3-vl:32b-instruct`** — returned 72900 instead of 450000 on the
+  control receipt. A wrong total disqualifies regardless of size.
+- **`qwen3-vl:30b-a3b-instruct`** — totals exact, but reported currency as
+  `PESO`, which fails the `^[A-Z]{3}$` check in `parseLocal`.
+- **Bare `qwen3-vl:*` tags** — these resolve to *thinking* builds, which take
+  50–290 s per receipt. Always use the `-instruct` tags.
 
 ## If the model disappears
 
@@ -144,3 +263,10 @@ policy against actual behaviour.
 
 `LOCAL_LLM_URL=http://147.5.121.145:3308` (Ollama). Reachable from the
 production API host and from a dev box on the LAN.
+
+**This host is production.** It is not a scratch box: upgrading it, or
+loading large models beside `qwen2.5vl:7b`, degrades live receipt scanning
+for real users. On 2026-07-27 it was upgraded to 0.32.5 during a
+benchmarking session and receipt scanning silently produced nonsense until
+the rollback. Before touching it, run the corpus; after touching it, run the
+corpus again.
