@@ -12,8 +12,18 @@ final class Db
 {
     private static ?PDO $pdo = null;
 
+    /**
+     * A connect failure is remembered for the rest of the request, so a
+     * request that asks twice (bootstrap, then the deep health check) waits
+     * one timeout rather than two. Cleared by set().
+     */
+    private static ?\Throwable $failure = null;
+
     public static function pdo(): PDO
     {
+        if (self::$failure !== null) {
+            throw self::$failure;
+        }
         if (self::$pdo === null) {
             $host = Env::require('DB_HOST');
             $port = Env::get('DB_PORT', '3306');
@@ -37,7 +47,12 @@ final class Db
                 $options[PDO::MYSQL_ATTR_SSL_CA] = $sslCa;
                 $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
             }
-            self::$pdo = new PDO($dsn, Env::require('DB_USER'), Env::require('DB_PASS'), $options);
+            try {
+                self::$pdo = new PDO($dsn, Env::require('DB_USER'), Env::require('DB_PASS'), $options);
+            } catch (\Throwable $e) {
+                self::$failure = $e;
+                throw $e;
+            }
         }
         return self::$pdo;
     }
@@ -46,6 +61,7 @@ final class Db
     public static function set(?PDO $pdo): void
     {
         self::$pdo = $pdo;
+        self::$failure = null;
     }
 
     public static function now(): string

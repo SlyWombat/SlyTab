@@ -47,6 +47,29 @@ final class Api
         $app->get('/api/v1/health', fn(Request $rq, Response $rs): Response =>
             Http::json($rs, ['status' => 'ok', 'service' => 'slytab-api', 'schemaVersion' => 1]));
 
+        // ...and because liveness no longer proves the database is reachable,
+        // something has to. This is the half that actually failed on
+        // 2026-07-28: the API host was fine, its route to MySQL was not.
+        // Monitor both — /health green + /health/deep red isolates the fault
+        // to the tunnel without anyone reading a log.
+        $app->get('/api/v1/health/deep', function (Request $rq, Response $rs): Response {
+            $started = microtime(true);
+            try {
+                Db::pdo()->query('SELECT 1')->fetchColumn();
+            } catch (\Throwable $e) {
+                error_log('slytab-api: deep health check failed: ' . $e->getMessage());
+                return Http::json($rs->withStatus(503), [
+                    'status' => 'degraded',
+                    'database' => 'unreachable',
+                ]);
+            }
+            return Http::json($rs, [
+                'status' => 'ok',
+                'database' => 'ok',
+                'queryMs' => (int) round((microtime(true) - $started) * 1000),
+            ]);
+        });
+
         try {
             $pdo = Db::pdo();
         } catch (\Throwable $e) {

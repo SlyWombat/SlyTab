@@ -114,3 +114,31 @@ Generated, gitignored, rebuilt on demand — they are not source:
 
 Listing copy (short and full description, release notes) lives in
 `docs/private/android-play-setup.md`.
+
+## Monitoring
+
+Uptime Kuma on kdocker2 (`http://192.168.10.11:3001`, container
+`uptime-kuma`) watches SlyTab under a **SlyTab** group, monitor ids 68–72.
+All alert by email through the shared "Email (via Graph bridge)"
+notification.
+
+| Monitor | Check | Answers |
+|---|---|---|
+| `SlyTab · API (liveness)` | `GET /api/v1/health`, keyword `"status":"ok"` | is PHP up? |
+| `SlyTab · API → database` | `GET /api/v1/health/deep`, keyword `"database":"ok"` | can the API reach MySQL? |
+| `SlyTab · MySQL tunnel (3307)` | TCP `147.5.121.145:3307` | is the tunnel up, seen from the LAN? |
+| `SlyTab · Receipt model (ollama)` | `GET :3308/api/tags`, keyword `qwen2.5vl` | is ollama up **and** still holding our model? |
+
+**Read them as a pair.** `/health` deliberately does not touch the
+database, so liveness green + deep red means the API host is fine and the
+*tunnel* is broken — the distinction nobody could make during the
+2026-07-28 outage, when every endpoint timed out and it looked like a dead
+web host. The ollama keyword is the model name rather than a bare
+reachability check, because receipt scanning broke on 2026-07-27 through an
+engine upgrade that a "did it answer" check would have slept through.
+
+Kuma belongs to the SlyClaw project. To change these monitors, follow
+`SlyClaw/memory/kuma-host-monitoring.md`: back up `kuma.db` *and* its
+`-wal`/`-shm` sidecars, stop the container, and do the whole edit in ONE
+`sqlite3` session (`last_insert_rowid()` is per-connection). Pass `-i` to
+`docker run` or sqlite3 reads an empty stdin, exits 0, and changes nothing.
