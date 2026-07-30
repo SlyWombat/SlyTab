@@ -17,6 +17,7 @@ import {
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
 } from './src/api';
+import { Icon } from './src/Icon';
 
 const c = tokens.color.dark;
 
@@ -151,7 +152,7 @@ function SheetModal({ title, onClose, children }: {
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close"
               hitSlop={16} style={{ minWidth: 44, minHeight: 44,
                 alignItems: 'flex-end', justifyContent: 'center' }}>
-              <Text style={{ color: c.text2, fontSize: 16 }} maxFontSizeMultiplier={1.4}>✕</Text>
+              <Icon name="close" size={16} color={c.text2} />
             </Pressable>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
@@ -349,12 +350,16 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
   // Padding the root view instead left a strip of page background below the
   // bar in a different colour — a 34pt band on iPhone (issue #46).
   const insets = useSafeAreaInsets();
-  const items: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'home', label: 'Home', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>🏠</Text> },
-    { key: 'groups', label: 'Groups', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>👥</Text> },
-    { key: 'activity', label: 'Activity', icon: <Text style={s.tabIcon} maxFontSizeMultiplier={1.2}>🕓</Text> },
+  // The icon is a function of selection now. With emoji it could not be:
+  // they render in their own colours, so the only cue available was dimming
+  // the whole thing — a weak signal on the app's primary navigation, and a
+  // useless one if you cannot distinguish the shapes (#102).
+  const items: { key: Tab; label: string; icon: (active: boolean) => React.ReactNode }[] = [
+    { key: 'home', label: 'Home', icon: (a) => <Icon name="home" size={22} color={a ? c.brand : c.text3} /> },
+    { key: 'groups', label: 'Groups', icon: (a) => <Icon name="group" size={22} color={a ? c.brand : c.text3} /> },
+    { key: 'activity', label: 'Activity', icon: (a) => <Icon name="clock" size={22} color={a ? c.brand : c.text3} /> },
     // The Profile tab is the user's avatar badge (UI spec §1 / issue #40).
-    { key: 'profile', label: 'Profile', icon: <Badge id={user.id} name={user.displayName} size={22} /> },
+    { key: 'profile', label: 'Profile', icon: () => <Badge id={user.id} name={user.displayName} size={22} /> },
   ];
   return (
     <View style={[s.tabbar, { paddingBottom: insets.bottom }]}>
@@ -362,8 +367,13 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
         <Pressable key={it.key} style={s.tabItem} onPress={() => onTab(it.key)}
           accessibilityRole="tab" accessibilityLabel={it.label}
           accessibilityState={{ selected: tab === it.key }}>
-          <View style={[s.tabIconBox, { opacity: tab === it.key ? 1 : 0.45 }]}>{it.icon}</View>
-          <Text style={[s.tabBarLabel, tab === it.key && { color: c.text }]}
+          {/* The avatar keeps the old dimming — it is a photo-like badge, not
+              a glyph we can tint. Everything else changes colour instead. */}
+          <View style={[
+            s.tabIconBox,
+            it.key === 'profile' && { opacity: tab === it.key ? 1 : 0.45 },
+          ]}>{it.icon(tab === it.key)}</View>
+          <Text style={[s.tabBarLabel, tab === it.key && { color: c.brand, fontWeight: '600' }]}
             maxFontSizeMultiplier={1.2}>{it.label}</Text>
         </Pressable>
       ))}
@@ -629,7 +639,7 @@ function OnboardingScreen({ user, onDone }: { user: User; onDone: (u: User) => v
           <CurrencySingleField label="Your home currency — your overall balance shows in this"
             value={currency} onChange={setCurrency} />
           {!showHandles ? (
-            <Btn label="＋ Add how people pay you (optional)" onPress={() => setShowHandles(true)} />
+            <Btn label="Add how people pay you (optional)" onPress={() => setShowHandles(true)} />
           ) : (
             <Field label="Interac e-Transfer email" value={interac} onChangeText={setInterac}
               autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" />
@@ -834,7 +844,9 @@ function HomeScreen({ user, onOpenGroup, active }: {
           return (
             <Pressable style={s.row} onPress={() => openGroup(item.group.id)}>
               <View style={s.tile}>
-                <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+                {item.group.emoji
+                  ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji}</Text>
+                  : <Icon name="group" size={22} color={c.text2} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowName}>{item.group.name}{item.group.archivedAt ? ' (archived)' : ''}</Text>
@@ -878,7 +890,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
 
       <Pressable style={[s.fab, s.fabWide]} onPress={onAddExpense} disabled={data === null}
         accessibilityRole="button" accessibilityLabel="Add expense">
-        <Text style={{ color: c.bg, fontSize: 18 }} maxFontSizeMultiplier={1.3}>＋</Text>
+        <Icon name="add" size={18} color={c.bg} />
         <Text style={{ color: c.bg, fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={1.3}>Add expense</Text>
       </Pressable>
       {picking && (
@@ -904,7 +916,9 @@ function HomeScreen({ user, onOpenGroup, active }: {
                     onPress={() => startQuickAdd(group)}>
                     {group.isDirect
                       ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
-                      : <View style={s.tile}><Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text></View>}
+                      : <View style={s.tile}>{group.emoji
+                  ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji}</Text>
+                  : <Icon name="group" size={22} color={c.text2} />}</View>}
                     <View style={{ flex: 1 }}>
                       <Text style={s.rowName}>
                         {group.isDirect ? other?.displayName ?? 'Friend' : group.name}
@@ -1241,7 +1255,9 @@ function GroupsScreen({ user, onOpenGroup, active }: {
           return (
             <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
               <View style={s.tile}>
-                <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+                {item.group.emoji
+                  ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji}</Text>
+                  : <Icon name="group" size={22} color={c.text2} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowName}>
@@ -1613,13 +1629,15 @@ function GroupScreen({ groupId, user, onBack }: {
     <View>
       <View style={s.header}>
         <Btn small label="‹" a11yLabel="Back" onPress={onBack} />
-        <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
+        {group.emoji
+                  ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji}</Text>
+                  : <Icon name="group" size={22} color={c.text2} />}
         <Pressable style={{ flex: 1 }} onPress={() => { if (!group.isDirect) setSettingsOpen(true); }}>
           <Text style={s.h2}>
             {group.isDirect
               ? group.members.find((m) => m.id !== user.id)?.displayName ?? 'Friend'
               : group.name}
-            {!group.isDirect && <Text style={[s.meta, { fontSize: 12 }]}> ✎</Text>}
+            {!group.isDirect && <Icon name="edit" size={12} color={c.text3} />}
           </Text>
           <Text style={s.meta}>
             {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} member${group.members.length === 1 ? '' : 's'} · ${group.homeCurrency}`}
@@ -2067,7 +2085,7 @@ function InviteSheet({ group, user, link, onClose, onChanged }: {
               <Badge id={p.id} name={p.displayName} />
               <Text style={[s.rowName, { flex: 1 }]}>{p.displayName}</Text>
               <Btn small primary={!added.has(p.id)}
-                label={added.has(p.id) ? 'Added ✓' : addBusy === p.id ? '…' : '＋ Add'}
+                label={added.has(p.id) ? 'Added' : addBusy === p.id ? '…' : 'Add'}
                 disabled={addBusy !== null || added.has(p.id)}
                 onPress={() => {
                   setAddBusy(p.id);
@@ -2165,7 +2183,8 @@ function CurrencyMultiPicker({ selected, onChange, exclude }: {
           {selected.map((cur) => (
             <Pressable key={cur} onPress={() => onChange(selected.filter((x) => x !== cur))}
               style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.brand }}>
-              <Text style={{ color: c.bg, fontSize: 12.5 }}>{cur} ✕</Text>
+              <Text style={{ color: c.bg, fontSize: 12.5 }}>{cur}</Text>
+              <Icon name="close" size={12} color={c.bg} />
             </Pressable>
           ))}
         </View>
@@ -2867,8 +2886,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 22pt box clipped the glyph, so the user could not tell ☑ from ☐
                 — i.e. could not see who was in the split (#96). */}
             {method === 'equal' && (
-              <Text maxFontSizeMultiplier={1.6}
-                style={{ color: on ? c.brand : c.text3, fontSize: 16, minWidth: 22 }}>{on ? '☑' : '☐'}</Text>
+              <Icon name={on ? 'checkboxOn' : 'checkboxOff'} size={20}
+                color={on ? c.brand : c.text3} />
             )}
             <Badge id={m.id} name={m.displayName} size={22} />
             <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
@@ -3153,7 +3172,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
                 accessibilityLabel={off ? `Restore ${item.name}` : `Ignore ${item.name}`}
                 style={{ padding: 4, minWidth: 44, minHeight: 44,
                   alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: c.text2, fontSize: 15 }} maxFontSizeMultiplier={1.4}>{off ? '↩' : '✕'}</Text>
+                <Icon name={off ? 'back' : 'close'} size={15} color={c.text2} />
               </Pressable>
             </View>
           </View>
