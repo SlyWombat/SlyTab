@@ -16,13 +16,32 @@ say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] $*" | tee -a "$LOG"; }
 if [ -f "$STATE" ]; then say "release already in flight — skipping trigger"; exit 0; fi
 
 VJSON="$REPO/apps/mobile/versions.json"
-python3 - "$VJSON" <<'PY'
+
+# Ask App Store Connect what build numbers already exist. versions.json is the
+# authoritative counter (eas.json pins appVersionSource: local), but if it is
+# ever reverted or hand-edited, `eas submit` fails with ITMS-90062 AFTER a
+# twenty-minute build. Taking max(local, remote) + 1 makes that unrepeatable.
+# Best effort: if the API is unreachable, fall back to the local counter rather
+# than blocking a release on it (issue #91).
+REMOTE_BN=$(bash "$REPO/scripts/ops/asc-api.sh" \
+  "/v1/builds?filter[app]=6794502588&limit=20&sort=-uploadedDate" 2>/dev/null \
+  | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(max([int(b['attributes']['version']) for b in d.get('data', [])] or [0]))
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0)
+say "highest iOS build on App Store Connect: ${REMOTE_BN:-0}"
+
+python3 - "$VJSON" "${REMOTE_BN:-0}" <<'PY'
 import json, sys
-p = sys.argv[1]
+p, remote = sys.argv[1], int(sys.argv[2] or 0)
 d = json.load(open(p))
 bump = lambda v: (lambda a: f"{a[0]}.{a[1]}.{int(a[2])+1}")(v.split('.'))
 d['ios']['version'] = bump(d['ios']['version'])
-d['ios']['buildNumber'] = str(int(d['ios']['buildNumber']) + 1)
+d['ios']['buildNumber'] = str(max(int(d['ios']['buildNumber']), remote) + 1)
 d['android']['version'] = bump(d['android']['version'])
 d['android']['versionCode'] = int(d['android']['versionCode']) + 1
 with open(p, 'w') as f:
