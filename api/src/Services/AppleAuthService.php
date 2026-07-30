@@ -42,6 +42,24 @@ class AppleAuthService
     }
 
     /**
+     * Audiences we accept. The web flow is issued to the Services ID; a
+     * native iOS sign-in is issued to the app's BUNDLE ID instead, so
+     * checking only the Services ID rejects every token the iPhone app can
+     * produce. Found on 2026-07-30, when a tester installed the iOS build
+     * and had no way in at all: the app offered Google only, and his account
+     * is Apple-linked.
+     *
+     * @return list<string>
+     */
+    private function audiences(): array
+    {
+        return array_values(array_filter([
+            $this->clientId(),
+            Env::get('APPLE_BUNDLE_ID', 'ca.electricrv.slytab'),
+        ]));
+    }
+
+    /**
      * Apple's identity token never carries a name; the browser receives it
      * once, on first authorization, and passes it along as $displayName.
      *
@@ -64,7 +82,7 @@ class AppleAuthService
         $verified = ($c['email_verified'] ?? false) === true || ($c['email_verified'] ?? '') === 'true';
 
         $ok = $sub !== ''
-            && hash_equals($this->clientId(), $aud)
+            && self::audienceAllowed($aud, $this->audiences())
             && $iss === self::ISSUER
             && $exp > time()
             && $email !== ''
@@ -75,6 +93,17 @@ class AppleAuthService
 
         $userId = $this->userForIdentity($sub, $email, mb_substr(trim($displayName), 0, 80));
         return $this->auth->issueSession($userId, $deviceLabel);
+    }
+
+    /** @param list<string> $allowed constant-time membership, not a loose compare */
+    private static function audienceAllowed(string $aud, array $allowed): bool
+    {
+        $ok = false;
+        foreach ($allowed as $candidate) {
+            // No early return: keep the comparison count independent of input.
+            $ok = hash_equals($candidate, $aud) || $ok;
+        }
+        return $ok;
     }
 
     /** Resolve the Apple identity to a user id, linking or creating as needed. */

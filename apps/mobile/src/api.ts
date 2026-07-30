@@ -268,6 +268,16 @@ export const api = {
     }),
   googleConfig: () => req<{ enabled: boolean }>('GET', '/auth/google/config'),
   /**
+   * Sign in with Apple, natively (issue: the iOS build shipped with Google
+   * only, so an Apple-linked account had no way in). Apple hands the name
+   * over exactly once, on first authorization, so it is passed through here
+   * or lost forever.
+   */
+  appleSignIn: (idToken: string, displayName = '') =>
+    req<{ token: string; user: User }>('POST', '/auth/apple', {
+      idToken, deviceLabel: DEVICE_LABEL, displayName,
+    }),
+  /**
    * "Sign in with Google" via browser handoff (issue #39): start returns a
    * public state (goes in the browser URL) and a secret verifier (never
    * leaves the app); claim polls until the browser side has signed in.

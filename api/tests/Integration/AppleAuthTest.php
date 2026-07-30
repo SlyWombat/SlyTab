@@ -149,6 +149,28 @@ final class AppleAuthTest extends TestCase
         $this->assertContains('apple', $me['signInProviders']);
     }
 
+    /**
+     * The iPhone app signs in natively, and Apple issues those tokens to the
+     * BUNDLE ID rather than the web Services ID. Rejecting them locked a
+     * tester out of the iOS build entirely (2026-07-30).
+     */
+    public function testANativeIosTokenIsAcceptedAlongsideTheWebOne(): void
+    {
+        $native = self::token(['aud' => 'ca.electricrv.slytab', 'sub' => 'native-sub']);
+
+        $result = self::$apple->signIn($native, 'ios', 'Native Tester');
+
+        $this->assertNotSame('', $result['token']);
+        $this->assertContains('apple', $result['user']['signInProviders']);
+    }
+
+    /** Widening the audience must not widen it to everyone. */
+    public function testAnUnrelatedAudienceIsStillRejected(): void
+    {
+        $this->expectException(ApiException::class);
+        self::$apple->signIn(self::token(['aud' => 'com.someone.else']), 'ios');
+    }
+
     public function testMissingDisplayNameFallsBackToEmailLocalPart(): void
     {
         $result = self::$apple->signIn(self::token([

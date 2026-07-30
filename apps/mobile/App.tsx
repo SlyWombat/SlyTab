@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
@@ -276,6 +277,8 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
+  // Apple sign-in needs iOS 13+; asking the device beats assuming.
+  const [appleReady, setAppleReady] = useState(false);
   const [waitingGoogle, setWaitingGoogle] = useState(false);
   const handoff = useRef<{ state: string; verifier: string } | null>(null);
 
@@ -286,6 +289,11 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
     SecureStore.getItemAsync(GOOGLE_READY_KEY)
       .then((v) => { if (v === '1') setGoogleReady(true); })
       .catch(() => {});
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync()
+        .then(setAppleReady)
+        .catch(() => setAppleReady(false));
+    }
     api.googleConfig().then((cfg) => {
       setGoogleReady(cfg.enabled);
       SecureStore.setItemAsync(GOOGLE_READY_KEY, cfg.enabled ? '1' : '0').catch(() => {});
@@ -349,6 +357,41 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
     }
   }
 
+  /**
+   * Sign in with Apple, natively. Required on iOS the moment we offer any
+   * other third-party sign-in (App Store Review Guideline 4.8) — and until
+   * this existed, an Apple-linked account simply could not get into the
+   * iPhone build.
+   *
+   * Apple returns the full name ONCE, on first authorization, and never
+   * again; if it is not forwarded here it is lost for good.
+   */
+  async function appleSignIn() {
+    setError(null);
+    setBusy(true);
+    try {
+      const cred = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!cred.identityToken) throw new Error('Apple did not return a sign-in token');
+      const full = [cred.fullName?.givenName, cred.fullName?.familyName]
+        .filter(Boolean).join(' ').trim();
+      const r = await api.appleSignIn(cred.identityToken, full);
+      onSignedIn(r.token, r.user);
+    } catch (e) {
+      // Dismissing the sheet is a choice, not a failure to report.
+      const code = (e as { code?: string }).code;
+      if (code !== 'ERR_REQUEST_CANCELED' && code !== 'ERR_CANCELED') {
+        setError((e as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit() {
     setBusy(true);
     setError(null);
@@ -389,9 +432,23 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
         <Btn primary disabled={busy}
           label={busy ? '…' : mode === 'create' ? 'Create account' : 'Sign in'}
           onPress={submit} />
-        {googleReady && (
+        {Platform.OS === 'ios' && appleReady && (
           <>
             <Text style={[s.meta, { textAlign: 'center', paddingTop: 4 }]}>or</Text>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={12}
+              style={{ width: '100%', height: 48, marginTop: 8 }}
+              onPress={appleSignIn}
+            />
+          </>
+        )}
+        {googleReady && (
+          <>
+            <Text style={[s.meta, { textAlign: 'center', paddingTop: 4 }]}>
+              {Platform.OS === 'ios' && appleReady ? '' : 'or'}
+            </Text>
             <Btn disabled={busy || waitingGoogle}
               label={waitingGoogle ? 'Waiting for your browser…' : 'Continue with Google'}
               onPress={googleSignIn} />

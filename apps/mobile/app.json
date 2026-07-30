@@ -14,7 +14,8 @@
         "NSCameraUsageDescription": "SlyTab uses the camera to scan receipts so expenses can be split by item.",
         "NSPhotoLibraryUsageDescription": "SlyTab lets you pick a receipt photo from your library to split an expense.",
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "ca.electricrv.slytab",
@@ -35,6 +36,9 @@
         "projectId": "04e9b2b8-e6a9-4e27-8d8b-f8fc2694feff"
       }
     },
-    "owner": "electricrv"
+    "owner": "electricrv",
+    "plugins": [
+      "expo-apple-authentication"
+    ]
   }
 }
