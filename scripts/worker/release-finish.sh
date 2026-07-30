@@ -44,9 +44,66 @@ owner_mail() { # owner_mail <subject> <body>
 }
 fail_release() { # abandon on unrecoverable build error
   say "ABORT: $1"
+  # If Android already shipped, the APK is LIVE at downloads/slytab-latest.apk
+  # and users are updating right now. Deleting the state here would strand that
+  # release: no report closed, no reporter emailed, and the tracking issues left
+  # open with the fix already in people's hands. Keep the record so the iOS half
+  # can be retried against the same version (issue #90).
+  if [ "$(get "['android']['stage']")" = "done" ]; then
+    setstage ios error
+    say "PARTIAL: Android v$VER is live; iOS failed and is retryable against this version"
+    owner_mail "SlyTab auto-release v$VER: Android shipped, iOS failed" \
+      "$1
+
+The Android APK for v$VER is ALREADY LIVE at downloads/slytab-latest.apk and
+users can install it. The iOS half failed, so:
+
+  - no reports were closed and no reporter was emailed (their fix is only
+    half-delivered, and the mobile-release rule says do not claim otherwise)
+  - the release state has been KEPT, with iOS marked 'error'
+
+Fix the iOS cause, then re-run the worker to retry iOS against this same
+version — do NOT bump the version, or Android gets rebuilt for nothing.
+
+Check scripts/worker/release.log."
+    exit 0
+  fi
   owner_mail "SlyTab auto-release v$VER failed" "$1 — release abandoned, no reports closed. Check scripts/worker/release.log."
   rm -f "$STATE"; exit 0
 }
+
+# --- iOS RETRY: a kept partial release, iOS half only -------------------------
+# fail_release leaves iOS at 'error' when Android has already shipped, so the
+# version is fixed and only the iOS build needs redoing. Retry it here rather
+# than making a human remember to (issue #90). Deliberately capped: if the
+# cause is a provisioning problem, retrying forever just burns EAS minutes.
+if [ "$(get "['ios']['stage']")" = "error" ]; then
+  TRIES=$(get "['ios'].get('retries', 0)")
+  if [ "$TRIES" -ge 3 ]; then
+    say "iOS retried ${TRIES}x for v$VER and still failing — leaving it for a human"
+    exit 0
+  fi
+  say "retrying iOS build for v$VER (attempt $((TRIES + 1)))…"
+  IOSID=$(EAS_BUILD_PLATFORM=ios "$REPO/scripts/ops/eas.sh" build -p ios \
+          --profile ios-testflight --non-interactive --no-wait --json 2>>"$LOG" \
+          | python3 -c "import json,sys;print((json.load(sys.stdin) or [{}])[0].get('id',''))" || true)
+  if [ -z "$IOSID" ]; then
+    python3 -c "
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+d['ios']['retries']=d['ios'].get('retries',0)+1
+json.dump(d,open(p,'w'),indent=2)" "$STATE"
+    say "iOS retry could not be started; will try again next cycle"
+    exit 0
+  fi
+  python3 -c "
+import json,sys
+p,bid=sys.argv[1:3]; d=json.load(open(p))
+d['ios'].update({'build':bid,'stage':'building','retries':d['ios'].get('retries',0)+1})
+json.dump(d,open(p,'w'),indent=2)" "$STATE" "$IOSID"
+  say "iOS rebuild started: $IOSID"
+  exit 0
+fi
 
 # --- ANDROID: build -> APK on the web download link ---------------------------
 if [ "$(get "['android']['stage']")" = "building" ]; then

@@ -138,9 +138,56 @@ final class ReceiptService
      *
      * @return array{0:string,1:string} [relPath, mime] after normalization
      */
+    /**
+     * Remove EXIF/XMP from a JPEG in place, losslessly.
+     *
+     * Receipt photos carry the camera's GPS fix — where the user was, to a
+     * few metres — and every client has a path that uploads the file
+     * untouched: the web shrinker returns the original below 500 KB, both
+     * shrinkers fall back to the original on error, and the server skips
+     * images that are already small. So the only place this can be
+     * guaranteed is here, where all of them converge (issue #83).
+     *
+     * This rewrites the segment list rather than re-encoding: APP1 holds
+     * EXIF and XMP and is dropped, everything else — including the APP2
+     * ICC profile and the image data itself — is copied byte for byte. No
+     * quality is lost and no pixels change.
+     */
+    private static function stripJpegMetadata(string $path): void
+    {
+        $raw = @file_get_contents($path);
+        if ($raw === false || strncmp($raw, "\xFF\xD8", 2) !== 0) {
+            return; // not a JPEG; PNGs carry no EXIF GPS from our clients
+        }
+        $out = "\xFF\xD8";
+        $i = 2;
+        $len = strlen($raw);
+        while ($i + 4 <= $len && $raw[$i] === "\xFF") {
+            $marker = ord($raw[$i + 1]);
+            // Start of scan: the rest is entropy-coded image data, copy it whole.
+            if ($marker === 0xDA) {
+                $out .= substr($raw, $i);
+                break;
+            }
+            $segLen = (ord($raw[$i + 2]) << 8) | ord($raw[$i + 3]);
+            if ($segLen < 2 || $i + 2 + $segLen > $len) {
+                return; // malformed — leave the file exactly as it was
+            }
+            if ($marker !== 0xE1) { // 0xE1 = APP1 = EXIF and XMP
+                $out .= substr($raw, $i, 2 + $segLen);
+            }
+            $i += 2 + $segLen;
+        }
+        if ($out !== $raw) {
+            @file_put_contents($path, $out);
+        }
+    }
+
     private function normalizeImage(string $relPath, string $mime): array
     {
         $path = self::dataDir() . '/' . $relPath;
+        // Before anything else, and regardless of which branch below runs.
+        self::stripJpegMetadata($path);
         if (!function_exists('imagecreatefromstring')) {
             return [$relPath, $mime];
         }
@@ -172,7 +219,9 @@ final class ReceiptService
             @unlink($tmpOut);
             return [$relPath, $mime];
         }
-        // Issue #10: keep the untouched upload for repeat testing.
+        // Issue #10: keep the untouched upload for repeat testing. "Untouched"
+        // means unresized — it has still had its metadata stripped above, so
+        // the corpus keeps its value without keeping anyone's GPS fix.
         $origRel = preg_replace('/\.([a-z]+)$/', '.orig.$1', $relPath) ?? $relPath;
         @rename($path, self::dataDir() . '/' . $origRel);
         rename($tmpOut, self::dataDir() . '/' . $newRel);
