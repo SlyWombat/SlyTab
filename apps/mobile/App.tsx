@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, AppState, BackHandler, FlatList, Image, KeyboardAvoidingView, Linking,
-  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,7 +19,19 @@ import {
 } from './src/api';
 import { Icon } from './src/Icon';
 
-const c = tokens.color.dark;
+/**
+ * The active palette (#92).
+ *
+ * `let`, not `const`: the theme can change at runtime and every component
+ * reads this binding when it renders, so swapping it and re-rendering the
+ * tree is all that is needed. Nothing outside makeStyles() captures a colour
+ * at module scope, which is what makes this safe rather than clever.
+ */
+type Palette = { [K in keyof typeof tokens.color.dark]: string };
+let c: Palette = tokens.color.dark;
+/** The resolved scheme, for the handful of props that take 'dark'|'light'
+ *  rather than a colour — the keyboard being the visible one. */
+let activeScheme: 'dark' | 'light' = 'dark';
 
 // ---------- shared bits ----------
 
@@ -123,7 +135,7 @@ function Field({ label, ...input }: { label: string } & React.ComponentProps<typ
       <Text style={s.fieldLabel}>{label}</Text>
       {/* keyboardAppearance: the UI is hard-dark, and a light iOS keyboard
           slammed up against it looked like a different app (issue #50). */}
-      <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark"
+      <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme}
         {...input} style={[s.input, input.style]} />
     </View>
   );
@@ -172,6 +184,9 @@ type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
 type Tab = 'home' | 'groups' | 'activity' | 'profile';
 
 const TOKEN_KEY = 'slytab.session';
+/** System / Dark / Light (#92). 'system' follows the device and keeps doing so. */
+const THEME_KEY = 'slytab.theme';
+type ThemePref = 'system' | 'dark' | 'light';
 // Last server answer to "is Google sign-in configured?" — shows the button
 // instantly on later launches instead of after a network round-trip (#40).
 const GOOGLE_READY_KEY = 'slytab.googleReady';
@@ -225,16 +240,42 @@ class ErrorBoundary extends Component<
 }
 
 export default function App() {
+  // The palette lives in a module binding that components read as they
+  // render, so a theme change is: swap it, then re-render everything. The
+  // key does the second half — cheaper and far less invasive than threading
+  // a context through fifty components in a file that handles money (#92).
+  const system = useColorScheme();
+  const [pref, setPref] = useState<ThemePref>('system');
+
+  useEffect(() => {
+    SecureStore.getItemAsync(THEME_KEY)
+      .then((v) => { if (v === 'dark' || v === 'light' || v === 'system') setPref(v); })
+      .catch(() => {});
+  }, []);
+
+  const scheme: 'dark' | 'light' = pref === 'system'
+    ? (system === 'light' ? 'light' : 'dark')
+    : pref;
+  applyScheme(scheme);
+
+  const choose = useCallback((next: ThemePref) => {
+    setPref(next);
+    SecureStore.setItemAsync(THEME_KEY, next).catch(() => {});
+  }, []);
+
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <AppShell />
+        <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
+        <AppShell key={scheme} themePref={pref} onThemeChange={choose} scheme={scheme} />
       </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
 
-function AppShell() {
+function AppShell({ themePref, onThemeChange, scheme }: {
+  themePref: ThemePref; onThemeChange: (t: ThemePref) => void; scheme: 'dark' | 'light';
+}) {
   const [user, setUser] = useState<User | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
@@ -330,6 +371,7 @@ function AppShell() {
           </View>
           <View style={{ flex: 1, display: tab === 'profile' ? 'flex' : 'none' }}>
             <ProfileScreen active={tab === 'profile'} user={user} onSaved={setUser}
+              themePref={themePref} onThemeChange={onThemeChange}
               onSignOut={() => {
                 api.logout().catch(() => {});
                 setToken(null);
@@ -1037,7 +1079,8 @@ function BugReportSection() {
   );
 }
 
-function ProfileScreen({ user, onSaved, onSignOut, active }: {
+function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeChange }: {
+  themePref: ThemePref; onThemeChange: (t: ThemePref) => void;
   user: User; onSaved: (u: User) => void; onSignOut: () => void; active: boolean;
 }) {
   const [displayName, setDisplayName] = useState(user.displayName);
@@ -1105,6 +1148,17 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
         value={currency} onChange={setCurrency} />
+      {/* #92: the light palette shipped with the design tokens and nothing
+          ever selected it, so the app was hard-dark by accident rather than by
+          choice. "Match my device" follows the system and keeps following it. */}
+      <Text style={s.fieldLabel}>Theme</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {([['system', 'Match my device'], ['dark', 'Dark'], ['light', 'Light']] as const).map(([v, label]) => (
+          <Pressable key={v} onPress={() => onThemeChange(v)} {...chip(themePref === v)}>
+            <Text style={{ color: themePref === v ? c.bg : c.text2, fontSize: 12.5 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Text style={s.fieldLabel}>Notifications</Text>
       {/* Wraps: at large font scales the three options ran off the right
           edge and "Nothing" became untappable (issue #60). */}
@@ -2500,7 +2554,7 @@ function ManageCategoriesScreen({ group, onBack }: { group: Group; onBack: () =>
                 <View key={cat.slug}
                   style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8,
                     paddingVertical: 6, opacity: cat.hidden ? 0.5 : 1 }}>
-                  <TextInput keyboardAppearance="dark"
+                  <TextInput keyboardAppearance={activeScheme}
                     value={cat.label}
                     onChangeText={(t) => patch(cat.slug, { label: t })}
                     maxLength={60}
@@ -2933,7 +2987,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                 <View key={m.id} style={s.checkRow}>
                   <Badge id={m.id} name={m.displayName} size={22} />
                   <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-                  <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark" placeholder="0.00" keyboardType="decimal-pad"
+                  <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme} placeholder="0.00" keyboardType="decimal-pad"
                     value={payerAmounts[m.id] ?? ''}
                     onChangeText={(v) => setPayerAmounts({ ...payerAmounts, [m.id]: v })}
                     style={[s.input, { minWidth: 96, flexShrink: 1, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
@@ -3029,12 +3083,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               </Text>
             )}
             {method === 'exact' && (
-              <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark" placeholder="0.00" keyboardType="decimal-pad"
+              <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme} placeholder="0.00" keyboardType="decimal-pad"
                 value={exact[m.id] ?? ''} onChangeText={(v) => setExact({ ...exact, [m.id]: v })}
                 style={[s.input, { minWidth: 96, flexShrink: 1, marginBottom: 0, paddingVertical: 6, textAlign: 'right' }]} />
             )}
             {(method === 'shares' || method === 'percent' || method === 'adjustment') && (
-              <TextInput placeholderTextColor={c.text3} keyboardAppearance="dark"
+              <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme}
                 keyboardType={method === 'shares' ? 'number-pad'
                   : method === 'percent' ? 'decimal-pad'
                   : 'numbers-and-punctuation' /* adjustment needs a minus key */}
@@ -3391,7 +3445,10 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
 
 // ---------- styles (Ledger tokens) ----------
 
-const s = StyleSheet.create({
+// Rebuilt whenever the palette changes; the parameter shadows the module
+// binding so every colour below comes from the theme being built.
+function makeStyles(c: Palette) {
+  return StyleSheet.create({
   app: { flex: 1, backgroundColor: c.bg },
   // Top/bottom system-bar clearance comes from the AppShell insets.
   screen: { flex: 1, backgroundColor: c.bg, paddingHorizontal: 16, paddingTop: 12 },
@@ -3483,3 +3540,16 @@ const s = StyleSheet.create({
   tabIconBox: { height: 24, justifyContent: 'center', alignItems: 'center' },
   tabBarLabel: { color: c.text3, fontSize: 10.5, fontWeight: '600' },
 });
+}
+
+let s = makeStyles(c);
+
+/**
+ * Swap the palette and rebuild the styles. The caller must re-render the tree
+ * afterwards — AppShell does it by changing a key.
+ */
+export function applyScheme(scheme: 'dark' | 'light'): void {
+  c = scheme === 'light' ? tokens.color.light : tokens.color.dark;
+  s = makeStyles(c);
+  activeScheme = scheme;
+}

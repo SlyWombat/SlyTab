@@ -30,7 +30,10 @@ export const color = {
     outline: '#d4dbe8',
     text: '#16203a', text2: '#4a5878', text3: '#5a6680',
     brand: '#2f6fe0', brandStrong: '#1d5ccb',
-    owed: '#148f63', owe: '#b57408', danger: '#cf3545', success: '#148f63',
+    // owed/owe measured 3.32:1 and 3.12:1 on the light surfaces — below AA on
+    // the app's most important text. Darkened to 5.31 and 4.91 minimum across
+    // all four (#92). The dark palette's pair already passes at 8:1.
+    owed: '#0d6b49', owe: '#8a5806', danger: '#cf3545', success: '#0d6b49',
   },
   category: {
     food: '#f5a05e', home: '#6fc2ff', travel: '#b78cff',

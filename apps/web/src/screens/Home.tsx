@@ -3,6 +3,7 @@ import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/co
 import { api, type Group, type HomeBalances, type Session, type User } from '../api';
 import { GetTheApp, TESTFLIGHT_URL } from '../GetTheApp';
 import { Icon } from '../Icon';
+import { setPref, storedPref, type ThemePref } from '../theme';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
@@ -452,6 +453,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
   onSignOut: () => void;
   onMyExpenses: () => void;
 }) {
+  const [theme, setTheme] = useState<ThemePref>(() => storedPref());
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
   const [sessions, setSessions] = useState<Session[] | null>(null);
@@ -508,6 +510,20 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
         <label className="field"><span>Default currency</span>
           <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
+          </select>
+        </label>
+        {/* #92: the palette existed all along and nothing selected it, so the
+            app was hard-dark by accident. System follows the OS and keeps
+            following it. */}
+        <label className="field"><span>Theme</span>
+          <select value={theme} onChange={(e) => {
+            const v = e.target.value as ThemePref;
+            setTheme(v);
+            setPref(v);
+          }}>
+            <option value="system">Match my device</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
           </select>
         </label>
         <label className="field"><span>Notifications (app and email)</span>

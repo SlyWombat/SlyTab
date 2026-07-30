@@ -79,9 +79,9 @@
   --ss-brand: #2f6fe0;
   --ss-on-brand: #ffffff; /* 4.70:1 on the light-theme brand — already AA */
   --ss-brand-strong: #1d5ccb;
-  --ss-owed: #148f63;
-  --ss-owe: #b57408;
+  --ss-owed: #0d6b49;
+  --ss-owe: #8a5806;
   --ss-danger: #cf3545;
-  --ss-success: #148f63;
+  --ss-success: #0d6b49;
   color-scheme: light;
 }

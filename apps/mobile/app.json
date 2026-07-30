@@ -5,7 +5,7 @@
     "scheme": "slytab",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "backgroundColor": "#0c1220",
     "ios": {
       "bundleIdentifier": "ca.electricrv.slytab",
