@@ -19,7 +19,21 @@ final class AuthService
     private const SESSION_DAYS = 180;
     private const MIN_PASSWORD_LENGTH = 10;
 
+    /** @var null|callable(string): bool */
+    private $appleRevoke = null;
+
     public function __construct(private readonly PDO $pdo) {}
+
+    /**
+     * Injected rather than constructed: AppleAuthService takes an AuthService,
+     * so depending on it here would be a cycle.
+     *
+     * @param callable(string): bool $fn
+     */
+    public function setAppleRevoke(callable $fn): void
+    {
+        $this->appleRevoke = $fn;
+    }
 
     /** @return array{token:string, user:array<string,mixed>} */
     public function register(string $email, string $password, string $displayName, string $deviceLabel = ''): array
@@ -261,6 +275,18 @@ final class AuthService
                 ->execute([Db::now(), $userId]);
             $this->pdo->prepare('UPDATE memberships SET left_at = ? WHERE user_id = ? AND left_at IS NULL')
                 ->execute([Db::now(), $userId]);
+            // Tell Apple before we drop the row that holds the token. Apple
+            // requires this of any app offering Sign in with Apple (#81), and
+            // it is best effort by design: the user asked to be deleted, and
+            // that must not depend on Apple answering — or on the Sign in with
+            // Apple key even being configured yet.
+            if ($this->appleRevoke !== null) {
+                try {
+                    ($this->appleRevoke)($userId);
+                } catch (\Throwable $e) {
+                    error_log('apple revoke during deletion failed: ' . $e->getMessage());
+                }
+            }
             foreach (['oauth_identities', 'email_verifications', 'password_resets'] as $table) {
                 $this->pdo->prepare("DELETE FROM {$table} WHERE user_id = ?")->execute([$userId]);
             }

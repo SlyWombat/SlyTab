@@ -323,9 +323,9 @@ export const api = {
    */
   leaveGroup: (groupId: string) =>
     req<{ ok: true }>('POST', `/groups/${groupId}/leave`),
-  appleSignIn: (idToken: string, displayName = '') =>
+  appleSignIn: (idToken: string, displayName = '', authorizationCode = '') =>
     req<{ token: string; user: User }>('POST', '/auth/apple', {
-      idToken, deviceLabel: DEVICE_LABEL, displayName,
+      idToken, deviceLabel: DEVICE_LABEL, displayName, authorizationCode,
     }),
   /**
    * "Sign in with Google" via browser handoff (issue #39): start returns a

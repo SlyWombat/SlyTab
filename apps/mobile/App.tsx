@@ -388,14 +388,19 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   // round-trip (seconds on a cold start). Trust the last-known answer
   // right away, then reconcile with the server.
   useEffect(() => {
-    SecureStore.getItemAsync(GOOGLE_READY_KEY)
-      .then((v) => { if (v === '1') setGoogleReady(true); })
-      .catch(() => {});
+    // iOS offers Sign in with Apple and nothing else (owner, 2026-07-30).
+    // Google there meant bouncing out to Safari and polling to get back,
+    // which reads as a hang and is the wrong shape on the platform. Skip the
+    // config call entirely rather than fetching an answer we will ignore.
     if (Platform.OS === 'ios') {
       AppleAuthentication.isAvailableAsync()
         .then(setAppleReady)
         .catch(() => setAppleReady(false));
+      return;
     }
+    SecureStore.getItemAsync(GOOGLE_READY_KEY)
+      .then((v) => { if (v === '1') setGoogleReady(true); })
+      .catch(() => {});
     api.googleConfig().then((cfg) => {
       setGoogleReady(cfg.enabled);
       SecureStore.setItemAsync(GOOGLE_READY_KEY, cfg.enabled ? '1' : '0').catch(() => {});
@@ -481,7 +486,10 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
       if (!cred.identityToken) throw new Error('Apple did not return a sign-in token');
       const full = [cred.fullName?.givenName, cred.fullName?.familyName]
         .filter(Boolean).join(' ').trim();
-      const r = await api.appleSignIn(cred.identityToken, full);
+      // The authorization code is handed over once and is the only way to a
+      // refresh token, which is the only way to revoke this account later
+      // when the user deletes it (#81).
+      const r = await api.appleSignIn(cred.identityToken, full, cred.authorizationCode ?? '');
       onSignedIn(r.token, r.user);
     } catch (e) {
       // Dismissing the sheet is a choice, not a failure to report.
@@ -556,11 +564,9 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
             />
           </>
         )}
-        {googleReady && (
+        {Platform.OS !== 'ios' && googleReady && (
           <>
-            <Text style={[s.meta, { textAlign: 'center', paddingTop: 4 }]}>
-              {Platform.OS === 'ios' && appleReady ? '' : 'or'}
-            </Text>
+            <Text style={[s.meta, { textAlign: 'center', paddingTop: 4 }]}>or</Text>
             <Btn disabled={busy || waitingGoogle}
               label={waitingGoogle ? 'Waiting for your browser…' : 'Continue with Google'}
               onPress={googleSignIn} />

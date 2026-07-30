@@ -65,8 +65,12 @@ class AppleAuthService
      *
      * @return array{token:string, user:array<string,mixed>}
      */
-    public function signIn(string $idToken, string $deviceLabel = '', string $displayName = ''): array
-    {
+    public function signIn(
+        string $idToken,
+        string $deviceLabel = '',
+        string $displayName = '',
+        string $authorizationCode = '',
+    ): array {
         if (!$this->enabled()) {
             throw new ApiException('APPLE_DISABLED', 'Apple sign-in is not configured', 503);
         }
@@ -92,6 +96,25 @@ class AppleAuthService
         }
 
         $userId = $this->userForIdentity($sub, $email, mb_substr(trim($displayName), 0, 80));
+
+        // Apple only hands over an authorization code at sign-in, and it is
+        // the only route to a refresh token — which is the only thing that can
+        // later revoke this account (#81). Best effort: a failure here must
+        // never stop someone signing in.
+        if ($authorizationCode !== '') {
+            try {
+                $refresh = $this->exchangeCode($authorizationCode);
+                if ($refresh !== null) {
+                    $this->pdo->prepare(
+                        "UPDATE oauth_identities SET refresh_token = ?
+                         WHERE user_id = ? AND provider = 'apple'",
+                    )->execute([$refresh, $userId]);
+                }
+            } catch (\Throwable $e) {
+                error_log('apple: code exchange failed: ' . $e->getMessage());
+            }
+        }
+
         return $this->auth->issueSession($userId, $deviceLabel);
     }
 
@@ -158,6 +181,146 @@ class AppleAuthService
      * Decode the JWT and check its RS256 signature against Apple's JWKS.
      * @return array<string,mixed> the verified claims
      */
+    /**
+     * The client secret Apple wants is a short-lived ES256 JWT signed with a
+     * *Sign in with Apple* key — a different key from the App Store Connect
+     * one, created under Certificates, Identifiers & Profiles → Keys.
+     *
+     * Returns null when unconfigured, which is the normal state until that key
+     * exists. Everything downstream treats null as "cannot revoke" and carries
+     * on rather than failing.
+     */
+    private function clientSecret(): ?string
+    {
+        $keyId = Env::get('APPLE_SIWA_KEY_ID', '');
+        $teamId = Env::get('APPLE_TEAM_ID', '');
+        $keyPath = Env::get('APPLE_SIWA_KEY_PATH', '');
+        if ($keyId === '' || $teamId === '' || $keyPath === '' || !is_readable($keyPath)) {
+            return null;
+        }
+        $b64 = static fn(string $b): string => rtrim(strtr(base64_encode($b), '+/', '-_'), '=');
+        $header = $b64(json_encode(['alg' => 'ES256', 'kid' => $keyId], JSON_THROW_ON_ERROR));
+        $now = time();
+        $claims = $b64(json_encode([
+            'iss' => $teamId,
+            'iat' => $now,
+            'exp' => $now + 300,
+            'aud' => 'https://appleid.apple.com',
+            // The audience of our identity tokens is what we are asking about.
+            'sub' => $this->clientId(),
+        ], JSON_THROW_ON_ERROR));
+
+        $key = openssl_pkey_get_private((string) file_get_contents($keyPath));
+        if ($key === false) {
+            error_log('apple: SIWA key could not be read');
+            return null;
+        }
+        $der = '';
+        if (!openssl_sign("{$header}.{$claims}", $der, $key, OPENSSL_ALGO_SHA256)) {
+            return null;
+        }
+        // ES256 wants raw r||s; openssl gives DER.
+        $raw = self::derToRaw($der);
+        return $raw === null ? null : "{$header}.{$claims}." . $b64($raw);
+    }
+
+    /** DER ECDSA-Sig-Value -> the 64 raw bytes JOSE expects. */
+    private static function derToRaw(string $der): ?string
+    {
+        $i = 0;
+        if (($der[$i++] ?? '') !== "\x30") {
+            return null;
+        }
+        $len = ord($der[$i++] ?? "\x00");
+        if ($len > 0x80) {
+            $i += $len - 0x80;
+        }
+        $out = '';
+        for ($n = 0; $n < 2; $n++) {
+            if (($der[$i++] ?? '') !== "\x02") {
+                return null;
+            }
+            $l = ord($der[$i++] ?? "\x00");
+            $v = substr($der, $i, $l);
+            $i += $l;
+            $v = ltrim($v, "\x00");
+            $out .= str_pad($v, 32, "\x00", STR_PAD_LEFT);
+        }
+        return strlen($out) === 64 ? $out : null;
+    }
+
+    /** @return string|null the refresh token, or null if we cannot get one */
+    private function exchangeCode(string $code): ?string
+    {
+        $secret = $this->clientSecret();
+        if ($secret === null) {
+            return null;
+        }
+        $body = http_build_query([
+            'client_id' => $this->clientId(),
+            'client_secret' => $secret,
+            'code' => $code,
+            'grant_type' => 'authorization_code',
+        ]);
+        $raw = self::post('https://appleid.apple.com/auth/token', $body);
+        $json = json_decode((string) $raw, true);
+        $token = is_array($json) ? ($json['refresh_token'] ?? null) : null;
+        return is_string($token) && $token !== '' ? $token : null;
+    }
+
+    /**
+     * Tell Apple this account is gone. Best effort by design — the user asked
+     * to be deleted, and our deletion must not hinge on Apple answering.
+     *
+     * @return bool whether Apple accepted the revocation
+     */
+    public function revokeForUser(string $userId): bool
+    {
+        $secret = $this->clientSecret();
+        if ($secret === null) {
+            error_log('apple: revoke skipped — no Sign in with Apple key configured');
+            return false;
+        }
+        $stmt = $this->pdo->prepare(
+            "SELECT refresh_token FROM oauth_identities
+             WHERE user_id = ? AND provider = 'apple' AND refresh_token IS NOT NULL",
+        );
+        $stmt->execute([$userId]);
+        $ok = false;
+        foreach ($stmt->fetchAll() as $row) {
+            $body = http_build_query([
+                'client_id' => $this->clientId(),
+                'client_secret' => $secret,
+                'token' => $row['refresh_token'],
+                'token_type_hint' => 'refresh_token',
+            ]);
+            // Apple answers 200 with an empty body on success.
+            $ok = self::post('https://appleid.apple.com/auth/revoke', $body) !== null || $ok;
+        }
+        return $ok;
+    }
+
+    /** @return string|null response body, or null on transport failure */
+    private static function post(string $url, string $body): ?string
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+            CURLOPT_TIMEOUT => 10,
+        ]);
+        $raw = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code < 200 || $code >= 300) {
+            error_log("apple: POST {$url} returned {$code}");
+            return null;
+        }
+        return is_string($raw) ? $raw : '';
+    }
+
     private function verify(string $idToken): array
     {
         $parts = explode('.', $idToken);

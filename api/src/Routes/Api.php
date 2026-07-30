@@ -106,6 +106,9 @@ final class Api
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
         $apple = new AppleAuthService($pdo, $auth);
+        // Apple wants the account revoked when it is deleted (#81). Wired as a
+        // callable because AppleAuthService already depends on AuthService.
+        $auth->setAppleRevoke(static fn(string $uid): bool => $apple->revokeForUser($uid));
         $handoff = new AuthHandoffService($pdo, $auth, $google);
         $bugs = new \SlyTab\Services\BugReportService($pdo);
 
@@ -296,6 +299,9 @@ final class Api
                 $b = Http::body($rq);
                 return Http::json($rs, $apple->signIn(
                     Http::str($b, 'idToken'), Http::str($b, 'deviceLabel', ''), Http::str($b, 'displayName', ''),
+                    // Only present on a native sign-in, and only ever once —
+                    // it is what makes later revocation possible (#81).
+                    Http::str($b, 'authorizationCode', ''),
                 ));
             });
 
