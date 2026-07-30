@@ -101,7 +101,7 @@ done
 say "emailed $COUNT Apple-signin tester(s)"
 
 mail_to "dave@drscapital.com" "SlyTab iOS build $BUILD_NO approved — ready to test" \
-"TestFlight beta review has APPROVED iOS build $BUILD_NO (v1.0.3).
+"TestFlight beta review has APPROVED iOS build $BUILD_NO.
 
 It is live to the 'SlyTab family' group now, and $COUNT tester(s) who sign in
 with Apple have been emailed the install link.
@@ -119,12 +119,24 @@ What is in it:
   - Confirmation before deleting an expense
   - Privacy policy reachable in-app, and a privacy manifest (both were
     certain App Store rejections)
+  - Google sign-in removed from iOS entirely — it bounced out to Safari and
+    polled to get back, which reads as a hang. Android keeps it.
+  - Leave a group from inside the app. The endpoint had existed for months
+    and no client called it, so anyone added by email was stuck.
+  - Apple account revocation on deletion, which Apple requires. Implemented
+    but INERT until a Sign in with Apple key exists — see below.
 
-Android v1.0.3 is already on the download link.
+The matching Android build is already on the download link.
 
-Still open and deliberately not in this build: Apple token revocation on
-account deletion, leave-group/report in the app, light theme, and moving
-Google sign-in to ASWebAuthenticationSession. See the issues under #79."
+Two things still need you:
+  - Create a Sign in with Apple key (developer portal, Certificates,
+    Identifiers & Profiles -> Keys) and set APPLE_SIWA_KEY_ID,
+    APPLE_TEAM_ID and APPLE_SIWA_KEY_PATH. Until then revocation logs and
+    skips; deletion itself works regardless.
+  - Register electricrv.ca for Sign in with Apple email communication, or
+    mail to @privaterelay.appleid.com addresses may be silently dropped.
+
+Still open: the light theme and System/Dark/Light control (#92). See #79."
 
 say "emailed the owner"
 echo "$BUILD_ID" >> "$MARKERS"
