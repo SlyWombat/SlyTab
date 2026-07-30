@@ -500,6 +500,30 @@ final class Api
                 });
 
                 // expenses
+                // #101: every expense your money is in, across all groups.
+                $p->get('/me/expenses', function (Request $rq, Response $rs) use ($expenses): Response {
+                    $me = Http::user($rq);
+                    $q = $rq->getQueryParams();
+                    $scope = ($q['scope'] ?? '') === 'paid' ? 'paid' : 'involved';
+                    $sort = in_array($q['sort'] ?? '', ['oldest', 'largest', 'smallest'], true)
+                        ? $q['sort'] : 'newest';
+                    $filters = array_intersect_key($q, array_flip(['q', 'category']));
+                    // Capped: the page size is the client's business, but not
+                    // its right to ask for the whole table in one request.
+                    $limit = max(1, min(100, (int) ($q['limit'] ?? 30)));
+                    $page = $expenses->listForUser(
+                        $me['id'], $scope, $sort, $q['cursor'] ?? null, $limit, $filters,
+                    );
+                    // The total covers the whole filtered set, not just this
+                    // page — a running total that changed as you scrolled
+                    // would be worse than none.
+                    $page['summary'] = $expenses->totalForUser(
+                        $me['id'], $scope, $me['defaultCurrency'], $filters,
+                    );
+                    $page['scope'] = $scope;
+                    $page['sort'] = $sort;
+                    return Http::json($rs, $page);
+                });
                 $p->get('/groups/{id}/expenses', function (Request $rq, Response $rs, array $a) use ($groups, $expenses): Response {
                     $groups->assertMember($a['id'], Http::user($rq)['id']);
                     $q = $rq->getQueryParams();

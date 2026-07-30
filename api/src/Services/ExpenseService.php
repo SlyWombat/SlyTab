@@ -213,6 +213,168 @@ final class ExpenseService
         return ['items' => array_map($this->shape(...), $rows), 'nextCursor' => $next];
     }
 
+    /**
+     * Every expense one person's money is in, across all their groups (#101).
+     *
+     * Two readings, both about money rather than authorship:
+     *   'paid'     — they are a PAYER. Their money went out.
+     *   'involved' — they hold a SHARE. Their money is owed or spent.
+     * (Deliberately not "created_by": you can enter an expense someone else
+     * paid for, and the owner's question was about money, not data entry.)
+     *
+     * @param 'paid'|'involved' $scope
+     * @param 'newest'|'oldest'|'largest'|'smallest' $sort
+     * @param array<string,string> $filters q, category
+     * @return array{items: list<array<string,mixed>>, nextCursor: ?string}
+     */
+    public function listForUser(
+        string $userId,
+        string $scope = 'involved',
+        string $sort = 'newest',
+        ?string $cursor = null,
+        int $limit = 30,
+        array $filters = [],
+    ): array {
+        $link = $scope === 'paid' ? 'expense_payers' : 'expense_shares';
+        $sql = "SELECT DISTINCT e.* FROM expenses e
+                JOIN {$link} l ON l.expense_id = e.id AND l.user_id = ?
+                JOIN memberships m ON m.group_id = e.group_id AND m.user_id = ?";
+        $args = [$userId, $userId];
+        // Membership is joined as well as the payer/share link: leaving a group
+        // should stop its expenses appearing here, even though the historical
+        // share rows stay behind so nobody else's balance moves.
+        $sql .= ' WHERE e.deleted_at IS NULL AND m.left_at IS NULL';
+
+        if (($filters['q'] ?? '') !== '') {
+            $sql .= ' AND (e.description LIKE ? OR e.notes LIKE ?)';
+            $like = '%' . $filters['q'] . '%';
+            $args[] = $like;
+            $args[] = $like;
+        }
+        if (($filters['category'] ?? '') !== '') {
+            $category = (string) $filters['category'];
+            if (in_array($category, Categories::HEADINGS, true)) {
+                $sql .= ' AND (e.category = ? OR e.category LIKE ?)';
+                $args[] = $category;
+                $args[] = $category . '.%';
+            } else {
+                $sql .= ' AND e.category = ?';
+                $args[] = $category;
+            }
+        }
+
+        // Cursor pagination has to match the sort or the list silently repeats
+        // and skips rows as you scroll. For the time sorts the ULID id is
+        // already the ordering key. For the amount sorts it is not — two
+        // expenses can share an amount — so the cursor is a composite
+        // "<amount>:<id>" compared as a tuple.
+        [$orderBy, $cmp] = match ($sort) {
+            'oldest' => ['e.id ASC', '>'],
+            'largest' => ['e.amount DESC, e.id DESC', null],
+            'smallest' => ['e.amount ASC, e.id ASC', null],
+            default => ['e.id DESC', '<'],
+        };
+
+        if ($cursor !== null && $cursor !== '') {
+            if ($cmp !== null) {
+                $sql .= " AND e.id {$cmp} ?";
+                $args[] = $cursor;
+            } else {
+                [$cAmount, $cId] = array_pad(explode(':', $cursor, 2), 2, '');
+                $tuple = $sort === 'largest' ? '<' : '>';
+                $sql .= " AND (e.amount {$tuple} ? OR (e.amount = ? AND e.id {$tuple} ?))";
+                $args[] = (int) $cAmount;
+                $args[] = (int) $cAmount;
+                $args[] = $cId;
+            }
+        }
+
+        $sql .= ' ORDER BY ' . $orderBy . ' LIMIT ' . ($limit + 1);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($args);
+        $rows = $stmt->fetchAll();
+
+        $next = null;
+        if (count($rows) > $limit) {
+            array_pop($rows);
+            $last = $rows[array_key_last($rows)];
+            $next = $cmp !== null ? $last['id'] : $last['amount'] . ':' . $last['id'];
+        }
+        return ['items' => array_map($this->shape(...), $rows), 'nextCursor' => $next];
+    }
+
+    /**
+     * What this person's share of those expenses comes to, in their own
+     * currency (#101).
+     *
+     * Sums SHARES, never expense totals — the headline on a list of things
+     * you are part of is what you owe, not what the table spent. Amounts are
+     * converted with the shared money helpers; mixed source currencies make
+     * the answer approximate and it says so.
+     *
+     * @return array{count: int, totalMinor: int, currency: string, approximate: bool}
+     */
+    public function totalForUser(string $userId, string $scope, string $homeCurrency, array $filters = []): array
+    {
+        $link = $scope === 'paid' ? 'expense_payers' : 'expense_shares';
+        $sql = "SELECT l.amount AS share, e.currency, e.expense_date, e.id FROM expenses e
+                JOIN {$link} l ON l.expense_id = e.id AND l.user_id = ?
+                JOIN memberships m ON m.group_id = e.group_id AND m.user_id = ?
+                WHERE e.deleted_at IS NULL AND m.left_at IS NULL";
+        $args = [$userId, $userId];
+        if (($filters['q'] ?? '') !== '') {
+            $sql .= ' AND (e.description LIKE ? OR e.notes LIKE ?)';
+            $like = '%' . $filters['q'] . '%';
+            $args[] = $like;
+            $args[] = $like;
+        }
+        if (($filters['category'] ?? '') !== '') {
+            $category = (string) $filters['category'];
+            if (in_array($category, Categories::HEADINGS, true)) {
+                $sql .= ' AND (e.category = ? OR e.category LIKE ?)';
+                $args[] = $category;
+                $args[] = $category . '.%';
+            } else {
+                $sql .= ' AND e.category = ?';
+                $args[] = $category;
+            }
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($args);
+
+        $total = 0;
+        $count = 0;
+        $foreign = false;
+        foreach ($stmt->fetchAll() as $r) {
+            $count++;
+            $from = (string) $r['currency'];
+            $share = (int) $r['share'];
+            if ($from === $homeCurrency) {
+                $total += $share;
+                continue;
+            }
+            // Converted at the rate for the day the money was spent, matching
+            // how BalanceService values a foreign expense. A missing rate
+            // must not silently count as zero — it is dropped and the answer
+            // is already flagged approximate.
+            $foreign = true;
+            try {
+                $rate = $this->fx->rateFor((string) $r['expense_date'], $from, $homeCurrency);
+                if ($rate > 0) {
+                    $total += Money::convert($share, $rate, $from, $homeCurrency);
+                }
+            } catch (\Throwable $e) {
+                error_log("my-expenses: no rate {$from}->{$homeCurrency}: " . $e->getMessage());
+            }
+        }
+        return [
+            'count' => $count,
+            'totalMinor' => $total,
+            'currency' => $homeCurrency,
+            'approximate' => $foreign,
+        ];
+    }
+
     /** Issue #15: discussion on an expense. @return list<array<string,mixed>> */
     public function comments(string $expenseId, string $userId): array
     {
