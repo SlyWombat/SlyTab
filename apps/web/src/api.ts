@@ -325,6 +325,9 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     req<{ ok: true }>('POST', '/auth/reset', { token, password }),
   me: () => req<User>('GET', '/me'),
+  /** Leave a group (#84) — refuses while your balance is non-zero. */
+  leaveGroup: (groupId: string) =>
+    req<{ ok: true }>('POST', `/groups/${groupId}/leave`),
   patchMe: (data: Partial<Pick<User, 'displayName' | 'avatar' | 'defaultCurrency' | 'paymentHandles' | 'notifyLevel'>> & { onboarded?: boolean }) =>
     req<User>('PATCH', '/me', data),
   uploadReceipt: async (groupId: string, file: File, hooks: UploadHooks = {}, currencyHint?: string) => {

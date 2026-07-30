@@ -315,6 +315,14 @@ export const api = {
    * over exactly once, on first authorization, so it is passed through here
    * or lost forever.
    */
+  /**
+   * Leave a group (#84). The endpoint has existed since the group work; no
+   * client ever called it, so anyone added to a group by email was stuck in
+   * it — which is also what Guideline 1.2 asks about. Refuses with
+   * BALANCE_NOT_ZERO if you still owe or are owed.
+   */
+  leaveGroup: (groupId: string) =>
+    req<{ ok: true }>('POST', `/groups/${groupId}/leave`),
   appleSignIn: (idToken: string, displayName = '') =>
     req<{ token: string; user: User }>('POST', '/auth/apple', {
       idToken, deviceLabel: DEVICE_LABEL, displayName,

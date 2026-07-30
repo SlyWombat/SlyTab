@@ -93,6 +93,29 @@ function Btn({ label, onPress, primary = false, disabled = false, small = false,
   );
 }
 
+/**
+ * Selection chips — split method, payer, currency, filters.
+ *
+ * Two things they all got wrong. They were 22–25pt tall against Apple's 44pt
+ * minimum, and mis-tapping "Shares" instead of "Exact" silently changes what
+ * everyone owes (#97). And selection was conveyed by background colour alone,
+ * which VoiceOver cannot see — so a screen-reader user heard "Exact" and
+ * "Shares" with no idea which was active (#95).
+ *
+ * Spread onto a Pressable: `{...chip(active)}`.
+ */
+function chip(active: boolean) {
+  return {
+    accessibilityRole: 'button' as const,
+    accessibilityState: { selected: active },
+    style: {
+      paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+      minHeight: 44, justifyContent: 'center' as const,
+      backgroundColor: active ? c.brand : c.surface2,
+    },
+  };
+}
+
 function Field({ label, ...input }: { label: string } & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={{ marginBottom: 12 }}>
@@ -1072,7 +1095,7 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
               minHeight: 44, justifyContent: 'center',
               backgroundColor: notifyLevel === v ? c.brand : c.surface2 }}>
-            <Text style={{ color: notifyLevel === v ? '#fff' : c.text2, fontSize: 12.5 }}>{label}</Text>
+            <Text style={{ color: notifyLevel === v ? c.bg : c.text2, fontSize: 12.5 }}>{label}</Text>
           </Pressable>
         ))}
       </View>
@@ -1436,6 +1459,32 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
             } },
           ],
         )} />
+      {/* #84: the way out. Anyone can add you to a group by email without your
+          agreeing, and until now only they could remove you — Guideline 1.2
+          expects an escape hatch for unwanted content. The server refuses
+          while a balance is outstanding, so surface that plainly rather than
+          letting it look like a bug. */}
+      <Btn label="Leave this group" destructive disabled={busy}
+        onPress={() => Alert.alert(
+          'Leave this group?',
+          'You stop seeing it and stop getting updates about it. Past expenses '
+          + 'stay so nobody else\'s balance changes. You can be added back later.',
+          [
+            { text: 'Stay', style: 'cancel' },
+            { text: 'Leave', style: 'destructive', onPress: () => {
+              setBusy(true);
+              api.leaveGroup(group.id)
+                .then(onSaved)
+                .catch((e) => {
+                  const msg = (e as Error).message;
+                  setError(msg.includes('settle')
+                    ? 'Settle up first — you still have a balance in this group.'
+                    : msg);
+                  setBusy(false);
+                });
+            } },
+          ],
+        )} />
     </SheetModal>
   );
 }
@@ -1592,8 +1641,9 @@ function GroupScreen({ groupId, user, onBack }: {
             {CATEGORY_HEADINGS.map((cat) => (
               <Pressable key={cat} onPress={() => setCatFilter(catFilter === cat ? '' : cat)}
                 style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 11,
+              minHeight: 44, justifyContent: 'center',
                   backgroundColor: catFilter === cat ? c.brand : c.surface2 }}>
-                <Text style={{ color: catFilter === cat ? '#fff' : c.text2, fontSize: 11.5 }}>
+                <Text style={{ color: catFilter === cat ? c.bg : c.text2, fontSize: 11.5 }}>
                   {categoryLabel(cat, catOverrides)}
                 </Text>
               </Pressable>
@@ -1934,7 +1984,7 @@ function ImportSheet({ group, onClose, onDone }: {
                 onPress={() => { setSwGroupId(g.id); setMapping({}); }}
                 style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14,
                   backgroundColor: g.id === swGroupId ? c.brand : c.surface2 }}>
-                <Text style={{ color: g.id === swGroupId ? '#fff' : c.text2, fontSize: 13 }}>{g.name}</Text>
+                <Text style={{ color: g.id === swGroupId ? c.bg : c.text2, fontSize: 13 }}>{g.name}</Text>
               </Pressable>
             ))}
           </View>
@@ -2135,7 +2185,7 @@ function CurrencySingleField({ label, value, onChange, quick = [] }: {
           <Pressable key={cur} onPress={() => { onChange(cur); setOpen(false); }}
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
               backgroundColor: cur === value ? c.brand : c.surface2 }}>
-            <Text style={{ color: cur === value ? '#fff' : c.text2, fontSize: 12.5 }}>
+            <Text style={{ color: cur === value ? c.bg : c.text2, fontSize: 12.5 }}>
               {cur === value ? `${cur} — ${CURRENCY_NAMES[cur as Currency] ?? cur}` : cur}
             </Text>
           </Pressable>
@@ -2328,8 +2378,11 @@ function CategoryPicker({ value, onChange, overrides }: {
   const headingOf = value.includes('.') ? value.slice(0, value.indexOf('.')) : value;
   const [open, setOpen] = useState(headingOf);
   const current = tree.find((h) => h.slug === open) ?? tree[0];
+  // Local style helper predating the shared one above; keep it, but it needs
+  // the same 44pt floor (#97).
   const chip = (active: boolean) => ({
     paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+    minHeight: 44, justifyContent: 'center' as const,
     backgroundColor: active ? c.brand : c.surface2,
   });
 
@@ -2340,7 +2393,7 @@ function CategoryPicker({ value, onChange, overrides }: {
           <Pressable key={h.slug} onPress={() => { setOpen(h.slug); onChange(h.slug); }}
             accessibilityRole="button" accessibilityState={{ selected: headingOf === h.slug }}
             style={chip(headingOf === h.slug)}>
-            <Text style={{ color: headingOf === h.slug ? '#fff' : c.text2, fontSize: 12.5 }}>
+            <Text style={{ color: headingOf === h.slug ? c.bg : c.text2, fontSize: 12.5 }}>
               {h.label}
             </Text>
           </Pressable>
@@ -2352,7 +2405,7 @@ function CategoryPicker({ value, onChange, overrides }: {
             <Pressable key={leaf.slug} onPress={() => onChange(leaf.slug)}
               accessibilityRole="button" accessibilityState={{ selected: value === leaf.slug }}
               style={chip(value === leaf.slug)}>
-              <Text style={{ color: value === leaf.slug ? '#fff' : c.text3, fontSize: 12 }}>
+              <Text style={{ color: value === leaf.slug ? c.bg : c.text3, fontSize: 12 }}>
                 {leaf.emoji} {leaf.label}
               </Text>
             </Pressable>
@@ -2662,7 +2715,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
           <Pressable key={cur} onPress={() => switchCurrency(cur)}
             style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
               backgroundColor: currency === cur ? c.brand : c.surface2 }}>
-            <Text style={{ color: currency === cur ? '#fff' : c.text2, fontSize: 12.5 }}>{cur}</Text>
+            <Text style={{ color: currency === cur ? c.bg : c.text2, fontSize: 12.5 }}>{cur}</Text>
           </Pressable>
         ))}
         <Pressable onPress={() => setAllCurrencies(!allCurrencies)}
@@ -2696,9 +2749,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {group.members.map((m) => (
                 <Pressable key={m.id} onPress={() => setPayerId(m.id)}
-                  style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
+                  style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, minHeight: 44, justifyContent: 'center',
                     backgroundColor: payerId === m.id ? c.brand : c.surface2 }}>
-                  <Text style={{ color: payerId === m.id ? '#fff' : c.text2, fontSize: 12.5 }}>
+                  <Text style={{ color: payerId === m.id ? c.bg : c.text2, fontSize: 12.5 }}>
                     {m.id === user.id ? 'You' : m.displayName}
                   </Text>
                 </Pressable>
@@ -2784,10 +2837,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
         {([['equal', 'Equal'], ['exact', 'Exact'], ['shares', 'Shares'], ['percent', '%'], ['adjustment', '+/−']] as const).map(([m, label]) => (
-          <Pressable key={m} onPress={() => setMethod(m)}
-            style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12,
-              backgroundColor: method === m ? c.brand : c.surface2 }}>
-            <Text style={{ color: method === m ? '#fff' : c.text2, fontSize: 12.5 }}>{label}</Text>
+          <Pressable key={m} onPress={() => setMethod(m)} {...chip(method === m)}>
+            <Text style={{ color: method === m ? c.bg : c.text2, fontSize: 12.5 }}>{label}</Text>
           </Pressable>
         ))}
       </View>

@@ -1306,6 +1306,30 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
         }}>
         Archive this group…
       </button>
+      {/* Issue #84: the way out. Anyone can add you to a group by email
+          without your agreeing, and until now only they could remove you.
+          The server refuses while a balance is outstanding, so say that
+          plainly rather than letting it read as a failure. */}
+      <button type="button" className="btn block" style={{ marginTop: 10, color: 'var(--ss-owe)' }}
+        disabled={busy}
+        onClick={() => {
+          if (!window.confirm(
+            `Leave "${group.name}"? You stop seeing it and stop getting updates about it. `
+            + "Past expenses stay so nobody else's balance changes. You can be added back later.",
+          )) return;
+          setBusy(true);
+          api.leaveGroup(group.id)
+            .then(onSaved)
+            .catch((err) => {
+              const msg = (err as Error).message;
+              setError(msg.includes('settle')
+                ? 'Settle up first — you still have a balance in this group.'
+                : msg);
+              setBusy(false);
+            });
+        }}>
+        Leave this group…
+      </button>
     </Sheet>
   );
 }
