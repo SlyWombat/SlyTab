@@ -302,7 +302,7 @@ function AppShell() {
     }]}>
       {restoring ? (
         <View style={[s.screen, { justifyContent: 'center' }]}>
-          <ActivityIndicator color={c.brand} />
+          <ActivityIndicator accessibilityLabel="Loading" color={c.brand} />
         </View>
       ) : user === null ? (
         <AuthScreen onSignedIn={signedIn} />
@@ -530,7 +530,7 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       <Text style={s.wordmark}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
       <Text style={s.tagline}>Split expenses with the people you actually share life with.</Text>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <View style={{ width: '100%', maxWidth: 340 }}>
         {mode === 'create' && (
           <Field label="Your name" value={name} onChangeText={setName} autoCapitalize="words" />
@@ -623,7 +623,7 @@ function OnboardingScreen({ user, onDone }: { user: User; onDone: (u: User) => v
       <ScrollView contentContainerStyle={{ alignItems: 'center', paddingVertical: 24 }} keyboardShouldPersistTaps="handled">
         <Text style={s.wordmark}>Welcome to Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
         <Text style={s.tagline}>Split expenses with family and friends — no math, no awkward reminders. Two quick things and you're set.</Text>
-        {error && <Text style={s.error}>{error}</Text>}
+        {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
         <View style={{ width: '100%', maxWidth: 340 }}>
           <Field label="What should we call you?" value={displayName} onChangeText={setDisplayName} autoCapitalize="words" />
           <CurrencySingleField label="Your home currency — your overall balance shows in this"
@@ -714,7 +714,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
       <View style={s.header}>
         <Text style={s.h1}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
       </View>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
 
       {user.emailVerifiedAt === null && (
         <View style={[s.row, { borderColor: c.owe }]}>
@@ -734,7 +734,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
 
       <View style={s.hero}>
         <Text style={s.cap}>YOUR BALANCE</Text>
-        {total === null ? <ActivityIndicator color={c.brand} />
+        {total === null ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} />
           : total.owedMinor === 0 && total.oweMinor === 0
             ? <Text style={{ color: c.text2, fontSize: 26, fontWeight: '600' }}>All settled up ✓</Text>
             : (
@@ -914,7 +914,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
                       )}
                     </View>
                     {quickBusy === group.id
-                      ? <ActivityIndicator color={c.brand} />
+                      ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} />
                       : group.id === lastGroupId && <Text style={s.meta}>recent</Text>}
                   </Pressable>
                 );
@@ -989,7 +989,7 @@ function BugReportSection() {
   }
   return (
     <View style={{ borderColor: c.outline, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 }}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Field label="What went wrong?" value={message} onChangeText={setMessage}
         multiline numberOfLines={3} maxLength={2000}
         placeholder="What did you do, what did you expect, what happened instead?" />
@@ -1087,7 +1087,7 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
       <KeyboardAvoidingView style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
         value={currency} onChange={setCurrency} />
@@ -1217,7 +1217,7 @@ function GroupsScreen({ user, onOpenGroup, active }: {
         <View style={{ flex: 1 }} />
         <Btn small label="New group" onPress={() => setCreating(true)} />
       </View>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <FlatList
         data={[...activeGroups, ...(showArchived ? archived : [])]}
         keyExtractor={(i) => i.group.id}
@@ -1319,14 +1319,14 @@ function ActivityScreen({ user, onOpenGroup, active }: {
       <View style={s.header}>
         <Text style={s.h1}>Activity</Text>
       </View>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <FlatList
         data={rows ?? []}
         keyExtractor={(ev) => ev.id}
         onRefresh={reload}
         refreshing={false}
         ListEmptyComponent={rows === null
-          ? <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+          ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} style={{ marginTop: 40 }} />
           : <Text style={s.meta}>Nothing yet — activity from all your groups lands here.</Text>}
         renderItem={({ item: ev, index }) => {
           const day = ev.createdAt.slice(0, 10);
@@ -1364,7 +1364,7 @@ function CreateGroupSheet({ defaultCurrency, onClose, onCreated }: {
   const [error, setError] = useState<string | null>(null);
   return (
     <SheetModal title="New group" onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Field label="Name" value={name} onChangeText={setName} placeholder="Cottage Trip" />
       <Text style={s.fieldLabel}>Emoji</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
@@ -1395,7 +1395,7 @@ function AddFriendSheet({ onClose, onCreated }: {
   const [error, setError] = useState<string | null>(null);
   return (
     <SheetModal title="Split with a friend" onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Text style={[s.meta, { marginBottom: 10 }]}>
         One-on-one expenses, no group needed. If they're not on SlyTab yet
         we'll email an invite — anything you add is waiting when they join.
@@ -1424,7 +1424,7 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
   const [busy, setBusy] = useState(false);
   return (
     <SheetModal title="Group settings" onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Field label="Name" value={name} onChangeText={setName} />
       <Text style={s.fieldLabel}>Emoji</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
@@ -1588,7 +1588,7 @@ function GroupScreen({ groupId, user, onBack }: {
           <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} accessibilityLabel="Loading group" />
         ) : (
           <View style={{ marginTop: 40 }}>
-            <Text style={s.error} accessibilityLiveRegion="assertive">{loadError}</Text>
+            <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{loadError}</Text>
             <Btn primary label="Try again" onPress={() => { setLoadError(null); reload(); }} />
           </View>
         )}
@@ -1682,7 +1682,7 @@ function GroupScreen({ groupId, user, onBack }: {
           refreshing={false}
           contentContainerStyle={{ paddingBottom: 150 }}
           ListEmptyComponent={expenses === null
-            ? <ActivityIndicator color={c.brand} style={{ marginTop: 20 }} />
+            ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} style={{ marginTop: 20 }} />
             : <Text style={s.meta}>No expenses yet.</Text>}
           ListFooterComponent={actions}
           ListHeaderComponent={(
@@ -1759,7 +1759,7 @@ function GroupScreen({ groupId, user, onBack }: {
       ) : tab === 'totals' ? (
         <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
           {chrome}
-          {totals === null ? <ActivityIndicator color={c.brand} /> : (
+          {totals === null ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} /> : (
             <>
               <View style={s.hero}>
                 <Text style={s.cap}>GROUP SPENDING</Text>
@@ -1950,7 +1950,7 @@ function ImportSheet({ group, onClose, onDone }: {
 
   return (
     <SheetModal title="Import from Splitwise" onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       {result !== null ? (
         <>
           <Text style={[s.body, { marginBottom: 10 }]}>
@@ -2058,7 +2058,7 @@ function InviteSheet({ group, user, link, onClose, onChanged }: {
   }, [group.members, user.id]);
   return (
     <SheetModal title="Invite to group" onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       {people !== null && people.length > 0 && (
         <>
           <Text style={s.cap}>PEOPLE YOU KNOW</Text>
@@ -2220,7 +2220,7 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
     <Modal transparent statusBarTranslucent animationType="fade">
       <View style={{ flex: 1, backgroundColor: 'rgba(6,10,18,0.78)',
         alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-        <ActivityIndicator size="large" color={c.brand} />
+        <ActivityIndicator accessibilityLabel="Loading" size="large" color={c.brand} />
         {scan.stage === 'upload' ? (
           <>
             <Text style={s.body}>Uploading photo… {Math.round(scan.fraction * 100)}%</Text>
@@ -2335,7 +2335,7 @@ function ManageCategoriesScreen({ group, onBack }: { group: Group; onBack: () =>
         {dirty && <Btn small primary label={busy ? 'Saving…' : 'Save'} onPress={save} />}
       </View>
       {overrides === null ? (
-        <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} />
+        <ActivityIndicator accessibilityLabel="Loading" color={c.brand} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
           <Text style={[s.meta, { paddingBottom: 8 }]}>
@@ -2712,7 +2712,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
 
   return (
     <SheetModal title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Field label={`Amount (${currency})`} value={amountStr}
         onChangeText={setAmountStr}
         keyboardType="decimal-pad" placeholder="0.00" />
@@ -3171,7 +3171,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
             return next;
           })} />
       )}
-      {slipError !== null && <Text style={s.error}>{slipError}</Text>}
+      {slipError !== null && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{slipError}</Text>}
       <Btn label={slip !== null
           ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`
           : 'Scan card slip (adds the tip)'}
@@ -3212,7 +3212,7 @@ function SettleSheet({ group, to, suggested, onClose, onDone }: {
 
   return (
     <SheetModal title={`You pay ${to.displayName}`} onClose={onClose}>
-      {error && <Text style={s.error}>{error}</Text>}
+      {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Text style={[s.body, { textAlign: 'center', fontSize: 28, marginBottom: 14, fontVariant: ['tabular-nums'] }]}>
         {formatMinor(suggested, group.homeCurrency)}
       </Text>
