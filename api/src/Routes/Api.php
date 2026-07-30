@@ -17,6 +17,7 @@ use SlyTab\Services\AuthHandoffService;
 use SlyTab\Services\AuthService;
 use SlyTab\Services\BalanceService;
 use SlyTab\Services\CategoryService;
+use SlyTab\Services\EmailNotificationService;
 use SlyTab\Services\EmailVerificationService;
 use SlyTab\Services\ExpenseService;
 use SlyTab\Services\FxService;
@@ -99,7 +100,9 @@ final class Api
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
         $swApi = new SplitwiseApiImportService($pdo, $groups, $expenses, $activity);
-        $notify = new NotificationService($pdo);
+        // One instance shared by the notify fan-out and the digest sweep.
+        $emailNotify = new EmailNotificationService($pdo);
+        $notify = new NotificationService($pdo, $emailNotify);
         $verifier = new EmailVerificationService($pdo, new Mailer());
         $google = new GoogleAuthService($pdo, $auth);
         $apple = new AppleAuthService($pdo, $auth);
@@ -110,7 +113,7 @@ final class Api
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
 
         // ---- admin (cron + deploy hooks, guarded by MIGRATE_TOKEN) ----
-        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs): void {
+        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs, $emailNotify): void {
             // Bug-report review (profile-page reports): comment + screenshot together.
             $g->get('/bugs', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['items' => $bugs->listRecent()]));
@@ -133,8 +136,20 @@ final class Api
                 return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution, $needsAppUpdate));
             });
             // Manual trigger for the feedback pipeline (cron runs it too).
-            $g->post('/bug-sync', fn(Request $rq, Response $rs): Response =>
-                Http::json($rs, $bugs->syncGithub()));
+            // It also sweeps queued notification emails: that keeps issue #77
+            // working on the existing 10-minute cron instead of needing a new
+            // crontab entry on the host, which is a step nobody would notice
+            // was missing until a digest never arrived.
+            $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify): Response {
+                $result = $bugs->syncGithub();
+                $result['digestsSent'] = $emailNotify->flushDigests();
+                return Http::json($rs, $result);
+            });
+            // Same sweep on its own, for testing and for forcing a send.
+            $g->post('/notify-digest', function (Request $rq, Response $rs) use ($emailNotify): Response {
+                $grace = (int) (Http::body($rq)['graceMinutes'] ?? 10);
+                return Http::json($rs, ['digestsSent' => $emailNotify->flushDigests($grace)]);
+            });
             // Owner status mails and other one-off sends (admin-token only).
             $g->post('/send-mail', function (Request $rq, Response $rs): Response {
                 $b = Http::body($rq);
@@ -178,10 +193,32 @@ final class Api
 
         $app->group('/api/v1', function (RouteCollectorProxy $g) use (
             $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts,
+            $emailNotify,
             $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $handoff, $swApi, $pdo, $notify, $bugs,
         ): void {
             // /health is registered above, outside this group, so that it
             // answers without a database connection.
+
+            // Issue #77: every notification email carries this link. It is
+            // signed rather than authenticated — someone invited by email has
+            // no password, and making them sign in to stop unwanted mail is
+            // how you get marked as spam.
+            $g->get('/notify/unsubscribe', function (Request $rq, Response $rs) use ($emailNotify): Response {
+                $q = $rq->getQueryParams();
+                $ok = $emailNotify->unsubscribe((string) ($q['u'] ?? ''), (string) ($q['t'] ?? ''));
+                $msg = $ok
+                    ? 'You will no longer get activity emails from SlyTab. You can turn them back on any time in Profile.'
+                    : 'That unsubscribe link is not valid. You can change email settings in SlyTab under Profile.';
+                $rs->getBody()->write(
+                    '<!doctype html><meta charset="utf-8">'
+                    . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                    . '<title>SlyTab email settings</title>'
+                    . '<div style="font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1.5rem">'
+                    . '<h1 style="font-size:1.3rem">SlyTab</h1><p>' . htmlspecialchars($msg, ENT_QUOTES) . '</p></div>',
+                );
+                return $rs->withHeader('Content-Type', 'text/html; charset=utf-8')
+                    ->withStatus($ok ? 200 : 400);
+            });
 
             // ---- auth (public, rate-limited per client IP) ----
             $g->post('/auth/register', function (Request $rq, Response $rs) use ($auth, $limiter, $ip, $verifier): Response {

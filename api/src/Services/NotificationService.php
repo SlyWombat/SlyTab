@@ -18,7 +18,12 @@ class NotificationService
     private const EXPO_URL = 'https://exp.host/--/api/v2/push/send';
     private const IMPORTANT = ['settlement_in', 'settlement_confirmed', 'settlement_declined', 'joined'];
 
-    public function __construct(private readonly PDO $pdo) {}
+    private readonly EmailNotificationService $email;
+
+    public function __construct(private readonly PDO $pdo, ?EmailNotificationService $email = null)
+    {
+        $this->email = $email ?? new EmailNotificationService($pdo);
+    }
 
     public function registerToken(string $userId, string $token): void
     {
@@ -43,6 +48,11 @@ class NotificationService
         string $body,
         ?array $onlyUserIds = null,
     ): void {
+        // Email first, and in its own try/catch: the push block below bails
+        // out on the first exception, and a dead Expo endpoint must not cost
+        // us the channel that actually reaches people without the app.
+        $this->email->queue($groupId, $actorId, $kind, $title, $body, $onlyUserIds);
+
         try {
             $stmt = $this->pdo->prepare(
                 'SELECT u.id, u.notify_level, t.token

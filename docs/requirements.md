@@ -190,7 +190,28 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-8.2 (SHOULD)** Mobile push notifications (Expo push service) for:
   added to an expense, settlement received, settlement confirmed. Off by
   default; opt-in per category.
-- **FR-8.3 (MAY)** Email digests.
+- **FR-8.3 (MUST)** Email notifications for the same events (issue #77),
+  because push only reaches devices that registered a token — the push
+  recipient query inner-joins `push_tokens`, so a member who never
+  installed the app heard nothing at all. Email uses the *same*
+  `notify_level` preference as push rather than a second setting, so it is
+  controllable from the web Profile screen without an app release.
+  - Settlements and joins are sent immediately; expenses and comments are
+    queued in `notification_emails` and swept into **one digest per
+    person** — six expenses entered at a dinner must not be six emails.
+    The sweep rides the existing 10-minute `bug-sync` cron (and is
+    available alone at `POST /api/internal/notify-digest`), so no new
+    crontab entry is needed.
+  - The actor is never told about their own action.
+  - Every message carries a signed unsubscribe link
+    (`GET /api/v1/notify/unsubscribe`) that sets `notify_level` to `none`
+    **without a login** — someone invited by email has no password, and
+    requiring sign-in to stop unwanted mail is how a domain gets marked as
+    spam.
+  - **Unconfirmed addresses get no detail.** A member added by email has a
+    validated but unverified address that may be a typo for someone
+    outside the group, so they receive only "there is new activity" —
+    never descriptions or amounts. Confirmed addresses get the detail.
 
 ### 2.9 Data export & import
 
