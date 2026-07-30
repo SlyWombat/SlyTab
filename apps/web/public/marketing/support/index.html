@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — Support</title>
+<style>
+  :root { --bg:#0c1220; --surface:#141c2e; --outline:#2e3d5e; --text:#eef2fa;
+    --text2:#a9b4cc; --brand:#4f8ef7; color-scheme: dark; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --surface:#fff; --outline:#d4dbe8; --text:#16203a;
+      --text2:#4a5878; --brand:#2f6fe0; color-scheme: light; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 400 15.5px/1.6 Inter, "Segoe UI", system-ui, sans-serif;
+    padding: 48px 20px 80px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font: 600 26px/1.25 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.02em; margin-bottom: 4px; }
+  h2 { font: 600 17px/1.3 "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    margin: 28px 0 8px; }
+  p, li { color: var(--text2); }
+  strong { color: var(--text); }
+  ul, ol { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  a { color: var(--brand); }
+  .updated { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--outline);
+    border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SlyTab support</h1>
+  <p class="updated">Electric RV · Ontario, Canada</p>
+
+  <div class="card">
+    <p><strong>Email us:</strong>
+    <a href="mailto:info@electricrv.ca">info@electricrv.ca</a></p>
+    <p>We usually reply within a couple of days. If you are reporting a
+    problem, the fastest route is in the app: <strong>Profile → Report a
+    bug</strong>. That attaches your app version and a screenshot, which
+    saves a round of questions, and you will get an email when it is
+    fixed.</p>
+  </div>
+
+  <h2>Common questions</h2>
+
+  <p><strong>Someone added an expense and the split looks wrong.</strong>
+  Open the expense and check the split method — Equal, Exact, Shares or
+  percentage. Anyone in the group can edit an expense, and deleting one can
+  be undone straight afterwards from the Expenses tab.</p>
+
+  <p><strong>Amounts in a currency I don't use.</strong> A group has its own
+  home currency, and each expense keeps the currency it was entered in.
+  Under each amount you will also see the value in your own currency at
+  today's rate. Set yours in Profile → Default currency.</p>
+
+  <p><strong>Receipt scanning got the total wrong.</strong> Tap the amount
+  and correct it — the scan is a starting point, not the final word. Some
+  currencies use no decimal places, and a receipt printed as
+  <em>88.930</em> means 88,930, not 88.93. If it reads a receipt badly,
+  please report it with the photo attached so we can add it to our test
+  set.</p>
+
+  <p><strong>I want to leave a group.</strong> Ask any member to remove you,
+  or email us and we will do it. A self-service option is on the way.</p>
+
+  <h2>Your data</h2>
+  <p>Receipt photos are parsed on our own server — they are not sent to any
+  third-party AI service, and location metadata is removed when they arrive.
+  See the <a href="../privacy/">privacy policy</a> for the detail.</p>
+  <p>You can delete your account and data yourself: <strong>Profile →
+  Delete my account…</strong> in the app, or see
+  <a href="../delete-account/">how account deletion works</a>.</p>
+
+  <h2>The apps</h2>
+  <p>SlyTab runs in any browser at
+  <a href="https://electricrv.ca/slytab/">electricrv.ca/slytab</a>, and
+  there are iPhone and Android apps — see
+  <a href="../apps/">getting the apps</a>.</p>
+</main>
+</body>
+</html>

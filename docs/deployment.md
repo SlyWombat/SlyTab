@@ -89,10 +89,15 @@ Two static pages under `apps/web/public/marketing/` ship with `npm run
 deploy` and are required by the app stores. Both are referenced from
 App Store Connect and the Play Console, so treat their URLs as stable:
 
-| Page | URL | Source |
-|---|---|---|
-| Privacy policy | `/slytab/marketing/privacy/` | `apps/web/public/marketing/privacy/` |
-| Account & data deletion | `/slytab/marketing/delete-account/` | `apps/web/public/marketing/delete-account/` |
+| Page | URL | Source | Store field |
+|---|---|---|---|
+| Privacy policy | `/slytab/marketing/privacy/` | `apps/web/public/marketing/privacy/` | Privacy Policy URL |
+| Account & data deletion | `/slytab/marketing/delete-account/` | `apps/web/public/marketing/delete-account/` | Play data-deletion URL |
+| Support | `/slytab/marketing/support/` | `apps/web/public/marketing/support/` | **Support URL** (App Store, required) |
+| Getting the apps | `/slytab/marketing/apps/` | `apps/web/public/marketing/apps/` | Marketing URL |
+
+The Support URL is a required App Store field and had no page at all — the
+apps page was doing duty for it and offers no contact route (issue #86).
 
 Note `/slytab/privacy` also returns 200 — that is the SPA fallback, not the
 policy. Always give the stores the `/marketing/` paths.
