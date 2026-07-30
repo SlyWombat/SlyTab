@@ -89,7 +89,8 @@ final class AuthService
     {
         $stmt = $this->pdo->prepare(
             'SELECT s.id AS session_id, s.expires_at, s.revoked_at, u.id, u.email, u.email_verified_at, u.display_name,
-                    u.avatar, u.default_currency, u.payment_handles, u.notify_level, u.onboarded_at, u.deleted_at
+                    u.avatar, u.default_currency, u.payment_handles, u.notify_level, u.onboarded_at, u.deleted_at,
+                    (SELECT GROUP_CONCAT(o.provider) FROM oauth_identities o WHERE o.user_id = u.id) AS providers
              FROM sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = ?',
         );
@@ -148,7 +149,9 @@ final class AuthService
     public function userById(string $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles, notify_level, onboarded_at
+            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles,
+                    notify_level, onboarded_at,
+                    (SELECT GROUP_CONCAT(o.provider) FROM oauth_identities o WHERE o.user_id = users.id) AS providers
              FROM users WHERE id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$id]);
@@ -334,6 +337,13 @@ final class AuthService
             'paymentHandles' => json_decode($row['payment_handles'] ?: '{}', true),
             'notifyLevel' => $row['notify_level'] ?? 'all',
             'onboardedAt' => $row['onboarded_at'] ?? null,
+            // How they sign in. The web app uses this to offer the iPhone
+            // build to Apple users on any browser: sniffing the user agent
+            // missed people whose phone did not advertise itself the way we
+            // expected, and this is a fact rather than a guess.
+            'signInProviders' => array_values(array_filter(
+                explode(',', (string) ($row['providers'] ?? '')),
+            )),
         ];
     }
 }

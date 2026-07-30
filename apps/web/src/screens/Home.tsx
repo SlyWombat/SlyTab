@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
 import { api, type Group, type HomeBalances, type Session, type User } from '../api';
-import { GetTheApp } from '../GetTheApp';
+import { GetTheApp, TESTFLIGHT_URL } from '../GetTheApp';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
@@ -101,7 +101,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
 
       {/* Getting testers onto TestFlight is the bottleneck while the apps
           are in testing — this only shows on iPhone/iPad browsers. */}
-      <GetTheApp />
+      <GetTheApp user={user} />
 
       {user.emailVerifiedAt === null && (
         <div className="row" style={{ borderColor: 'var(--ss-owe)' }}>
@@ -498,7 +498,7 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
             {CURRENCIES.map((c) => <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>)}
           </select>
         </label>
-        <label className="field"><span>Notifications (Android app)</span>
+        <label className="field"><span>Notifications (app and email)</span>
           <select value={notifyLevel} onChange={(e) => setNotifyLevel(e.target.value as typeof notifyLevel)}>
             <option value="all">Everything (expenses, payments, comments)</option>
             <option value="important">Important only (payments and joins)</option>
@@ -517,10 +517,17 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </label>
         <button className="btn primary block">Save profile</button>
       </form>
-      {/* Issue #27: the phone apps, for people using the web app. */}
+      {/* Issue #27: the phone apps, for people using the web app. Both rows
+          are ALWAYS shown — the banner above guesses at your platform, and
+          when that guess was wrong a tester had no way to find the app at
+          all. This is the path that never depends on detection. */}
+      <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
+        href={TESTFLIGHT_URL} target="_blank" rel="noreferrer">
+        📱 Get the iPhone app (TestFlight)
+      </a>
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
         href={`${import.meta.env.BASE_URL}marketing/apps/`} target="_blank" rel="noreferrer">
-        📱 Get the phone apps
+        🤖 Get the Android app
       </a>
       <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>

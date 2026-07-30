@@ -31,6 +31,8 @@ export interface User {
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
   /** null until the first-run welcome flow is completed (issue #36). */
   onboardedAt?: string | null;
+  /** 'apple' | 'google' — how they sign in, for offering the right app build. */
+  signInProviders?: string[];
 }
 
 export interface Member {

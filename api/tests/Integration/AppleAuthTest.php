@@ -133,6 +133,22 @@ final class AppleAuthTest extends TestCase
         $this->assertNotSame($first['token'], $second['token']);
     }
 
+    /**
+     * The web app offers the iPhone build to Apple users on any browser
+     * rather than sniffing the user agent, so this field has to be there
+     * and has to survive a re-authentication.
+     */
+    public function testTheUserPayloadNamesAppleAsTheSignInProvider(): void
+    {
+        $signIn = self::$apple->signIn(self::token(), 'test', 'Apple Tester');
+
+        // the payload handed back at sign-in...
+        $this->assertContains('apple', $signIn['user']['signInProviders']);
+        // ...and the one rebuilt from the session token on every later request
+        $me = (new AuthService(Db::pdo()))->verifyToken($signIn['token']);
+        $this->assertContains('apple', $me['signInProviders']);
+    }
+
     public function testMissingDisplayNameFallsBackToEmailLocalPart(): void
     {
         $result = self::$apple->signIn(self::token([
