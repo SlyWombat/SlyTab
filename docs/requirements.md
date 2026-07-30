@@ -246,6 +246,27 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   issue closes. Requires `BUG_GITHUB_TOKEN` (+ `BUG_GITHUB_REPO`) in the
   server config; logs to `data/bug-sync.log`.
 
+### 2.11 My expenses (cross-group)
+
+- **FR-11.1 (MUST)** A member can see every expense their money is in, across
+  all their groups, from one screen (issue #101). Every other list in SlyTab
+  is scoped to a single group, so answering "what have I been spending?"
+  previously meant opening each group and adding it up by hand.
+  - Two scopes, both about **money rather than authorship**: *I paid* (they
+    are a payer — their money went out) and *I'm in* (they hold a share).
+    Deliberately not "created by me": you can enter an expense someone else
+    paid for, and that is not your spending.
+  - Sortable by newest, oldest, largest and smallest.
+  - Shows a running total of **their own share**, not the expense totals,
+    covering the whole filtered set rather than the visible page. Foreign
+    amounts convert at the rate for the day the money was spent; mixed source
+    currencies mark the total approximate.
+  - Leaving a group removes its expenses from this view, while the historical
+    share rows stay so nobody else's balance moves.
+  - `GET /api/v1/me/expenses?scope=&sort=&cursor=&q=&category=`. Amount sorts
+    use a composite `<amount>:<id>` cursor — an id-only cursor silently
+    repeats and skips rows once the order is not the ULID order.
+
 ## 3. Non-functional requirements
 
 - **NFR-1 Privacy.** No analytics/telemetry SDKs anywhere (family

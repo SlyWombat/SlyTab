@@ -303,7 +303,37 @@ export my data (FR-9.2), sign out, delete account (typed confirmation,
 explains anonymization per FR-1.5). Footer: version + git SHA, privacy
 policy link, "Made by Electric RV".
 
+### 2.11 My expenses (FR-11.1)
+
+Reached from **Profile → My expenses** on web, and on mobile from a segmented
+control at the top of the **Activity** tab (*Activity | My expenses*).
+
+Deliberately **not a fifth tab**: the shell is four (§1) and the tab bar is
+the tightest thing in the UI at large text — 10.5pt labels capped at 1.2x.
+A fifth would hurt exactly the users who most need the room. Activity answers
+"what has happened" and this answers "what have I spent"; both are
+cross-group, time-ordered lists of the same underlying events.
+
+Layout, top to bottom: scope chips (*I'm in* / *I paid*), sort chips or a
+select, then a count-and-total line, then the rows. Each row carries its
+group name — without it a cross-group list reads as a pile of unrelated
+amounts. Empty states name the scope ("You haven't paid for anything yet")
+rather than saying "nothing here".
+
 ## 3. Cross-cutting UI rules
+
+**Icons are drawn, never typed.** Interface icons come from the shared set
+(`apps/web/src/Icon.tsx`, `apps/mobile/src/Icon.tsx`) — the same Material
+Symbols geometry on both clients, so the two look like one product. Emoji and
+punctuation are not icons (issue #102): they render in their own colours, so
+a selected control can only be dimmed rather than recoloured; they scale with
+the text size and overflow fixed containers, which is how the split checkbox
+came to clip and hide who was being charged (#96); and a screen reader
+announces the character. Icons take a **fixed pixel size** independent of
+Dynamic Type and are hidden from the accessibility tree, so the surrounding
+control keeps owning the label. Group emoji is exempt — that is content the
+user chose, not chrome.
+
 
 - **Money rendering** — only via the Amount component; original currency
   primary, converted secondary; direction always colour + sign, never colour
