@@ -72,6 +72,12 @@ except OSError: pass")}
 BUG_GITHUB_REPO=${BUG_GITHUB_REPO:-SlyWombat/SlyTab}
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
 APPLE_CLIENT_ID=${APPLE_CLIENT_ID:-}
+APPLE_BUNDLE_ID=ca.electricrv.slytab
+# Sign in with Apple revocation (#81). Without these three the
+# revoke is skipped and logged; deletion still works.
+APPLE_SIWA_KEY_ID=${PROD_APPLE_SIWA_KEY_ID:-}
+APPLE_TEAM_ID=${PROD_APPLE_TEAM_ID:-}
+APPLE_SIWA_KEY_PATH=$APPDIR/apple-siwa.p8
 ANTHROPIC_API_KEY=
 RECEIPT_ENGINE=auto
 LOCAL_LLM_URL=http://147.5.121.145:3308
@@ -79,9 +85,22 @@ LOCAL_LLM_MODEL=qwen2.5vl:7b
 LOCAL_LLM_TIMEOUT=90
 EOF
 cp "$REPO/scripts/prod/mysql-ca.pem" "$CONFDIR/mysql-ca.pem"
+# The Apple key travels with the config; it is referenced by path on
+# the server, so it has to actually be there.
+# The Apple key travels with the config, which references it by a path on the
+# server — so it has to actually get there. Optional: a machine without the
+# key still deploys, and revocation simply stays skipped.
+CONF_FILES=(-F "file-1=@$CONFDIR/config.env" -F "file-2=@$CONFDIR/mysql-ca.pem")
+if [ -n "${APPLE_SIWA_KEY_PATH:-}" ] && [ -f "${APPLE_SIWA_KEY_PATH}" ]; then
+  cp "$APPLE_SIWA_KEY_PATH" "$CONFDIR/apple-siwa.p8"
+  CONF_FILES+=(-F "file-3=@$CONFDIR/apple-siwa.p8")
+  echo "  including the Sign in with Apple key"
+else
+  echo "  no Sign in with Apple key configured — revocation will stay skipped"
+fi
 
 curl -sS -m 60 "$BASE/execute/Fileman/upload_files" -H "$AUTH" -F "dir=$APPDIR" -F "overwrite=1" \
-  -F "file-1=@$CONFDIR/config.env" -F "file-2=@$CONFDIR/mysql-ca.pem" | st
+  "${CONF_FILES[@]}" | st
 rm -rf "$CONFDIR"
 
 echo "== 4/6 front-controller shim =="

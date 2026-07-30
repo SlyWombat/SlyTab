@@ -148,6 +148,11 @@ final class Api
                 $result['digestsSent'] = $emailNotify->flushDigests();
                 return Http::json($rs, $result);
             });
+            // Management metrics for the owner's Homepage dashboard. Behind the
+            // admin token like everything else here — Homepage's customapi
+            // widget can send the header.
+            $g->get('/metrics', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, (new \SlyTab\Services\MetricsService($pdo))->snapshot()));
             // Same sweep on its own, for testing and for forcing a send.
             $g->post('/notify-digest', function (Request $rq, Response $rs) use ($emailNotify): Response {
                 $grace = (int) (Http::body($rq)['graceMinutes'] ?? 10);
