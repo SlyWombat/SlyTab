@@ -99,6 +99,8 @@ export interface Participant { userId: string; amountMinor: number }
 export interface Expense {
   id: string; groupId: string; description: string; amountMinor: number;
   currency: string; fxRate: number | null; expenseDate: string;
+  /** Only from /me/expenses (#101) — a cross-group list needs the label. */
+  groupName?: string; groupEmoji?: string;
   category: string; payers: Participant[]; shares: Participant[];
   splitMethod: string;
   /** Per-member form inputs for shares/percent/adjustment splits, so editing restores them. */
@@ -315,6 +317,25 @@ export const api = {
    * over exactly once, on first authorization, so it is passed through here
    * or lost forever.
    */
+  /**
+   * Every expense your money is in, across all groups (#101). `paid` follows
+   * the money — you were a payer — and `involved` follows your share.
+   */
+  myExpenses: (opts: {
+    scope?: 'paid' | 'involved'; sort?: string; q?: string; cursor?: string;
+  } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.scope) p.set('scope', opts.scope);
+    if (opts.sort) p.set('sort', opts.sort);
+    if (opts.q) p.set('q', opts.q);
+    if (opts.cursor) p.set('cursor', opts.cursor);
+    const qs = p.toString();
+    return req<{
+      items: Expense[];
+      nextCursor: string | null;
+      summary: { count: number; totalMinor: number; currency: string; approximate: boolean };
+    }>('GET', `/me/expenses${qs ? `?${qs}` : ''}`);
+  },
   /**
    * Leave a group (#84). The endpoint has existed since the group work; no
    * client ever called it, so anyone added to a group by email was stuck in

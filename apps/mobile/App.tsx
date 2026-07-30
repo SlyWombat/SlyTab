@@ -1302,9 +1302,125 @@ function GroupsScreen({ user, onOpenGroup, active }: {
  * grouped by day. There is no global endpoint yet, so the per-group feeds
  * are merged client-side — fine at family-beta scale.
  */
+/**
+ * "My expenses" (#101) — every expense your money is in, across groups.
+ *
+ * Lives behind a segmented control in the Activity tab rather than a fifth
+ * tab: the shell is specified as four (ui_requirements.md §1), and the tab
+ * bar is already the tightest thing in the UI at large text sizes. Activity
+ * answers "what has happened"; this answers "what have I spent". Same
+ * cross-group, time-ordered shape.
+ */
+function MyExpensesView({ user, onOpenGroup, active }: {
+  user: User; onOpenGroup: (id: string) => void; active: boolean;
+}) {
+  const [scope, setScope] = useState<'involved' | 'paid'>('involved');
+  const [sort, setSort] = useState<'newest' | 'oldest' | 'largest' | 'smallest'>('newest');
+  const [items, setItems] = useState<Expense[] | null>(null);
+  const [summary, setSummary] = useState<
+    { count: number; totalMinor: number; currency: string; approximate: boolean } | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback((append = false, from: string | null = null) => {
+    if (!append) setItems(null);
+    setError(null);
+    api.myExpenses({ scope, sort, cursor: from ?? undefined })
+      .then((r) => {
+        setItems((prev) => (append && prev ? [...prev, ...r.items] : r.items));
+        setSummary(r.summary);
+        setCursor(r.nextCursor);
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setRefreshing(false));
+  }, [scope, sort]);
+
+  useEffect(() => { if (active) load(); }, [active, load]);
+
+  const SORTS = [
+    ['newest', 'Newest'], ['oldest', 'Oldest'],
+    ['largest', 'Largest'], ['smallest', 'Smallest'],
+  ] as const;
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+        {([['involved', "I'm in"], ['paid', 'I paid']] as const).map(([v, label]) => (
+          <Pressable key={v} onPress={() => setScope(v)} {...chip(scope === v)}>
+            <Text style={{ color: scope === v ? c.bg : c.text2, fontSize: 12.5 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+        {SORTS.map(([v, label]) => (
+          <Pressable key={v} onPress={() => setSort(v)} {...chip(sort === v)}>
+            <Text style={{ color: sort === v ? c.bg : c.text2, fontSize: 12 }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* The total covers the whole filtered set, not the page on screen —
+          one that changed as you scrolled would be worse than none. */}
+      {summary !== null && (
+        <View style={[s.row, { justifyContent: 'space-between' }]}>
+          <Text style={s.meta}>
+            {summary.count === 1 ? '1 expense' : `${summary.count} expenses`}
+            {scope === 'paid' ? ' you paid for' : " you're part of"}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Amount minor={summary.totalMinor} currency={summary.currency} size={15} />
+            {summary.approximate && <Icon name="approx" size={13} color={c.text3} />}
+          </View>
+        </View>
+      )}
+
+      {error !== null && (
+        <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>
+      )}
+
+      <FlatList
+        data={items ?? []}
+        keyExtractor={(e) => e.id}
+        onRefresh={() => { setRefreshing(true); load(); }}
+        refreshing={refreshing}
+        onEndReachedThreshold={0.4}
+        onEndReached={() => { if (cursor !== null) load(true, cursor); }}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        ListEmptyComponent={items === null
+          ? <ActivityIndicator accessibilityLabel="Loading" color={c.brand} style={{ marginTop: 40 }} />
+          : (
+            <Text style={s.meta}>
+              {scope === 'paid'
+                ? "You haven't paid for anything yet."
+                : "You're not part of any expenses yet."}
+            </Text>
+          )}
+        renderItem={({ item: e }) => (
+          <Pressable style={s.row} onPress={() => onOpenGroup(e.groupId)}
+            accessibilityRole="button"
+            accessibilityLabel={`${e.description}, ${e.groupName ?? ''}`}>
+            <Icon name="receipt" size={18} color={c.text3} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.body} numberOfLines={2}>{e.description}</Text>
+              <Text style={s.meta}>
+                {e.expenseDate}{e.groupName ? ` · ${e.groupName}` : ''}
+              </Text>
+            </View>
+            <Amount minor={e.amountMinor} currency={e.currency} />
+          </Pressable>
+        )}
+      />
+    </View>
+  );
+}
+
 function ActivityScreen({ user, onOpenGroup, active }: {
   user: User; onOpenGroup: (id: string) => void; active: boolean;
 }) {
+  // Activity | My expenses. See MyExpensesView for why this is a segmented
+  // control rather than a fifth tab.
+  const [view, setView] = useState<'activity' | 'mine'>('activity');
   type FeedRow = ActivityItem & { groupId: string; groupLabel: string; who: string };
   const [rows, setRows] = useState<FeedRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1333,8 +1449,21 @@ function ActivityScreen({ user, onOpenGroup, active }: {
   return (
     <View style={s.screen}>
       <View style={s.header}>
-        <Text style={s.h1}>Activity</Text>
+        <Text style={s.h1}>{view === 'activity' ? 'Activity' : 'My expenses'}</Text>
       </View>
+      <View style={s.tabs}>
+        {([['activity', 'Activity'], ['mine', 'My expenses']] as const).map(([v, label]) => (
+          <Pressable key={v} onPress={() => setView(v)}
+            style={[s.tab, view === v && s.tabOn]}
+            accessibilityRole="button" accessibilityState={{ selected: view === v }}>
+            <Text style={[s.tabText, view === v && { color: c.text }]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {view === 'mine' ? (
+        <MyExpensesView user={user} onOpenGroup={onOpenGroup} active={active} />
+      ) : (
+      <>
       {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
       <FlatList
         data={rows ?? []}
@@ -1366,6 +1495,8 @@ function ActivityScreen({ user, onOpenGroup, active }: {
           );
         }}
       />
+      </>
+      )}
     </View>
   );
 }
