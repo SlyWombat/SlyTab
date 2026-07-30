@@ -44,6 +44,11 @@ https://electricrv.ca/slytab — live user data; treat with care.
   update your app" email). Web/backend-only fixes close and notify
   immediately. This is the rule the owner set on 2026-07-25 after a
   premature "fixed" email went out for an unreleased Android change.
+  **Watch the commit keywords**: `Closes #N` / `Fixes #N` auto-close the
+  issue the moment the commit is pushed, which silently breaks this rule
+  for a mobile-only fix. Use `Refs #N` for anything that needs a build,
+  and close it once the build is actually out (2026-07-30 — this caught
+  #87 and #95 and they had to be reopened).
 - **Release policy (owner, 2026-07-25):** when mobile work is done,
   release BOTH platforms (`scripts/worker`/release runbook: bump
   app.json, EAS build android-apk + ios-testflight, upload APK to
