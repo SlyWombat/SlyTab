@@ -73,7 +73,7 @@ Namespace `--ss-*`. Values below are the dark theme; light overrides follow.
   /* Text */
   --ss-text:          #eef2fa;
   --ss-text-2:        #a9b4cc;   /* secondary */
-  --ss-text-3:        #6b7794;   /* tertiary, placeholders */
+  --ss-text-3:        #909dba;   /* tertiary, placeholders — AA on all four surfaces (#94) */
 
   /* Brand & accents */
   --ss-brand:         #4f8ef7;   /* actions, links, focus */
@@ -93,7 +93,7 @@ Namespace `--ss-*`. Values below are the dark theme; light overrides follow.
   --ss-bg:        #f6f7fb;  --ss-surface:  #ffffff;
   --ss-surface-2: #eef1f7;  --ss-surface-3:#e2e8f3;
   --ss-outline:   #d4dbe8;
-  --ss-text:      #16203a;  --ss-text-2:   #4a5878;  --ss-text-3: #8592ad;
+  --ss-text:      #16203a;  --ss-text-2:   #4a5878;  --ss-text-3: #5a6680;
   --ss-brand:     #2f6fe0;  --ss-brand-strong: #1d5ccb;
   --ss-owed:      #148f63;  --ss-owe:      #b57408;  --ss-danger: #cf3545;
   --ss-success:   #148f63;

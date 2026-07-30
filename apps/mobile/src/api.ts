@@ -24,6 +24,19 @@ function noteApiError(method: string, path: string, status: number, code: string
 }
 
 /**
+ * Record a crash so it rides along on the next bug report (#89).
+ *
+ * A render-time throw took the whole tree down and left a blank screen; with
+ * nothing captured, the report the user then filed described a black screen
+ * and carried no evidence of what threw.
+ */
+export function noteClientError(where: string, message: string): void {
+  const t = new Date().toISOString().slice(11, 19);
+  recentErrors.push(`CRASH ${where}: ${message} @${t}Z`);
+  if (recentErrors.length > 5) recentErrors.shift();
+}
+
+/**
  * This app's marketing version and build number.
  *
  * Read from versions.json, NOT app.json: the 2026-07-25 per-platform split
@@ -152,17 +165,46 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${BASE}${path}`, {
-    method, headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
+  const clean = path.split('?')[0] ?? path;
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method, headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    // Unwrapped, this rejected with "TypeError: Network request failed", and a
+    // dozen call sites render `e.message` verbatim — so the one moment the app
+    // most needs to be reassuring showed a JS internal instead (#93). It also
+    // never reached noteApiError, so a bug report filed BECAUSE the app could
+    // not reach the server carried no evidence of that. uploadReceipt already
+    // did this properly; req now matches it.
+    noteApiError(method, clean, 0, 'OFFLINE');
+    throw new ApiFailure(
+      { code: 'OFFLINE', message: "can't reach SlyTab — check your connection and try again" },
+      0,
+    );
+  }
+
+  const json = await res.json().catch(() => null);
   if (!res.ok) {
-    const err = (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'request failed' };
-    noteApiError(method, path.split('?')[0] ?? path, res.status, err.code);
+    const err = (json as { error?: ApiError } | null)?.error
+      ?? { code: 'NETWORK', message: 'request failed' };
+    noteApiError(method, clean, res.status, err.code);
     throw new ApiFailure(err, res.status);
   }
-  return json as T;
+  if (json === null && res.status !== 204) {
+    // A 200 with an unparseable body is a captive portal or a host error page,
+    // not an empty result. Swallowed as {}, it told users with groups that they
+    // had none — a data-loss-looking bug with no error shown (#93).
+    noteApiError(method, clean, res.status, 'BAD_RESPONSE');
+    throw new ApiFailure(
+      { code: 'BAD_RESPONSE', message: 'unexpected reply from SlyTab — try again' },
+      res.status,
+    );
+  }
+  return (json ?? {}) as T;
 }
 
 export interface ReceiptItem { name: string; quantity: number; totalMinor: number }

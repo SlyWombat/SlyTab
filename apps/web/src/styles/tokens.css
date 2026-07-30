@@ -12,9 +12,12 @@
   /* Text */
   --ss-text: #eef2fa;
   --ss-text-2: #a9b4cc;
-  /* WCAG AA: #6b7794 measured 4.18:1 on bg and 3.80:1 on surface — this
-     value clears 4.5:1 on both (5.98 / 5.43). Issue #69. */
-  --ss-text-3: #8592ad;
+  /* WCAG AA. #6b7794 measured 4.18:1 on bg and 3.80:1 on surface (issue #69);
+     its replacement #8592ad cleared those two but still failed surface-3 at
+     4.01:1. This value clears ALL FOUR — bg 6.87, surface 6.25, surface-2
+     5.46, surface-3 4.61. Re-measure against every surface if you change it
+     (issue #94). */
+  --ss-text-3: #909dba;
 
   /* Brand & accents */
   --ss-brand: #4f8ef7;
@@ -69,7 +72,10 @@
   --ss-outline: #d4dbe8;
   --ss-text: #16203a;
   --ss-text-2: #4a5878;
-  --ss-text-3: #8592ad;
+  /* 3.13:1 on white before this — the dark value had been copied into the
+     light theme unchanged. #5a6680 measures 5.76 on surface, 4.68 on
+     surface-3 (issue #94). */
+  --ss-text-3: #5a6680;
   --ss-brand: #2f6fe0;
   --ss-on-brand: #ffffff; /* 4.70:1 on the light-theme brand — already AA */
   --ss-brand-strong: #1d5ccb;

@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, AppState, BackHandler, FlatList, Image, KeyboardAvoidingView, Linking,
   Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
@@ -12,7 +12,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
-  api, ApiFailure, appVersion, receiptImageSource, setToken, uploadReceipt,
+  api, ApiFailure, appVersion, noteClientError, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
@@ -31,7 +31,8 @@ function badgeColor(id: string): string {
 
 function Badge({ id, name, size = 30 }: { id: string; name: string; size?: number }) {
   return (
-    <View style={[s.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: badgeColor(id) }]}>
+    <View accessible={false} importantForAccessibility="no-hide-descendants"
+      style={[s.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: badgeColor(id) }]}>
       <Text style={s.badgeText} maxFontSizeMultiplier={1.1}>{name.slice(0, 1).toUpperCase()}</Text>
     </View>
   );
@@ -44,22 +45,50 @@ function Amount({ minor, currency, signed = false, size = 14 }: {
   const text = signed
     ? `${minor >= 0 ? '+' : '−'}${formatMinor(Math.abs(minor), currency)}`
     : formatMinor(minor, currency);
-  return <Text style={{ color, fontSize: size, fontVariant: ['tabular-nums'], fontWeight: '600' }} maxFontSizeMultiplier={1.5}>{text}</Text>;
+  // VoiceOver reads the U+2212 minus unreliably (the default punctuation
+  // setting skips it), so "owed" and "owe" could sound identical — the one
+  // distinction this app exists to make. Spell the direction out (#95).
+  const spoken = signed
+    ? `${minor >= 0 ? 'you are owed' : 'you owe'} ${formatMinor(Math.abs(minor), currency)}`
+    : formatMinor(minor, currency);
+  return (
+    <Text style={{ color, fontSize: size, fontVariant: ['tabular-nums'], fontWeight: '600' }}
+      maxFontSizeMultiplier={1.5} accessibilityLabel={spoken}>{text}</Text>
+  );
 }
 
-function Btn({ label, onPress, primary = false, disabled = false, small = false }: {
+function Btn({ label, onPress, primary = false, disabled = false, small = false,
+  destructive = false, a11yLabel }: {
   label: string; onPress: () => void; primary?: boolean; disabled?: boolean; small?: boolean;
+  destructive?: boolean; a11yLabel?: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      // Every button in the app comes through here, so the role belongs here
+      // too — without it VoiceOver reads the label with no button trait and no
+      // "double tap to activate" (#95). a11yLabel is for the icon-only callers
+      // ('‹', '›'), whose glyph is meaningless read aloud.
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel ?? label}
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         s.btn, primary && s.btnPrimary, small && s.btnSmall,
-        (disabled || pressed) && { opacity: disabled ? 0.45 : 0.8 },
+        destructive && s.btnDestructive,
+        // 0.45 put the disabled primary at 2.12:1 — unreadable, so a user
+        // could not tell a blocked form from a missed tap (#94).
+        (disabled || pressed) && { opacity: disabled ? 0.6 : 0.8 },
       ]}
     >
-      <Text style={[s.btnText, primary && { color: '#fff' }, small && { fontSize: 12 }]}>{label}</Text>
+      <Text style={[
+        s.btnText,
+        // White on the brand blue is 3.21:1. The dark ink is 5.83:1 on the
+        // same fill and reads well on blue (#94).
+        primary && { color: c.bg },
+        destructive && { color: c.danger },
+        small && { fontSize: 12 },
+      ]}>{label}</Text>
     </Pressable>
   );
 }
@@ -123,10 +152,60 @@ const TOKEN_KEY = 'slytab.session';
 // instantly on later launches instead of after a network round-trip (#40).
 const GOOGLE_READY_KEY = 'slytab.googleReady';
 
+/**
+ * Catches a render-time throw instead of letting it unmount everything (#89).
+ *
+ * The whole UI is one subtree, so any throw — a null member lookup, a
+ * malformed payload, a currency the money formatter doesn't know — left the
+ * user staring at a permanently blank dark screen with no message and no way
+ * back but force-quitting. And nothing was captured, so the bug report that
+ * followed described a black screen and carried no evidence.
+ *
+ * Remounting by bumping a key is deliberate: the failure is usually one bad
+ * payload, and refetching clears it without losing the session.
+ */
+class ErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { message: string | null; attempt: number }
+> {
+  override state = { message: null as string | null, attempt: 0 };
+
+  static getDerivedStateFromError(e: unknown) {
+    return { message: (e as Error)?.message ?? 'Something went wrong' };
+  }
+
+  override componentDidCatch(e: unknown) {
+    noteClientError('render', (e as Error)?.message ?? String(e));
+  }
+
+  override render() {
+    if (this.state.message === null) {
+      return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>;
+    }
+    return (
+      <View style={[s.screen, s.center]}>
+        <Text style={s.wordmark}>Sly<Text style={{ color: c.text2 }}>Tab</Text></Text>
+        <Text style={[s.body, { textAlign: 'center', marginBottom: 4 }]}>
+          Something went wrong on this screen.
+        </Text>
+        <Text style={[s.meta, { textAlign: 'center', marginBottom: 16 }]}>
+          Nothing you entered has been lost. You can report this from Profile.
+        </Text>
+        <View style={{ width: '100%', maxWidth: 320 }}>
+          <Btn primary label="Try again"
+            onPress={() => this.setState((st) => ({ message: null, attempt: st.attempt + 1 }))} />
+        </View>
+      </View>
+    );
+  }
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppShell />
+      <ErrorBoundary>
+        <AppShell />
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -425,10 +504,20 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
         {mode === 'create' && (
           <Field label="Your name" value={name} onChangeText={setName} autoCapitalize="words" />
         )}
+        {/* textContentType is what lets iCloud Keychain fill an existing
+            password and offer to save/generate one on sign-up. Without it our
+            users hand-typed 10+ characters on every reinstall — the biggest
+            everyday friction in the app (#99). passwordRules keeps Safari's
+            generator inside what the API accepts. */}
         <Field label="Email" value={email} onChangeText={setEmail}
-          autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
+          autoCapitalize="none" keyboardType="email-address" autoComplete="email"
+          textContentType="username" returnKeyType="next" />
         <Field label={mode === 'create' ? 'Password (10+ characters)' : 'Password'}
-          value={password} onChangeText={setPassword} secureTextEntry />
+          value={password} onChangeText={setPassword} secureTextEntry
+          textContentType={mode === 'create' ? 'newPassword' : 'password'}
+          autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+          passwordRules="minlength: 10; required: lower; required: upper; required: digit;"
+          returnKeyType="go" onSubmitEditing={() => { if (!busy) void submit(); }} />
         <Btn primary disabled={busy}
           label={busy ? '…' : mode === 'create' ? 'Create account' : 'Sign in'}
           onPress={submit} />
@@ -683,10 +772,10 @@ function HomeScreen({ user, onOpenGroup, active }: {
                 <Pressable style={s.row} key={group.id} onPress={() => openGroup(group.id)}>
                   <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
                   <Text style={[s.rowName, { flex: 1 }]}>{other?.displayName ?? 'Friend'}</Text>
-                  {netMinor === 0 ? <Text style={s.meta}>settled ✓</Text> : (
+                  {netMinor === 0 ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text> : (
                     <View style={{ alignItems: 'flex-end' }}>
                       <Amount minor={netMinor} currency={currency} signed />
-                      <Text style={s.meta}>{netMinor > 0 ? 'owes you' : 'you owe'}</Text>
+                      <Text maxFontSizeMultiplier={1.5} style={s.meta}>{netMinor > 0 ? 'owes you' : 'you owe'}</Text>
                     </View>
                   )}
                 </Pressable>
@@ -716,7 +805,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
           return (
             <Pressable style={s.row} onPress={() => openGroup(item.group.id)}>
               <View style={s.tile}>
-                <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+                <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowName}>{item.group.name}{item.group.archivedAt ? ' (archived)' : ''}</Text>
@@ -746,11 +835,11 @@ function HomeScreen({ user, onOpenGroup, active }: {
                 )}
               </View>
               {item.netMinor === 0
-                ? <Text style={s.meta}>settled ✓</Text>
+                ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
                 : (
                   <View style={{ alignItems: 'flex-end' }}>
                     <Amount minor={item.netMinor} currency={item.currency} signed />
-                    <Text style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
+                    <Text maxFontSizeMultiplier={1.5} style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
                   </View>
                 )}
             </Pressable>
@@ -760,8 +849,8 @@ function HomeScreen({ user, onOpenGroup, active }: {
 
       <Pressable style={[s.fab, s.fabWide]} onPress={onAddExpense} disabled={data === null}
         accessibilityRole="button" accessibilityLabel="Add expense">
-        <Text style={{ color: '#fff', fontSize: 18 }} maxFontSizeMultiplier={1.3}>＋</Text>
-        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={1.3}>Add expense</Text>
+        <Text style={{ color: c.bg, fontSize: 18 }} maxFontSizeMultiplier={1.3}>＋</Text>
+        <Text style={{ color: c.bg, fontSize: 15, fontWeight: '600' }} maxFontSizeMultiplier={1.3}>Add expense</Text>
       </Pressable>
       {picking && (
         <SheetModal title="Add an expense" onClose={() => setPicking(false)}>
@@ -786,7 +875,7 @@ function HomeScreen({ user, onOpenGroup, active }: {
                     onPress={() => startQuickAdd(group)}>
                     {group.isDirect
                       ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
-                      : <View style={s.tile}><Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text></View>}
+                      : <View style={s.tile}><Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text></View>}
                     <View style={{ flex: 1 }}>
                       <Text style={s.rowName}>
                         {group.isDirect ? other?.displayName ?? 'Friend' : group.name}
@@ -1055,6 +1144,13 @@ function ProfileScreen({ user, onSaved, onSignOut, active }: {
         </View>
       )}
       <Text style={[s.meta, { textAlign: 'center', marginTop: 10 }]}>Account: {user.email}</Text>
+      {/* Guideline 5.1.1(i): the policy link must be in App Store Connect AND
+          reachable inside the app. The web app had it; the binary did not,
+          which is a certain rejection (#80). */}
+      <Pressable accessibilityRole="link"
+        onPress={() => Linking.openURL('https://electricrv.ca/slytab/marketing/privacy/')}>
+        <Text style={s.link}>Privacy policy</Text>
+      </Pressable>
       {/* Spec §2.10 version footer. Without it a tester on TestFlight has
           no way to tell you which build they are looking at (issue #45). */}
       <Text style={[s.meta, { textAlign: 'center', marginTop: 4 }]}>
@@ -1116,7 +1212,7 @@ function GroupsScreen({ user, onOpenGroup, active }: {
           return (
             <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
               <View style={s.tile}>
-                <Text style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
+                <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji || '👥'}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowName}>
@@ -1132,11 +1228,11 @@ function GroupsScreen({ user, onOpenGroup, active }: {
                 </View>
               </View>
               {item.netMinor === 0
-                ? <Text style={s.meta}>settled ✓</Text>
+                ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
                 : (
                   <View style={{ alignItems: 'flex-end' }}>
                     <Amount minor={item.netMinor} currency={item.currency} signed />
-                    <Text style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
+                    <Text maxFontSizeMultiplier={1.5} style={s.meta}>{item.netMinor > 0 ? 'you are owed' : 'you owe'}</Text>
                   </View>
                 )}
             </Pressable>
@@ -1373,7 +1469,9 @@ function GroupScreen({ groupId, user, onBack }: {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [feed, setFeed] = useState<ActivityItem[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Nullable so the empty state can tell 'nothing here' from 'not loaded yet'
+  // — as [] it announced "No expenses yet" on every open (#98).
+  const [expenses, setExpenses] = useState<Expense[] | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [totals, setTotals] = useState<GroupTotals | null>(null);
   const [adding, setAdding] = useState(false);
@@ -1385,6 +1483,7 @@ function GroupScreen({ groupId, user, onBack }: {
   const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
   const [managingCategories, setManagingCategories] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
   // Today's group-home → user-home rate, for the fine print under each
   // expense (the user thinks in their own currency, not the group's).
@@ -1399,7 +1498,12 @@ function GroupScreen({ groupId, user, onBack }: {
   }, [groupHome, user.defaultCurrency]);
 
   const reload = useCallback(() => {
-    api.group(groupId).then(setGroup).catch(() => {});
+    // The primary fetch owns the error: swallowing it left a spinner that
+    // never resolved, with nothing on screen to explain or retry (#93/#98).
+    // The secondary ones stay best-effort — a missing rate should not blank
+    // the screen.
+    api.group(groupId).then((g) => { setGroup(g); setLoadError(null); })
+      .catch((e) => setLoadError((e as Error).message));
     api.balances(groupId).then(setBalances).catch(() => {});
     api.groupTotals(groupId).then(setTotals).catch(() => {});
     api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
@@ -1419,7 +1523,22 @@ function GroupScreen({ groupId, user, onBack }: {
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? 'Former member';
 
   if (group === null) {
-    return <View style={s.screen}><Btn small label="‹ Back" onPress={onBack} /><ActivityIndicator color={c.brand} style={{ marginTop: 40 }} /></View>;
+    // Offline this used to spin forever with no message and no way out, because
+    // every fetch error was swallowed (#93/#98). Name the problem and offer the
+    // retry — ui_requirements.md:318, "every error names a next step".
+    return (
+      <View style={s.screen}>
+        <Btn small label="‹ Back" a11yLabel="Back" onPress={onBack} />
+        {loadError === null ? (
+          <ActivityIndicator color={c.brand} style={{ marginTop: 40 }} accessibilityLabel="Loading group" />
+        ) : (
+          <View style={{ marginTop: 40 }}>
+            <Text style={s.error} accessibilityLiveRegion="assertive">{loadError}</Text>
+            <Btn primary label="Try again" onPress={() => { setLoadError(null); reload(); }} />
+          </View>
+        )}
+      </View>
+    );
   }
   // "Category management can be a separate page" (owner, #18).
   if (managingCategories) {
@@ -1427,7 +1546,10 @@ function GroupScreen({ groupId, user, onBack }: {
       <ManageCategoriesScreen group={group} onBack={() => { setManagingCategories(false); reload(); }} />
     );
   }
-  const myNet = balances?.net[user.id] ?? 0;
+  // Deliberately NOT `?? 0`: zero means settled, and null means we do not
+  // know yet. Collapsing them made the header announce "settled ✓" on
+  // every open until the balances landed (#98).
+  const myNet = balances === null ? null : (balances.net[user.id] ?? 0);
 
   // #56: header, tab strip and the search/filter row used to sit above
   // the list as fixed siblings — at font scale 1.8 they consumed the
@@ -1435,8 +1557,8 @@ function GroupScreen({ groupId, user, onBack }: {
   const chrome = (
     <View>
       <View style={s.header}>
-        <Btn small label="‹" onPress={onBack} />
-        <Text style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
+        <Btn small label="‹" a11yLabel="Back" onPress={onBack} />
+        <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{group.emoji || '👥'}</Text>
         <Pressable style={{ flex: 1 }} onPress={() => { if (!group.isDirect) setSettingsOpen(true); }}>
           <Text style={s.h2}>
             {group.isDirect
@@ -1448,7 +1570,8 @@ function GroupScreen({ groupId, user, onBack }: {
             {group.isDirect ? `just the two of you · ${group.homeCurrency}` : `${group.members.length} member${group.members.length === 1 ? '' : 's'} · ${group.homeCurrency}`}
           </Text>
         </Pressable>
-        {myNet === 0 ? <Text style={s.meta}>settled ✓</Text>
+        {myNet === null ? <Text style={s.meta}>—</Text>
+          : myNet === 0 ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
           : <Amount minor={myNet} currency={group.homeCurrency} signed size={15} />}
       </View>
 
@@ -1502,7 +1625,9 @@ function GroupScreen({ groupId, user, onBack }: {
           onRefresh={reload}
           refreshing={false}
           contentContainerStyle={{ paddingBottom: 150 }}
-          ListEmptyComponent={<Text style={s.meta}>No expenses yet.</Text>}
+          ListEmptyComponent={expenses === null
+            ? <ActivityIndicator color={c.brand} style={{ marginTop: 20 }} />
+            : <Text style={s.meta}>No expenses yet.</Text>}
           ListFooterComponent={actions}
           ListHeaderComponent={(
             <View>
@@ -1549,7 +1674,7 @@ function GroupScreen({ groupId, user, onBack }: {
                   {effect === 0 ? <Text style={s.meta}>not involved</Text> : (
                     <>
                       <Amount minor={effect} currency={e.currency} signed />
-                      <Text style={s.meta}>{effect > 0 ? 'you lent' : 'you borrowed'}</Text>
+                      <Text maxFontSizeMultiplier={1.5} style={s.meta}>{effect > 0 ? 'you lent' : 'you borrowed'}</Text>
                     </>
                   )}
                 </View>
@@ -1641,7 +1766,7 @@ function GroupScreen({ groupId, user, onBack }: {
             <View style={s.row} key={m.id}>
               <Badge id={m.id} name={m.displayName} />
               <Text style={[s.rowName, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
-              {(balances?.net[m.id] ?? 0) === 0 ? <Text style={s.meta}>settled ✓</Text>
+              {(balances?.net[m.id] ?? 0) === 0 ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
                 : <Amount minor={balances?.net[m.id] ?? 0} currency={group.homeCurrency} signed />}
             </View>
           ))}
@@ -1670,14 +1795,17 @@ function GroupScreen({ groupId, user, onBack }: {
         <InviteSheet group={group} user={user} link={inviteLink} onClose={() => setInviteLink(null)} onChanged={reload} />
       )}
 
+      {/* The Home FAB was labelled and this one was not, so the group screen's
+          primary action announced as "plus" (#95). */}
       {group.archivedAt === null && (
-        <Pressable style={s.fab} onPress={() => setAdding(true)}>
-          <Text style={{ color: '#fff', fontSize: 30, lineHeight: 34 }} maxFontSizeMultiplier={1}>+</Text>
+        <Pressable style={s.fab} accessibilityRole="button" accessibilityLabel="Add expense"
+          onPress={() => setAdding(true)}>
+          <Text style={{ color: c.bg, fontSize: 30, lineHeight: 34 }} maxFontSizeMultiplier={1}>+</Text>
         </Pressable>
       )}
       {adding && (
         <AddExpenseSheet group={group} user={user}
-          lastCurrency={expenses[0]?.currency}
+          lastCurrency={expenses?.[0]?.currency}
           onClose={() => setAdding(false)}
           onSaved={() => { setAdding(false); reload(); }} />
       )}
@@ -1951,8 +2079,13 @@ function CurrencySearchList({ onPick, exclude = [], selected = [] }: {
               style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                 paddingVertical: 9, paddingHorizontal: 12,
                 backgroundColor: on ? c.surface2 : 'transparent' }}>
-              <Text style={{ color: c.brand, width: 14, fontSize: 13 }}>{on ? '✓' : ''}</Text>
-              <Text style={{ color: c.text, fontWeight: '700', width: 44, fontSize: 13.5 }}>{cur}</Text>
+              {/* Fixed widths clipped the tick and the code — and choosing
+                  the wrong currency silently changes every amount's scale,
+                  since some are zero-decimal (#96). */}
+              <Text maxFontSizeMultiplier={1.6}
+                style={{ color: c.brand, minWidth: 14, fontSize: 13 }}>{on ? '✓' : ''}</Text>
+              <Text maxFontSizeMultiplier={1.6}
+                style={{ color: c.text, fontWeight: '700', minWidth: 44, flexShrink: 0, fontSize: 13.5 }}>{cur}</Text>
               <Text style={{ color: c.text2, fontSize: 13.5 }}>{CURRENCY_NAMES[cur]}</Text>
             </Pressable>
           );
@@ -1976,7 +2109,7 @@ function CurrencyMultiPicker({ selected, onChange, exclude }: {
           {selected.map((cur) => (
             <Pressable key={cur} onPress={() => onChange(selected.filter((x) => x !== cur))}
               style={{ paddingVertical: 5, paddingHorizontal: 10, borderRadius: 12, backgroundColor: c.brand }}>
-              <Text style={{ color: '#fff', fontSize: 12.5 }}>{cur} ✕</Text>
+              <Text style={{ color: c.bg, fontSize: 12.5 }}>{cur} ✕</Text>
             </Pressable>
           ))}
         </View>
@@ -2141,7 +2274,7 @@ function ManageCategoriesScreen({ group, onBack }: { group: Group; onBack: () =>
   return (
     <View style={s.screen}>
       <View style={s.header}>
-        <Btn small label="‹" onPress={onBack} />
+        <Btn small label="‹" a11yLabel="Back" onPress={onBack} />
         <Text style={[s.h1, { flex: 1 }]} numberOfLines={1}>Categories</Text>
         {dirty && <Btn small primary label={busy ? 'Saving…' : 'Save'} onPress={save} />}
       </View>
@@ -2673,8 +2806,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               on ? next.delete(m.id) : next.add(m.id);
               setIncluded(next);
             }}>
+            {/* minWidth, not width, and capped: at accessibility sizes a fixed
+                22pt box clipped the glyph, so the user could not tell ☑ from ☐
+                — i.e. could not see who was in the split (#96). */}
             {method === 'equal' && (
-              <Text style={{ color: on ? c.brand : c.text3, fontSize: 16, width: 22 }}>{on ? '☑' : '☐'}</Text>
+              <Text maxFontSizeMultiplier={1.6}
+                style={{ color: on ? c.brand : c.text3, fontSize: 16, minWidth: 22 }}>{on ? '☑' : '☐'}</Text>
             )}
             <Badge id={m.id} name={m.displayName} size={22} />
             <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
@@ -2748,8 +2885,26 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       {editing && onDeleted && (
         <>
           <View style={{ height: 8 }} />
-          <Btn label="Delete this expense" onPress={() => {
-            api.deleteExpense(editing.id).then(onDeleted).catch((e) => setError((e as Error).message));
+          {/* FR-3.5 asks once before deleting. It used to go on one tap, and
+              the undo lives in the expenses-tab header — so deleting from this
+              sheet while on Balances or Totals meant no undo was ever seen
+              (#100). Styled destructive, per HIG. */}
+          <Btn label="Delete this expense" destructive onPress={() => {
+            Alert.alert(
+              'Delete this expense?',
+              'It can be undone from the Expenses tab straight afterwards.',
+              [
+                { text: 'Keep it', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => {
+                    api.deleteExpense(editing.id).then(onDeleted)
+                      .catch((e) => setError((e as Error).message));
+                  },
+                },
+              ],
+            );
           }} />
         </>
       )}
@@ -2769,7 +2924,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {ids.length > 1 && (
                   <>
-                    <Btn small label="‹" onPress={() => setViewingReceipt(idx - 1)} />
+                    <Btn small label="‹" a11yLabel="Previous receipt" onPress={() => setViewingReceipt(idx - 1)} />
                     <Text style={{ color: c.text2, fontSize: 13 }} maxFontSizeMultiplier={1.4}>
                       {idx + 1} / {ids.length}
                     </Text>
@@ -3054,7 +3209,7 @@ const s = StyleSheet.create({
   rowName: { color: c.text, fontSize: 14, fontWeight: '600' },
   // Home cards (issue #20 design pass)
   tile: {
-    width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    minWidth: 44, minHeight: 44, aspectRatio: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: c.surface2, borderColor: c.outline, borderWidth: 1,
   },
   pairline: { color: c.text2, fontSize: 12, lineHeight: 18 },
@@ -3064,8 +3219,13 @@ const s = StyleSheet.create({
   btn: {
     backgroundColor: c.surface2, borderRadius: 12, paddingVertical: 12,
     alignItems: 'center', marginBottom: 8,
+    // The compact variant was fixed for 44pt in #62 and the main one was
+    // missed — it measured ~41pt, on Sign in, Save expense, Settle and
+    // Delete (#97).
+    minHeight: 44, justifyContent: 'center',
   },
   btnPrimary: { backgroundColor: c.brand },
+  btnDestructive: { backgroundColor: 'rgba(239,93,107,0.14)', borderColor: c.danger, borderWidth: 1 },
   // 44dp minimum hit area — the compact buttons measured 30dp tall (#62).
   btnSmall: { paddingVertical: 7, paddingHorizontal: 12, marginBottom: 0,
     minHeight: 44, justifyContent: 'center' },
@@ -3074,17 +3234,21 @@ const s = StyleSheet.create({
   input: {
     backgroundColor: c.surface2, borderColor: c.outline, borderWidth: 1,
     borderRadius: 10, color: c.text, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14,
+    minHeight: 44,
   },
-  link: { color: c.brand, fontSize: 13, textAlign: 'center', padding: 10 },
+  link: { color: c.brand, fontSize: 13, textAlign: 'center', padding: 10,
+    minHeight: 44, textAlignVertical: 'center' },
   error: {
     color: c.text, backgroundColor: 'rgba(239,93,107,0.14)', borderColor: c.danger,
     borderWidth: 1, borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10,
   },
   tabs: { flexDirection: 'row', backgroundColor: c.surface2, borderRadius: 10, padding: 3, marginBottom: 12 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8 },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8,
+    minHeight: 44, justifyContent: 'center' },
   tabOn: { backgroundColor: c.surface },
   tabText: { color: c.text2, fontWeight: '600', fontSize: 13 },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7,
+    minHeight: 44 },
   sheetBack: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(4,7,14,0.62)' },
   sheet: {
     backgroundColor: c.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
