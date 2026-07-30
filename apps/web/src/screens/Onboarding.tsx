@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Icon } from '../Icon';
 import { CURRENCIES, CURRENCY_NAMES } from '@slytab/core';
 import { api, type User } from '../api';
 import { Mark } from '../ui';
@@ -68,7 +69,7 @@ export function Onboarding({ user, onDone }: { user: User; onDone: (u: User) => 
         {!showHandles ? (
           <button type="button" className="btn block" style={{ marginBottom: 8 }}
             onClick={() => setShowHandles(true)}>
-            ＋ Add how people pay you (optional)
+            <Icon name="add" size={16} /> Add how people pay you (optional)
           </button>
         ) : (
           <>

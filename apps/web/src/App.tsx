@@ -2,11 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, getToken, setToken, type User } from './api';
 import { AppSignIn, Auth } from './screens/Auth';
 import { Home } from './screens/Home';
+import { MyExpenses } from './screens/MyExpenses';
 import { GroupScreen } from './screens/Group';
 import { Onboarding } from './screens/Onboarding';
 import { Mark } from './ui';
 
-type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
+type Nav = { screen: 'home' } | { screen: 'group'; groupId: string }
+  | { screen: 'myExpenses' };
 
 /** Pull a pending invite token from /join/<token> URLs (SPA fallback). */
 function pendingJoinToken(): string | null {
@@ -166,6 +168,14 @@ export function App() {
     return <Onboarding user={user} onDone={setUser} />;
   }
 
+  if (nav.screen === 'myExpenses') {
+    return (
+      <MyExpenses
+        onBack={() => setNav({ screen: 'home' })}
+        onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
+      />
+    );
+  }
   if (nav.screen === 'group') {
     return (
       <GroupScreen
@@ -181,6 +191,7 @@ export function App() {
       user={user}
       onUserUpdated={setUser}
       onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
+      onMyExpenses={() => setNav({ screen: 'myExpenses' })}
       onSignOut={() => {
         api.logout().catch(() => {});
         setToken(null);

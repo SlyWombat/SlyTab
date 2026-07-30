@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Icon } from '../Icon';
 
 import { resolveCategories, type CategoryOverride } from '@slytab/core';
 
@@ -96,7 +97,7 @@ export function CategoriesScreen({ group, onBack }: { group: Group; onBack: () =
     return (
       <div className="shell">
         <div className="header">
-          <button className="btn sm" onClick={onBack} aria-label="Back">‹</button>
+          <button className="btn sm" onClick={onBack} aria-label="Back"><Icon name="back" size={16} /></button>
           <h1 style={{ fontSize: '1.1875rem' }}>Categories</h1>
         </div>
         <p className="muted">{error ?? 'Loading…'}</p>
@@ -107,7 +108,7 @@ export function CategoriesScreen({ group, onBack }: { group: Group; onBack: () =
   return (
     <div className="shell">
       <div className="header">
-        <button className="btn sm" onClick={onBack} aria-label="Back">‹</button>
+        <button className="btn sm" onClick={onBack} aria-label="Back"><Icon name="back" size={16} /></button>
         <h1 style={{ fontSize: '1.1875rem' }}>Categories</h1>
         <span className="grow" />
         {dirty && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Icon } from '../Icon';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, resolveCategories, type CategoryOverride, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure,
@@ -159,14 +160,14 @@ export function GroupScreen({ groupId, user, onBack }: {
   }
 
   if (group === null) {
-    return <div className="shell"><div className="header"><button className="btn sm" onClick={onBack}>‹ Back</button></div>{error && <div className="error">{error}</div>}<p className="muted">Loading…</p></div>;
+    return <div className="shell"><div className="header"><button className="btn sm" onClick={onBack}><Icon name="back" size={16} /> Back</button></div>{error && <div className="error">{error}</div>}<p className="muted">Loading…</p></div>;
   }
 
   return (
     <div className="shell">
       <div className="header">
-        <button className="btn sm" onClick={onBack}>‹</button>
-        <span style={{ fontSize: '1.5rem' }} aria-hidden>{group.emoji || '👥'}</span>
+        <button className="btn sm" onClick={onBack}><Icon name="back" size={16} /></button>
+        <span style={{ fontSize: '1.5rem' }} aria-hidden>{group.emoji || <Icon name="group" size={20} />}</span>
         <button onClick={() => { if (!group.isDirect) setSettingsOpen(true); }} title={group.isDirect ? undefined : 'Group settings'}
           style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0,
             cursor: group.isDirect ? 'default' : 'pointer', minWidth: 0, flex: '0 1 auto' }}>
@@ -1034,11 +1035,11 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
           <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
             {viewing.ids.length > 1 && (
               <>
-                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx - 1)}>‹</button>
+                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx - 1)}><Icon name="back" size={16} /></button>
                 <span className="muted" style={{ alignSelf: 'center', fontSize: '0.8125rem' }}>
                   {viewing.idx + 1} / {viewing.ids.length}
                 </span>
-                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx + 1)}>›</button>
+                <button type="button" className="btn sm" onClick={() => void openReceiptView(viewing.idx + 1)}><Icon name="forward" size={16} /></button>
               </>
             )}
             <button type="button" className="btn sm"
@@ -1396,7 +1397,10 @@ function InviteSheet({ group, user, onClose, onChanged }: {
                     .catch((err) => setError((err as Error).message))
                     .finally(() => setAddBusy(null));
                 }}>
-                {added.has(p.id) ? 'Added ✓' : addBusy === p.id ? '…' : '＋ Add'}
+                {added.has(p.id)
+                  ? <><Icon name="check" size={14} /> Added</>
+                  : addBusy === p.id ? '…'
+                  : <><Icon name="add" size={14} /> Add</>}
               </button>
             </div>
           ))}

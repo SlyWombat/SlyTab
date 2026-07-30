@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import { Icon } from './Icon';
 import type { User } from './api';
 
 /** Public TestFlight link for the "SlyTab family" group (no invite needed). */
@@ -62,7 +63,7 @@ export function GetTheApp({ user }: { user?: Pick<User, 'signInProviders'> }) {
 
   return (
     <div className="row" style={{ alignItems: 'flex-start', gap: 12, borderColor: 'var(--ss-brand)' }}>
-      <span aria-hidden style={{ fontSize: '1.5rem', lineHeight: 1.2 }}>📱</span>
+      <Icon name="apple" size={22} style={{ marginTop: 2, opacity: 0.9 }} />
       <div className="grow">
         <div className="name">SlyTab runs better as an app</div>
         <p className="meta" style={{ margin: '2px 0 8px' }}>

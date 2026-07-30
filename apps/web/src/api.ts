@@ -67,6 +67,9 @@ export interface Expense {
   fxRate: number | null;
   expenseDate: string;
   category: string;
+  /** Only present from /me/expenses (#101) — a cross-group list needs the label. */
+  groupName?: string;
+  groupEmoji?: string;
   createdBy: string;
   splitMethod: string;
   /** Per-member form inputs for shares/percent/adjustment splits, so editing restores them. */
@@ -325,6 +328,25 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     req<{ ok: true }>('POST', '/auth/reset', { token, password }),
   me: () => req<User>('GET', '/me'),
+  /**
+   * Every expense your money is in, across all groups (#101). `paid` follows
+   * the money (you were a payer), `involved` follows your share.
+   */
+  myExpenses: (opts: {
+    scope?: 'paid' | 'involved'; sort?: string; q?: string; cursor?: string;
+  } = {}) => {
+    const p = new URLSearchParams();
+    if (opts.scope) p.set('scope', opts.scope);
+    if (opts.sort) p.set('sort', opts.sort);
+    if (opts.q) p.set('q', opts.q);
+    if (opts.cursor) p.set('cursor', opts.cursor);
+    const qs = p.toString();
+    return req<{
+      items: Expense[];
+      nextCursor: string | null;
+      summary: { count: number; totalMinor: number; currency: string; approximate: boolean };
+    }>('GET', `/me/expenses${qs ? `?${qs}` : ''}`);
+  },
   /** Leave a group (#84) — refuses while your balance is non-zero. */
   leaveGroup: (groupId: string) =>
     req<{ ok: true }>('POST', `/groups/${groupId}/leave`),

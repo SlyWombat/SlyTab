@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
 import { api, type Group, type HomeBalances, type Session, type User } from '../api';
 import { GetTheApp, TESTFLIGHT_URL } from '../GetTheApp';
+import { Icon } from '../Icon';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 
@@ -9,11 +10,12 @@ import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
 // picker defaults to the group you're living in right now (issue #20).
 const LAST_GROUP_KEY = 'slytab.lastGroup';
 
-export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
+export function Home({ user, onOpenGroup, onSignOut, onUserUpdated, onMyExpenses }: {
   user: User;
   onOpenGroup: (groupId: string) => void;
   onSignOut: () => void;
   onUserUpdated: (u: User) => void;
+  onMyExpenses: () => void;
 }) {
   const [data, setData] = useState<HomeBalances | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +125,9 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         <div className="big">
           {total === null ? '…' : (
             total.owedMinor === 0 && total.oweMinor === 0
-              ? <span style={{ color: 'var(--ss-text-2)' }}>All settled up ✓</span>
+              ? <span style={{ color: 'var(--ss-text-2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  All settled up <Icon name="check" size={14} />
+                </span>
               : <>
                   {total.approximate && <span style={{ color: 'var(--ss-text-2)', fontWeight: 400 }}>≈ </span>}
                   <Amount minor={total.minor} currency={total.currency} signed size={32} />
@@ -182,7 +186,9 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                 </div>
                 <div className="right">
                   {netMinor === 0
-                    ? <span className="muted">settled ✓</span>
+                    ? <span className="muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        settled <Icon name="check" size={13} />
+                      </span>
                     : <>
                         <Amount minor={netMinor} currency={currency} signed />
                         <span className="dir">{netMinor > 0 ? 'owes you' : 'you owe'}</span>
@@ -239,7 +245,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
         </Sheet>
       )}
       <button className="fab wide" onClick={onAddExpense} disabled={data === null}>
-        <span aria-hidden>＋</span> Add expense
+        <Icon name="add" size={18} /> Add expense
       </button>
       {picking && (
         <Sheet title="Add an expense" onClose={() => setPicking(false)}>
@@ -267,7 +273,9 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
                     onClick={() => startQuickAdd(group)}>
                     {group.isDirect
                       ? <Badge id={other?.id ?? group.id} name={other?.displayName ?? '?'} />
-                      : <span className="tile" aria-hidden>{group.emoji || '👥'}</span>}
+                      : <span className="tile" aria-hidden>
+                          {group.emoji || <Icon name="group" size={20} />}
+                        </span>}
                     <div className="grow">
                       <div className="name">{group.isDirect ? other?.displayName ?? 'Friend' : group.name}</div>
                       {!group.isDirect && (
@@ -292,6 +300,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated }: {
       )}
       {profileOpen && (
         <ProfileSheet user={user} onClose={() => setProfileOpen(false)} onSignOut={onSignOut}
+          onMyExpenses={() => { setProfileOpen(false); onMyExpenses(); }}
           onSaved={(u) => { onUserUpdated(u); setProfileOpen(false); }} />
       )}
       {creating && (
@@ -352,7 +361,9 @@ function GroupCard({ item, userId, onOpen }: {
       </div>
       <div className="right">
         {netMinor === 0
-          ? <span className="muted">settled ✓</span>
+          ? <span className="muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              settled <Icon name="check" size={13} />
+            </span>
           : <>
               <Amount minor={netMinor} currency={currency} signed />
               <span className="dir">{netMinor > 0 ? 'you are owed' : 'you owe'}</span>
@@ -434,11 +445,12 @@ function BugReportSection() {
   );
 }
 
-function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
+function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
   user: User;
   onClose: () => void;
   onSaved: (u: User) => void;
   onSignOut: () => void;
+  onMyExpenses: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
@@ -517,17 +529,22 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut }: {
         </label>
         <button className="btn primary block">Save profile</button>
       </form>
+      {/* #101: the cross-group view of your own spending. Profile is where
+          people look for "my stuff", so it lives beside the account rows. */}
+      <button className="btn block" style={{ marginTop: 8 }} onClick={onMyExpenses}>
+        <Icon name="wallet" size={16} /> My expenses
+      </button>
       {/* Issue #27: the phone apps, for people using the web app. Both rows
           are ALWAYS shown — the banner above guesses at your platform, and
           when that guess was wrong a tester had no way to find the app at
           all. This is the path that never depends on detection. */}
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
         href={TESTFLIGHT_URL} target="_blank" rel="noreferrer">
-        📱 Get the iPhone app (TestFlight)
+        <Icon name="apple" size={16} /> Get the iPhone app (TestFlight)
       </a>
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
         href={`${import.meta.env.BASE_URL}marketing/apps/`} target="_blank" rel="noreferrer">
-        🤖 Get the Android app
+        <Icon name="android" size={16} /> Get the Android app
       </a>
       <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>

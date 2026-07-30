@@ -236,9 +236,10 @@ final class ExpenseService
         array $filters = [],
     ): array {
         $link = $scope === 'paid' ? 'expense_payers' : 'expense_shares';
-        $sql = "SELECT DISTINCT e.* FROM expenses e
+        $sql = "SELECT DISTINCT e.*, g.name AS group_name, g.emoji AS group_emoji FROM expenses e
                 JOIN {$link} l ON l.expense_id = e.id AND l.user_id = ?
-                JOIN memberships m ON m.group_id = e.group_id AND m.user_id = ?";
+                JOIN memberships m ON m.group_id = e.group_id AND m.user_id = ?
+                JOIN `groups` g ON g.id = e.group_id";
         $args = [$userId, $userId];
         // Membership is joined as well as the payer/share link: leaving a group
         // should stop its expenses appearing here, even though the historical
@@ -300,7 +301,15 @@ final class ExpenseService
             $last = $rows[array_key_last($rows)];
             $next = $cmp !== null ? $last['id'] : $last['amount'] . ':' . $last['id'];
         }
-        return ['items' => array_map($this->shape(...), $rows), 'nextCursor' => $next];
+        // shape() is the shared expense projection; the group label is extra
+        // context this view needs and the per-group lists do not.
+        $items = array_map(function (array $r): array {
+            $out = $this->shape($r);
+            $out['groupName'] = (string) ($r['group_name'] ?? '');
+            $out['groupEmoji'] = (string) ($r['group_emoji'] ?? '');
+            return $out;
+        }, $rows);
+        return ['items' => $items, 'nextCursor' => $next];
     }
 
     /**
