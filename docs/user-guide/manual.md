@@ -214,6 +214,7 @@ number.
 - **How people pay you** — Interac, PayPal.Me, Venmo handles.
 - **Devices** — every signed-in session, with the ability to revoke any of
   them.
+- **How SlyTab works** — this manual, from inside the app.
 - **Report a bug** — goes straight to us with your app version attached, and
   you get an email when it is fixed.
 - **Delete my account** — really deletes it. Your share of shared history is
