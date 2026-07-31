@@ -143,10 +143,25 @@ final class Api
             // working on the existing 10-minute cron instead of needing a new
             // crontab entry on the host, which is a step nobody would notice
             // was missing until a digest never arrived.
-            $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify): Response {
-                $result = $bugs->syncGithub();
-                $result['digestsSent'] = $emailNotify->flushDigests();
-                $result['reminders'] = (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep();
+            $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify, $pdo, $balances): Response {
+                // Three independent jobs share this cron. They must not share
+                // a fate: bolting the digest and the reminders onto the report
+                // pipeline meant one throwing took the other two down with it,
+                // and the endpoint answered "something went wrong" without
+                // saying which. Each reports for itself now.
+                $result = [];
+                foreach ([
+                    'reports' => fn(): array => $bugs->syncGithub(),
+                    'digestsSent' => fn(): int => $emailNotify->flushDigests(),
+                    'reminders' => fn(): array => (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep(),
+                ] as $name => $job) {
+                    try {
+                        $result[$name] = $job();
+                    } catch (\Throwable $e) {
+                        error_log("bug-sync: {$name} failed: " . $e->getMessage());
+                        $result[$name] = ['error' => $e->getMessage()];
+                    }
+                }
                 return Http::json($rs, $result);
             });
             // Management metrics for the owner's Homepage dashboard. Behind the

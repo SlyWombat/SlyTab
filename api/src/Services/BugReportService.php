@@ -273,7 +273,32 @@ final class BugReportService
                 }
             }
         }
-        return ['filed' => $filed, 'notified' => $notified, 'skipped' => ''];
+        // A report closed through the API — the notify-closed endpoint, i.e.
+        // the normal route when a fix is deployed — never passed through the
+        // loop above, because that only looks at reports still open. So its
+        // tracking issue stayed on GitHub forever, quietly contradicting the
+        // rule that fixed end-user reports leave no public trace. Sweep them.
+        $orphans = 0;
+        $closed = $this->pdo->query(
+            "SELECT id, issue_number FROM bug_reports
+             WHERE issue_number IS NOT NULL AND status = 'closed'",
+        )->fetchAll();
+        foreach ($closed as $r) {
+            $issue = $http('GET', "https://api.github.com/repos/{$repo}/issues/{$r['issue_number']}", null);
+            if (isset($issue['node_id'])) {
+                $http('POST', 'https://api.github.com/graphql', [
+                    'query' => 'mutation($id: ID!) { deleteIssue(input: {issueId: $id}) { clientMutationId } }',
+                    'variables' => ['id' => $issue['node_id']],
+                ]);
+                $orphans++;
+            }
+            // Forget the number either way: if the issue is already gone we
+            // must not ask GitHub about it again on every cron run.
+            $this->pdo->prepare('UPDATE bug_reports SET issue_number = NULL WHERE id = ?')
+                ->execute([$r['id']]);
+        }
+
+        return ['filed' => $filed, 'notified' => $notified, 'deleted' => $orphans, 'skipped' => ''];
     }
 
     /** @return array{path:string, mime:string} */
