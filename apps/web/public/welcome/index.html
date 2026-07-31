@@ -170,15 +170,18 @@
         <tbody>
           <tr>
             <td><b>Exchange rates</b></td>
-            <td class="us">Locked to the day you entered the expense and stored with it.
-              A balance you agreed on cannot change later.</td>
+            <td class="us">Fixed to the day of the expense and stored on it, so a
+              balance never drifts on its own — no background job re-values your
+              history. Editing an expense re-reads the rate for that same date, and
+              a rate you overrode by hand has to be re-entered if you do.</td>
             <td class="them">Conversion is a bulk action that rewrites past expenses —
               Splitwise warns it affects settled ones and can move other people's balances.</td>
           </tr>
           <tr>
             <td><b>Receipt scanning</b></td>
-            <td class="us">Read on our own server. No third-party AI service sees your
-              receipt, and location data is stripped from the photo on arrival.</td>
+            <td class="us">Read by a model on our own server — no third-party service
+              is configured, and receipts do not leave it. Location data is stripped
+              from JPEG photos when they arrive.</td>
             <td class="them">Usually a third-party vision API, with the photo leaving
               the vendor's control.</td>
           </tr>
@@ -224,15 +227,19 @@
     <details>
       <summary>What happens with several currencies in one group?</summary>
       <p>Each expense keeps the currency it was paid in. The group has a home currency,
-         and anything foreign is converted at the reference rate for the date of the
-         expense — then that rate is stored, so the balance cannot drift afterwards.
-         You can override the rate if your card charged something different.</p>
+         and anything foreign converts at the reference rate for the date of the expense,
+         which is then stored on it — nothing re-values your history behind your back.
+         You can override the rate if your card charged something different; if you later
+         edit that expense, enter the override again, because saving re-reads the rate for
+         the date.</p>
     </details>
     <details>
       <summary>Where do my receipt photos go?</summary>
-      <p>To our own server, which runs the model that reads them. They are not sent
-         to any third-party AI service. Location metadata is removed when the photo
-         arrives, so a receipt cannot reveal where you were.</p>
+      <p>To our own server, which runs the model that reads them. No third-party
+         vision service is configured, so receipts stay with us. Location metadata is
+         stripped from JPEG photos on arrival, so a receipt cannot reveal where you
+         were. (The app also reads the photo's location on your phone, before upload,
+         purely to guess which currency you paid in.)</p>
     </details>
     <details>
       <summary>Someone paid me back in cash. Now what?</summary>
