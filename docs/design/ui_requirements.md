@@ -23,6 +23,15 @@ screen). Groups open as a pushed screen over the shell. All screens and
 sheets respect the device safe areas; nothing may render under the
 Android gesture bar or the status bar (issue #40, SDK 54 edge-to-edge).
 
+Web shell status: the four destinations shipped 2026-07-31 (issue #103) —
+a left rail on wide viewports that becomes a bottom bar under 760px, since a
+fixed rail on a phone-width browser costs more than it gives. Selection is
+carried by colour and weight, not opacity. Group detail is a pushed screen
+over the shell and returns to Groups. Before this, web had no sidebar, no
+Groups or Activity screen, and Profile was a sheet — so the global activity
+feed (FR-8.1) was unreachable outside the phone, and "My expenses" had to
+live under Profile on web while sitting under Activity on mobile.
+
 Deep links: `slytab://join/<token>` (and
 `electricrv.ca/slytab/join/<token>`) → Join Group screen;
 `slytab://expense/<id>` → Expense Detail (used by push notifications).
