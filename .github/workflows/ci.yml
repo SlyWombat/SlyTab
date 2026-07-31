@@ -23,6 +23,25 @@ jobs:
       - name: Typecheck + build web
         run: npm run build -w @slytab/web
 
+  docs:
+    name: User documentation is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Fingerprints source files against the accepted ledger — no browser and
+      # no server, so it is cheap and cannot flake. It does NOT regenerate the
+      # screenshots; that needs a running app and stays in make-docs.sh.
+      #
+      # Why this is worth a job: the manual is the one artefact with no test
+      # that reads it. Twice now a UI change has shipped that the docs did not
+      # describe, and once a bottom-bar change covered the app's primary button
+      # on a narrow screen — a state this pipeline photographs on every run.
+      - name: Documentation staleness gate
+        run: node scripts/docs/check-docs.mjs
+
   e2e:
     name: E2E golden path (Playwright)
     runs-on: ubuntu-latest

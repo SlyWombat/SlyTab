@@ -675,6 +675,11 @@ between `<!--COMPARISON-->` markers. One source, two renderings — the table
 used to be hand-written HTML on that page, which is precisely the arrangement
 that lets a claim on the front door drift from the claim in the docs.
 
+The gate runs in CI as its own job (`docs` in `.github/workflows/ci.yml`).
+It fingerprints source files against the accepted ledger — no browser, no
+server, so it is cheap and cannot flake. It does **not** regenerate
+screenshots; that needs a running app and stays in `make-docs.sh`.
+
 **Still outstanding**
 
 - Android capture has never run end-to-end; the script follows the proven
