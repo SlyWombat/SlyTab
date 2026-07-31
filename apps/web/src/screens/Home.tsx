@@ -553,6 +553,12 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
       </form>
       {/* #101: the cross-group view of your own spending. Profile is where
           people look for "my stuff", so it lives beside the account rows. */}
+      {/* #104: the manual, reachable from inside the app rather than only from
+          a marketing page nobody visits. */}
+      <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
+        href={`${import.meta.env.BASE_URL}guide/`} target="_blank" rel="noreferrer">
+        <Icon name="receipt" size={16} /> How SlyTab works
+      </a>
       <button className="btn block" style={{ marginTop: 8 }} onClick={onMyExpenses}>
         <Icon name="wallet" size={16} /> My expenses
       </button>

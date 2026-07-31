@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — the manual</title>
+<meta name="description" content="How to use SlyTab: splitting expenses, several currencies, receipts, settling up.">
+<link rel="stylesheet" href="./guide.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="../welcome/"><span class="mark" aria-hidden>S</span>
+      <span class="wordmark">SlyTab</span></a>
+    <span class="sp"></span>
+    <a class="btn" href="../">Open the app</a>
+  </div>
+  <div class="cols">
+    <nav class="toc" aria-label="Contents">
+      <p class="tochead">Contents</p>
+      <a href="#signing-in">Signing in</a>
+      <a href="#home">Home — where you stand</a>
+      <a href="#groups">Groups</a>
+      <a href="#group-expenses">A group's expenses</a>
+      <a href="#group-balances">Balances, and how to settle</a>
+      <a href="#group-totals">Totals</a>
+      <a href="#add-expense">Adding an expense</a>
+      <a href="#currencies">Different currencies</a>
+      <a href="#settling-up">Settling up</a>
+      <a href="#activity">Activity</a>
+      <a href="#my-expenses">Everything you have spent</a>
+      <a href="#profile">Profile and settings</a>
+      <a href="#getting-other-people-in">Getting other people in</a>
+      <a href="#leaving-a-group">Leaving a group</a>
+    </nav>
+    <main class="doc">
+<h1 id="slytab-the-manual">SlyTab — the manual</h1>
+<p>SlyTab keeps track of money shared between people who know each other. A trip, a household, a dinner someone put on their card. You record what was spent, it works out who owes whom, and you settle up.</p>
+<p>Every screenshot here is generated from the running app against fixed demo data, so what you see is what the app currently does — not what it looked like when someone last remembered to update a manual.</p>
+<hr>
+<h2 id="signing-in">Signing in</h2>
+<figure class="shot"><img src="img/web/welcome.png" alt="The sign-in screen" loading="lazy" decoding="async"><figcaption>The sign-in screen</figcaption></figure>
+<p>You can create an account with an email and password, or sign in with Apple or Google.</p>
+<p>There is nothing to install: SlyTab runs in any browser, and there are iPhone and Android apps if you would rather have one on your phone. The same account works everywhere.</p>
+<p>If someone has invited you to a group, sign in first and the invitation is applied automatically — you land in the group.</p>
+<hr>
+<h2 id="home">Home — where you stand</h2>
+<figure class="shot"><img src="img/web/home.png" alt="Home — where you stand across every group" loading="lazy" decoding="async"><figcaption>Home — where you stand across every group</figcaption></figure>
+<figure class="shot"><img src="img/web/home-narrow.png" alt="Home on a phone-width browser" loading="lazy" decoding="async"><figcaption>Home on a phone-width browser</figcaption></figure>
+<p>Home answers one question: <strong>across everything, who owes whom?</strong></p>
+<p>Each row is a person, not a group. If you and Alice share a household <em>and</em> a ski trip, you see one number for Alice — because when you settle up, you settle one number, not two.</p>
+<p>Green means you are owed. Amber means you owe. "Settled" means exactly that.</p>
+<p>The <strong>Add expense</strong> button is always in the bottom corner, on every screen where adding one makes sense.</p>
+<p>On a narrow window the navigation moves to the bottom, the way it is on a phone.</p>
+<hr>
+<h2 id="groups">Groups</h2>
+<figure class="shot"><img src="img/web/groups.png" alt="Groups" loading="lazy" decoding="async"><figcaption>Groups</figcaption></figure>
+<p>A group is a set of people and the expenses they share. A ski trip, a flat, a recurring dinner.</p>
+<p>Each card shows the group's emoji, its members, and where you stand in that group specifically.</p>
+<p>Groups you have finished with can be archived: they collapse out of the way but keep their history, so old balances stay honest.</p>
+<p><strong>One-to-one splitting needs no group at all</strong> — you can split directly with one person.</p>
+<hr>
+<h2 id="group-expenses">A group's expenses</h2>
+<figure class="shot"><img src="img/web/group-expenses.png" alt="A group’s expenses" loading="lazy" decoding="async"><figcaption>A group’s expenses</figcaption></figure>
+<p>Every expense in the group, newest first, with what it was, who paid, and your share.</p>
+<p>Search narrows the list. So do the category chips.</p>
+<p>Tap any expense to edit it. Delete asks first, and can be undone straight afterwards.</p>
+<hr>
+<h2 id="group-balances">Balances, and how to settle</h2>
+<figure class="shot"><img src="img/web/group-balances.png" alt="Balances and the settle-up plan" loading="lazy" decoding="async"><figcaption>Balances and the settle-up plan</figcaption></figure>
+<p>Balances shows what each person owes within this group, and — more usefully —</p>
+<p><strong>the shortest set of payments that clears everyone</strong>.</p>
+<p>If Alice owes Ben, and Ben owes you, SlyTab does not make Alice pay Ben so Ben can pay you. It tells Alice to pay you directly. Fewer payments, same result.</p>
+<hr>
+<h2 id="group-totals">Totals</h2>
+<figure class="shot"><img src="img/web/group-totals.png" alt="Totals by person and category" loading="lazy" decoding="async"><figcaption>Totals by person and category</figcaption></figure>
+<p>Where the money actually went: by person and by category.</p>
+<p>Useful mid-trip, when someone asks whether the group is overspending on restaurants, and afterwards, when you want to know what a holiday really cost.</p>
+<hr>
+<h2 id="add-expense">Adding an expense</h2>
+<figure class="shot"><img src="img/web/add-expense.png" alt="Adding an expense" loading="lazy" decoding="async"><figcaption>Adding an expense</figcaption></figure>
+<p>The fast path is three fields: what, how much, who paid. Everything else has a sensible default — today's date, an equal split, the group's currency.</p>
+<p>When equal is not right:</p>
+<div class="tablewrap"><table><thead><tr>
+<th>Method</th>
+<th>Use it when</th>
+</tr></thead><tbody>
+<tr><td><strong>Equal</strong></td><td>The usual case. Optionally exclude anyone who was not there.</td></tr>
+<tr><td><strong>Exact</strong></td><td>You know each person's amount — a restaurant bill you have itemised.</td></tr>
+<tr><td><strong>Shares</strong></td><td>Two of you had the double room and one had the single: 2 : 1.</td></tr>
+<tr><td><strong>Percent</strong></td><td>A household splitting 60 / 40.</td></tr>
+<tr><td><strong>+ / −</strong></td><td>Split equally, then adjust one person up or down for the extra drink.</td></tr>
+</tbody></table></div>
+<p><strong>More than one person can pay.</strong> If you put £60 on your card and Alice put £40 on hers, record both — the split and the paying are separate questions.</p>
+<p><strong>Scan the receipt</strong> instead of typing. Photograph it and the total, the date and the line items come back filled in. From there you can split <strong>by item</strong>, which is what you want when three of you shared the starter and one did not.</p>
+<p>The receipt is read by a model running on our own server. No third-party service is configured, so receipts do not leave it. Location data is stripped from JPEG photos when they arrive.</p>
+<hr>
+<h2 id="currencies">Different currencies</h2>
+<figure class="shot"><img src="img/web/expense-foreign-currency.png" alt="A foreign-currency expense and its locked rate" loading="lazy" decoding="async"><figcaption>A foreign-currency expense and its locked rate</figcaption></figure>
+<p>Enter an expense in the currency you actually paid in. SlyTab keeps that currency on the expense and converts it to the group's home currency using the reference rate <strong>for the date of the expense</strong>, then stores that rate on the expense.</p>
+<p>That last part matters. Nothing re-values your history in the background, so a balance you agreed on last month does not quietly become a different number this month.</p>
+<p>The original amount is always shown; the converted one is secondary.</p>
+<p><strong>If your card gave you a different rate</strong>, override it — enter the rate you were actually charged. One caveat worth knowing: if you later edit that expense, re-enter the override, because saving re-reads the rate for the date.</p>
+<p>Currencies without decimal places — Chilean pesos, yen, won — are handled properly throughout. A total of 88.930 CLP means eighty-eight thousand nine hundred and thirty, and SlyTab reads it that way.</p>
+<hr>
+<h2 id="settling-up">Settling up</h2>
+<figure class="shot"><img src="img/web/settle.png" alt="Settling up with someone" loading="lazy" decoding="async"><figcaption>Settling up with someone</figcaption></figure>
+<p>When someone pays you back, record it. They are asked to confirm, and once they do the balance between you clears.</p>
+<p>SlyTab does not move money. It records that money moved. Your payment handles — Interac e-Transfer, PayPal.Me, Venmo — live on your profile so the other person can find them without asking.</p>
+<hr>
+<h2 id="activity">Activity</h2>
+<figure class="shot"><img src="img/web/activity.png" alt="Activity" loading="lazy" decoding="async"><figcaption>Activity</figcaption></figure>
+<p>Everything that has happened across all your groups, newest first, grouped by day. Who added what, who confirmed a payment, who joined.</p>
+<p>Useful when you open the app after a week away and want to know what changed.</p>
+<hr>
+<h2 id="my-expenses">Everything you have spent</h2>
+<figure class="shot"><img src="img/web/my-expenses.png" alt="Everything you have spent, across groups" loading="lazy" decoding="async"><figcaption>Everything you have spent, across groups</figcaption></figure>
+<p>The <strong>My expenses</strong> tab answers a question no per-group screen can: <em>what have I been spending, across everything?</em></p>
+<p>Two views:</p>
+<ul>
+<li><strong>I'm in</strong> — every expense you hold a share of, whoever entered it. This is</li>
+</ul>
+<p>  your money.</p>
+<ul>
+<li><strong>I paid</strong> — the ones where your money actually went out.</li>
+</ul>
+<p>Sort by newest, oldest, largest or smallest, search, and see a running total of <strong>your share</strong> — not the total of the bills, which would be someone else's number.</p>
+<hr>
+<h2 id="profile">Profile and settings</h2>
+<figure class="shot"><img src="img/web/profile.png" alt="Profile and settings" loading="lazy" decoding="async"><figcaption>Profile and settings</figcaption></figure>
+<ul>
+<li><strong>Theme</strong> — match your device, or force dark or light.</li>
+<li><strong>Default currency</strong> — what your balances are shown in.</li>
+<li><strong>Notifications</strong> — everything, important only, or nothing.</li>
+<li><strong>How people pay you</strong> — Interac, PayPal.Me, Venmo handles.</li>
+<li><strong>Devices</strong> — every signed-in session, with the ability to revoke any of</li>
+</ul>
+<p>  them.</p>
+<ul>
+<li><strong>Report a bug</strong> — goes straight to us with your app version attached, and</li>
+</ul>
+<p>  you get an email when it is fixed.</p>
+<ul>
+<li><strong>Delete my account</strong> — really deletes it. Your share of shared history is</li>
+</ul>
+<p>  anonymised so nobody else's balances change.</p>
+<hr>
+<h2 id="getting-other-people-in">Getting other people in</h2>
+<p>Three ways, in order of how little effort they take:</p>
+<ol>
+<li><strong>People you already know</strong> — anyone from your other groups, one tap, no</li>
+</ol>
+<p>   email needed.</p>
+<ol>
+<li><strong>A share link</strong> — send it however you like. It works for seven days and</li>
+</ol>
+<p>   can be revoked.</p>
+<ol>
+<li><strong>By email</strong> — they get an invitation, and their share is tracked from the</li>
+</ol>
+<p>   moment you add them, whether or not they ever sign up.</p>
+<p><strong>Moving from Splitwise?</strong> Import a group directly, mapping their members onto people you already know. Anything already in SlyTab is skipped rather than duplicated.</p>
+<hr>
+<h2 id="leaving-a-group">Leaving a group</h2>
+<p>Open the group, tap its name, then <strong>Leave this group</strong>. You are asked to settle up first if you still owe or are owed anything.</p>
+<p>Your past expenses stay, so nobody else's balance moves.</p>
+    </main>
+  </div>
+  <footer>
+    <a href="../welcome/">About SlyTab</a>
+    <a href="../marketing/support/">Support</a>
+    <a href="../marketing/privacy/">Privacy</a>
+    <a href="../">Open the app</a>
+    <p>Screenshots on this page are generated from the running app, so they
+       cannot fall out of date with it.</p>
+  </footer>
+</div>
+</body>
+</html>

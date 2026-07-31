@@ -651,3 +651,33 @@ running it every release rather than once:
 | `manual.md` / `faq.md` / `why-slytab.md` | Not written — out of scope for #104 |
 | In-app Help entry | Not done — needs app source changes (§9) |
 | CI gate wiring | Not done — one step in `.github/workflows` (§4) |
+
+---
+
+## Status — 2026-07-31
+
+The renderer specified in §7 is written: `scripts/docs/build-site.mjs`. It
+reads `docs/user-guide/manual.md`, places each generated screenshot under the
+heading its shot list already named, copies the images, and **fails with a
+non-zero exit if any declared shot has no image** — a manual with a broken
+picture is worse than one with none.
+
+Published to `/slytab/guide/`, linked from the app's Profile ("How SlyTab
+works"), the overview page and the support page.
+
+Deliberately a small hand-rolled markdown subset rather than a dependency:
+the input is one file we control, and adding a toolchain to the web build for
+headings, lists, one table and inline emphasis would cost more than it saves.
+
+**Still outstanding**
+
+- Android capture has never run end-to-end; the script follows the proven
+  emulator pattern but is untested.
+- Mobile screenshots cannot be deterministic until `apps/mobile/src/api.ts`
+  stops hard-coding the production API base — any released build shows
+  production data.
+- The in-app Help entry exists on web only; mobile accumulates with the rest.
+- Capture cannot photograph a scroll container taller than the viewport. It
+  should compare `scrollHeight` with `clientHeight` and fail the shot rather
+  than save a half-shown sheet, which is what led to a bug being reported
+  against the app that turned out not to exist.
