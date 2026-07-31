@@ -2,13 +2,19 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, getToken, setToken, type User } from './api';
 import { AppSignIn, Auth } from './screens/Auth';
 import { Home } from './screens/Home';
-import { MyExpenses } from './screens/MyExpenses';
+import { Groups } from './screens/Groups';
+import { Activity } from './screens/Activity';
+import { Profile } from './screens/Profile';
+import { Shell, type Dest } from './Shell';
 import { GroupScreen } from './screens/Group';
 import { Onboarding } from './screens/Onboarding';
 import { Mark } from './ui';
 
-type Nav = { screen: 'home' } | { screen: 'group'; groupId: string }
-  | { screen: 'myExpenses' };
+// A destination from the shell, or a screen pushed over it. Group detail is
+// pushed rather than a destination — §1: "Groups open as a pushed screen".
+type Nav =
+  | { screen: 'dest'; dest: Dest }
+  | { screen: 'group'; groupId: string };
 
 /** Pull a pending invite token from /join/<token> URLs (SPA fallback). */
 function pendingJoinToken(): string | null {
@@ -76,7 +82,7 @@ function ResetScreen({ token, onDone }: { token: string; onDone: () => void }) {
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [checked, setChecked] = useState(false);
-  const [nav, setNav] = useState<Nav>({ screen: 'home' });
+  const [nav, setNav] = useState<Nav>({ screen: 'dest', dest: 'home' });
   const [appSignInState] = useState<string | null>(pendingAppSignInState);
   const [joinToken, setJoinToken] = useState<string | null>(pendingJoinToken);
   const [resetToken, setResetToken] = useState<string | null>(pendingResetToken);
@@ -168,35 +174,47 @@ export function App() {
     return <Onboarding user={user} onDone={setUser} />;
   }
 
-  if (nav.screen === 'myExpenses') {
-    return (
-      <MyExpenses
-        onBack={() => setNav({ screen: 'home' })}
-        onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
-      />
-    );
-  }
   if (nav.screen === 'group') {
     return (
       <GroupScreen
         groupId={nav.groupId}
         user={user}
-        onBack={() => setNav({ screen: 'home' })}
+        onBack={() => setNav({ screen: 'dest', dest: 'groups' })}
       />
     );
   }
 
+  const signOut = () => {
+    api.logout().catch(() => {});
+    setToken(null);
+    setUser(null);
+  };
+  const openGroup = (groupId: string) => setNav({ screen: 'group', groupId });
+  const dest = nav.dest;
+
   return (
-    <Home
-      user={user}
-      onUserUpdated={setUser}
-      onOpenGroup={(groupId) => setNav({ screen: 'group', groupId })}
-      onMyExpenses={() => setNav({ screen: 'myExpenses' })}
-      onSignOut={() => {
-        api.logout().catch(() => {});
-        setToken(null);
-        setUser(null);
-      }}
-    />
+    <Shell user={user} dest={dest} onDest={(d) => setNav({ screen: 'dest', dest: d })}>
+      {dest === 'home' && (
+        <Home
+          user={user}
+          onUserUpdated={setUser}
+          onOpenGroup={openGroup}
+          onMyExpenses={() => setNav({ screen: 'dest', dest: 'activity' })}
+          onSignOut={signOut}
+        />
+      )}
+      {dest === 'groups' && (
+        <Groups
+          onOpenGroup={openGroup}
+          onNewGroup={() => setNav({ screen: 'dest', dest: 'home' })}
+        />
+      )}
+      {dest === 'activity' && (
+        <Activity userId={user.id} onOpenGroup={openGroup} />
+      )}
+      {dest === 'profile' && (
+        <Profile user={user} onUserUpdated={setUser} onSignOut={signOut} />
+      )}
+    </Shell>
   );
 }

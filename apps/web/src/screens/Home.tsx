@@ -446,12 +446,14 @@ function BugReportSection() {
   );
 }
 
-function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
+export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, chrome = true }: {
   user: User;
   onClose: () => void;
   onSaved: (u: User) => void;
   onSignOut: () => void;
   onMyExpenses: () => void;
+  /** false renders the contents bare, for the Profile destination (#103). */
+  chrome?: boolean;
 }) {
   const [theme, setTheme] = useState<ThemePref>(() => storedPref());
   const [deleting, setDeleting] = useState(false);
@@ -500,8 +502,12 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
     }
   }
 
-  return (
-    <Sheet title="Profile" onClose={guardedClose}>
+  // The contents are identical either way; only the wrapper differs. The
+  // Profile destination (#103) renders them bare, the legacy sheet wraps
+  // them. Re-typing several hundred lines to move a wrapper would be a
+  // fine way to break the screen that deletes accounts.
+  const body = (
+    <>
       <form onSubmit={submit}>
         {error && <div className="error" role="alert">{error}</div>}
         <label className="field"><span>Display name</span>
@@ -621,6 +627,13 @@ function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses }: {
       <p className="muted" style={{ textAlign: 'center', paddingTop: 10 }}>
         Account: {user.email} · <a href={`${import.meta.env.BASE_URL}marketing/privacy/`} style={{ color: 'var(--ss-brand)' }}>Privacy</a>
       </p>
+    </>
+  );
+
+  if (!chrome) return body;
+  return (
+    <Sheet title="Profile" onClose={guardedClose}>
+      {body}
     </Sheet>
   );
 }

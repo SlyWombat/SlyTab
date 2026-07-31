@@ -30,9 +30,12 @@ interface Summary {
   count: number; totalMinor: number; currency: string; approximate: boolean;
 }
 
-export function MyExpenses({ onBack, onOpenGroup }: {
-  onBack: () => void;
+export function MyExpenses({ onBack, onOpenGroup, embedded = false }: {
+  /** Omitted when embedded — the shell's nav is the way back. */
+  onBack?: () => void;
   onOpenGroup: (groupId: string) => void;
+  /** Rendered inside the Activity destination rather than as its own screen. */
+  embedded?: boolean;
 }) {
   const [scope, setScope] = useState<Scope>('involved');
   const [sort, setSort] = useState<Sort>('newest');
@@ -62,16 +65,8 @@ export function MyExpenses({ onBack, onOpenGroup }: {
     return () => clearTimeout(t);
   }, [load, q]);
 
-  return (
-    <div className="shell">
-      <div className="header">
-        <button className="btn sm" onClick={onBack} aria-label="Back">
-          <Icon name="back" size={16} />
-        </button>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon name="wallet" size={22} /> My expenses
-        </h1>
-      </div>
+  const body = (
+    <>
 
       {/* Scope: the two readings of "my expenses". Chips rather than a
           dropdown — there are exactly two and both should be one tap away. */}
@@ -168,6 +163,21 @@ export function MyExpenses({ onBack, onOpenGroup }: {
           )}
         </>
       )}
+    </>
+  );
+
+  if (embedded) return body;
+  return (
+    <div className="shell">
+      <div className="header">
+        <button className="btn sm" onClick={onBack} aria-label="Back">
+          <Icon name="back" size={16} />
+        </button>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="wallet" size={22} /> My expenses
+        </h1>
+      </div>
+      {body}
     </div>
   );
 }

@@ -49,3 +49,53 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---- navigation shell (#103) -------------------------------------------
+   Rail on wide viewports, bottom bar on narrow. The breakpoint is where a
+   fixed 200px rail starts costing more than it gives. */
+.appshell { display: flex; min-height: 100dvh; }
+
+.railnav {
+  position: sticky; top: 0; align-self: flex-start;
+  height: 100dvh; width: 200px; flex: 0 0 200px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 18px 10px; border-right: 1px solid var(--ss-outline);
+  background: var(--ss-surface);
+}
+.railbrand { display: flex; align-items: center; gap: 8px; padding: 0 10px 14px; }
+.railmark {
+  width: 26px; height: 26px; border-radius: 8px; background: var(--ss-brand);
+  color: var(--ss-on-brand); display: grid; place-items: center;
+  font: 700 15px/1 "Space Grotesk", system-ui, sans-serif;
+}
+.railwordmark { font: 600 17px/1 "Space Grotesk", system-ui, sans-serif; letter-spacing: -0.02em; }
+
+.raillink {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--ss-text-2); cursor: pointer;
+  font: 500 14px/1 Inter, system-ui, sans-serif; text-align: left;
+}
+.raillink:hover { background: var(--ss-surface-2); color: var(--ss-text); }
+/* Selected state carries colour AND weight, not opacity — the emoji-era cue
+   that #102 was about. */
+.raillink.on { background: var(--ss-surface-2); color: var(--ss-brand); font-weight: 700; }
+
+.railmain { flex: 1 1 auto; min-width: 0; }
+
+@media (max-width: 760px) {
+  .appshell { flex-direction: column; }
+  .railnav {
+    position: fixed; bottom: 0; left: 0; right: 0; top: auto;
+    height: auto; width: auto; flex: none;
+    flex-direction: row; justify-content: space-around;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    border-right: 0; border-top: 1px solid var(--ss-outline);
+    z-index: 20;
+  }
+  .railbrand { display: none; }
+  .raillink { flex-direction: column; gap: 3px; flex: 1; justify-content: center; padding: 4px 2px; }
+  .raillabel { font-size: 10.5px; }
+  /* Clear the bar so the last row is never trapped under it. */
+  .railmain { padding-bottom: 78px; }
+}
