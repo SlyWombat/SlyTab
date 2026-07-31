@@ -39,6 +39,7 @@ function render(md, shotsByAnchor) {
   const lines = md.split('\n');
   const out = [];
   const toc = [];
+  const seenImages = new Set();
   let i = 0;
   let inList = null;
 
@@ -57,15 +58,23 @@ function render(md, shotsByAnchor) {
       out.push(`<h${level} id="${id}">${inline(text)}</h${level}>`);
       if (level === 2) toc.push({ id, text });
 
-      // Every shot that names this anchor lands directly under its heading —
-      // the join the shot list has been carrying all along.
-      for (const shot of shotsByAnchor.get(id) ?? []) {
-        out.push(
-          `<figure class="shot">`
-          + `<img src="${shot.image}" alt="${esc(shot.title)}" loading="lazy" decoding="async">`
-          + `<figcaption>${inline(shot.title)}</figcaption></figure>`,
-        );
-      }
+      // No injection here. The manual embeds its own screenshots, and
+      // check-docs.mjs fails the build when a section does not — one
+      // mechanism, enforced in one place. Injecting as well produced every
+      // picture twice, which is what happens when two things own one job.
+      i++;
+      continue;
+    }
+
+    // A standalone image line becomes a figure. The manual embeds its own
+    // screenshots now — the source has to be complete read on its own, which
+    // is what the staleness gate checks.
+    const img = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/.exec(line);
+    if (img) {
+      closeList();
+      out.push(`<figure class="shot"><img src="${img[2]}" alt="${esc(img[1])}"`
+        + ` loading="lazy" decoding="async"><figcaption>${inline(img[1])}</figcaption></figure>`);
+      seenImages.add(img[2]);
       i++;
       continue;
     }

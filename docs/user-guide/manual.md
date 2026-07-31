@@ -12,6 +12,8 @@ like when someone last remembered to update a manual.
 
 ## Signing in {#signing-in}
 
+![The sign-in screen](img/web/welcome.png)
+
 You can create an account with an email and password, or sign in with Apple
 or Google.
 
@@ -25,6 +27,10 @@ applied automatically — you land in the group.
 ---
 
 ## Home — where you stand {#home}
+
+![Home — where you stand across every group](img/web/home.png)
+
+![Home on a phone-width browser](img/web/home-narrow.png)
 
 Home answers one question: **across everything, who owes whom?**
 
@@ -44,6 +50,8 @@ phone.
 
 ## Groups {#groups}
 
+![Groups](img/web/groups.png)
+
 A group is a set of people and the expenses they share. A ski trip, a flat, a
 recurring dinner.
 
@@ -60,6 +68,8 @@ one person.
 
 ## A group's expenses {#group-expenses}
 
+![A group’s expenses](img/web/group-expenses.png)
+
 Every expense in the group, newest first, with what it was, who paid, and
 your share.
 
@@ -72,6 +82,8 @@ afterwards.
 
 ## Balances, and how to settle {#group-balances}
 
+![Balances and the settle-up plan](img/web/group-balances.png)
+
 Balances shows what each person owes within this group, and — more usefully —
 **the shortest set of payments that clears everyone**.
 
@@ -83,6 +95,8 @@ result.
 
 ## Totals {#group-totals}
 
+![Totals by person and category](img/web/group-totals.png)
+
 Where the money actually went: by person and by category.
 
 Useful mid-trip, when someone asks whether the group is overspending on
@@ -92,6 +106,8 @@ cost.
 ---
 
 ## Adding an expense {#add-expense}
+
+![Adding an expense](img/web/add-expense.png)
 
 The fast path is three fields: what, how much, who paid. Everything else has
 a sensible default — today's date, an equal split, the group's currency.
@@ -121,6 +137,8 @@ from JPEG photos when they arrive.
 
 ## Different currencies {#currencies}
 
+![A foreign-currency expense and its locked rate](img/web/expense-foreign-currency.png)
+
 Enter an expense in the currency you actually paid in. SlyTab keeps that
 currency on the expense and converts it to the group's home currency using
 the reference rate **for the date of the expense**, then stores that rate on
@@ -145,6 +163,8 @@ hundred and thirty, and SlyTab reads it that way.
 
 ## Settling up {#settling-up}
 
+![Settling up with someone](img/web/settle.png)
+
 When someone pays you back, record it. They are asked to confirm, and once
 they do the balance between you clears.
 
@@ -156,6 +176,8 @@ person can find them without asking.
 
 ## Activity {#activity}
 
+![Activity](img/web/activity.png)
+
 Everything that has happened across all your groups, newest first, grouped by
 day. Who added what, who confirmed a payment, who joined.
 
@@ -164,6 +186,8 @@ Useful when you open the app after a week away and want to know what changed.
 ---
 
 ## Everything you have spent {#my-expenses}
+
+![Everything you have spent, across groups](img/web/my-expenses.png)
 
 The **My expenses** tab answers a question no per-group screen can: *what have
 I been spending, across everything?*
@@ -181,6 +205,8 @@ number.
 ---
 
 ## Profile and settings {#profile}
+
+![Profile and settings](img/web/profile.png)
 
 - **Theme** — match your device, or force dark or light.
 - **Default currency** — what your balances are shown in.
