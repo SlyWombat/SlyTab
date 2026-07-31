@@ -10,6 +10,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure, appVersion, noteClientError, receiptImageSource, setToken, uploadReceipt,
@@ -183,6 +184,29 @@ type Nav = { screen: 'home' } | { screen: 'group'; groupId: string };
 // this replaces the interim avatar-sheet shell).
 type Tab = 'home' | 'groups' | 'activity' | 'profile';
 
+// A notification arriving while the app is FOREGROUNDED is handed to JS and
+// otherwise shown to nobody. Say so explicitly rather than relying on a
+// default that does not display anything.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
+/**
+ * Pull an invite token out of whichever link shape arrived (audit L5):
+ *   slytab://join/<token>                     custom scheme
+ *   https://electricrv.ca/slytab/join/<token> universal link
+ */
+function inviteTokenFrom(url: string | null): string | null {
+  if (!url) return null;
+  const m = /(?:^slytab:\/\/join\/|\/slytab\/join\/|\/join\/)([A-Za-z0-9_-]+)/.exec(url);
+  return m?.[1] ?? null;
+}
+
 const TOKEN_KEY = 'slytab.session';
 /** System / Dark / Light (#92). 'system' follows the device and keeps doing so. */
 const THEME_KEY = 'slytab.theme';
@@ -310,12 +334,59 @@ function AppShell({ themePref, onThemeChange, scheme }: {
     (async () => {
       try {
         const perm = await Notifications.requestPermissionsAsync();
-        if (!perm.granted) return;
-        const tok = await Notifications.getExpoPushTokenAsync();
+        if (!perm.granted) {
+          noteClientError('push', 'permission not granted');
+          return;
+        }
+        // The projectId is REQUIRED outside the classic build system. Calling
+        // this bare threw, and the old catch dismissed it as "no push on this
+        // device" — which is why prod had zero push tokens from any device,
+        // ever, including real ones.
+        const projectId =
+          Constants.expoConfig?.extra?.eas?.projectId
+          ?? (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
+        if (!projectId) {
+          noteClientError('push', 'no EAS projectId in the app config');
+          return;
+        }
+        const tok = await Notifications.getExpoPushTokenAsync({ projectId });
         await api.registerPushToken(tok.data);
-      } catch { /* no push on this device — fine */ }
+      } catch (e) {
+        // Recorded rather than swallowed: a silent failure here is
+        // indistinguishable from a user who declined, and that ambiguity is
+        // what hid this for weeks. It rides along on the next bug report.
+        noteClientError('push', (e as Error)?.message ?? String(e));
+      }
     })();
   }, [user]);
+
+  // Invite links. Held until there is a signed-in user: arriving at the app
+  // from an invite while signed out should still join the right group once
+  // you have an account, rather than silently dropping the token.
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  useEffect(() => {
+    Linking.getInitialURL()
+      .then((url) => { const t = inviteTokenFrom(url); if (t) setPendingInvite(t); })
+      .catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const t = inviteTokenFrom(url);
+      if (t) setPendingInvite(t);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (user === null || pendingInvite === null) return;
+    const token = pendingInvite;
+    setPendingInvite(null);
+    api.join(token)
+      .then((g) => { setTab('home'); setNav({ screen: 'group', groupId: g.id }); })
+      .catch((e) => {
+        // A used or expired link is the common case, and it deserves an
+        // explanation rather than nothing happening.
+        Alert.alert('That invite did not work', (e as Error).message);
+      });
+  }, [user, pendingInvite]);
 
   // SDK 54 draws edge-to-edge on Android, so the app itself keeps content
   // clear of the status bar and gesture bar (issue #40: bottom overprint).

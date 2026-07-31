@@ -1,0 +1,232 @@
+{
+  "generatedFor": {
+    "seedRev": "r1",
+    "today": "2026-07-15T10:24:00-04:00",
+    "theme": "dark"
+  },
+  "shots": [
+    {
+      "id": "home",
+      "screen": "2.2 Home",
+      "title": "Home — where you stand across every group",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/home.png",
+      "sources": [
+        "apps/web/src/screens/Home.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "home"
+      },
+      "uiHash": "7ca26a95ced8bf98"
+    },
+    {
+      "id": "home-narrow",
+      "screen": "2.2 Home",
+      "title": "Home on a phone-width browser",
+      "device": "narrow",
+      "theme": "dark",
+      "image": "img/web/home-narrow.png",
+      "sources": [
+        "apps/web/src/screens/Home.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "home"
+      },
+      "uiHash": "8e5b2f8f1e3c1001"
+    },
+    {
+      "id": "groups",
+      "screen": "2.3 Groups list",
+      "title": "Groups",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/groups.png",
+      "sources": [
+        "apps/web/src/screens/Groups.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "groups"
+      },
+      "uiHash": "9628962e8a27ece4"
+    },
+    {
+      "id": "group-expenses",
+      "screen": "2.4 Group detail — Expenses",
+      "title": "A group’s expenses",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/group-expenses.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "group-expenses"
+      },
+      "uiHash": "efe8d3219181d26a"
+    },
+    {
+      "id": "group-balances",
+      "screen": "2.4 Group detail — Balances",
+      "title": "Balances and the settle-up plan",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/group-balances.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "group-balances"
+      },
+      "uiHash": "94e5badcc4277726"
+    },
+    {
+      "id": "group-totals",
+      "screen": "2.4 Group detail — Totals",
+      "title": "Totals by person and category",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/group-totals.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "group-totals"
+      },
+      "uiHash": "f904b191a248ab2e"
+    },
+    {
+      "id": "add-expense",
+      "screen": "2.5 Add / edit expense",
+      "title": "Adding an expense",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/add-expense.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "packages/core/src/split.ts",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "add-expense"
+      },
+      "uiHash": "9bc1bb6c007859e5"
+    },
+    {
+      "id": "expense-foreign-currency",
+      "screen": "2.8 Expense detail (multi-currency)",
+      "title": "A foreign-currency expense and its locked rate",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/expense-foreign-currency.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "packages/core/src/money.ts",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "currencies"
+      },
+      "uiHash": "8596b20e8dd6d472"
+    },
+    {
+      "id": "activity",
+      "screen": "2.9 Activity",
+      "title": "Activity",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/activity.png",
+      "sources": [
+        "apps/web/src/screens/Activity.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "activity"
+      },
+      "uiHash": "75f050830bb28154"
+    },
+    {
+      "id": "profile",
+      "screen": "2.10 Profile & settings",
+      "title": "Profile and settings",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/profile.png",
+      "sources": [
+        "apps/web/src/screens/Profile.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "profile"
+      },
+      "uiHash": "711d0eac3184adbd"
+    },
+    {
+      "id": "my-expenses",
+      "screen": "2.11 My expenses",
+      "title": "Everything you have spent, across groups",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/my-expenses.png",
+      "sources": [
+        "apps/web/src/screens/MyExpenses.tsx",
+        "apps/web/src/screens/Activity.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "my-expenses"
+      },
+      "uiHash": "5ce3d047d9c93659"
+    }
+  ]
+}

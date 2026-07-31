@@ -14,6 +14,7 @@
     "expo": "~54.0.0",
     "expo-apple-authentication": "~8.0.8",
     "expo-build-properties": "~1.0.10",
+    "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",
     "expo-image-manipulator": "~14.0.7",
     "expo-image-picker": "~17.0.11",

@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["V97FBD9SXN.ca.electricrv.slytab"],
+        "components": [
+          {
+            "/": "/slytab/join/*",
+            "comment": "Group invite links open SlyTab instead of Safari"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -40,14 +40,34 @@
             ]
           }
         ]
-      }
+      },
+      "associatedDomains": [
+        "applinks:electricrv.ca"
+      ]
     },
     "android": {
       "package": "ca.electricrv.slytab",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0c1220"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "electricrv.ca",
+              "pathPrefix": "/slytab/join"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "splash": {
       "backgroundColor": "#0c1220",
