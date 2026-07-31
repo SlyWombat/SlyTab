@@ -1,6 +1,6 @@
 {
   "generatedFor": {
-    "seedRev": "r1",
+    "seedRev": "r2",
     "today": "2026-07-15T10:24:00-04:00",
     "theme": "dark"
   },
@@ -28,7 +28,22 @@
     {
       "id": "settle",
       "screen": "2.7 Settle up",
-      "error": "locator.click: Timeout 30000ms exceeded."
+      "title": "Settling up with someone",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/settle.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "settling-up"
+      },
+      "uiHash": "2d521959c8050350"
     },
     {
       "id": "home",
@@ -48,7 +63,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "home"
       },
-      "uiHash": "7ca26a95ced8bf98"
+      "uiHash": "df3809cf434e81f4"
     },
     {
       "id": "home-narrow",
@@ -68,7 +83,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "home"
       },
-      "uiHash": "8e5b2f8f1e3c1001"
+      "uiHash": "e8a8f0ff64680c64"
     },
     {
       "id": "groups",
@@ -88,7 +103,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "groups"
       },
-      "uiHash": "9628962e8a27ece4"
+      "uiHash": "5c97516e30fe33d4"
     },
     {
       "id": "group-expenses",
@@ -210,7 +225,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "activity"
       },
-      "uiHash": "75f050830bb28154"
+      "uiHash": "2dd534dbdab3f081"
     },
     {
       "id": "profile",
@@ -230,7 +245,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "profile"
       },
-      "uiHash": "711d0eac3184adbd"
+      "uiHash": "62042476cd8faf63"
     },
     {
       "id": "my-expenses",

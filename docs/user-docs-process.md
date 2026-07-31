@@ -291,6 +291,16 @@ dev database is behind, run `npm run db:migrate` first — the pipeline will
 otherwise fail at the seed with a column error, which is the correct place to
 fail.
 
+Practical note: a full rebuild takes several minutes on this machine. The repo
+lives on the WSL `/mnt/d` mount and each shot opens a fresh browser context
+through a bind mount, so it is I/O bound, not compute bound. It is a release
+job, not something to run in a tight edit loop — use `--only <id>` on
+`capture-web.mjs` directly while iterating on a single screen. Also: if
+something else is already serving `:8100` (a plain `npm run dev:api`), the
+script reuses it and warns, because that container does not set
+`MAIL_DISABLE` and the seed's four registrations will each wait on a real
+MTA.
+
 ### Where it plugs into the release flow
 
 The docs must never claim something a user cannot yet see, which is the same
