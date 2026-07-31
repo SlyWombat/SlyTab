@@ -53,6 +53,12 @@ button {
 /* ---- navigation shell (#103) -------------------------------------------
    Rail on wide viewports, bottom bar on narrow. The breakpoint is where a
    fixed 200px rail starts costing more than it gives. */
+/* The bottom bar's height, in one place. The FAB and the content padding both
+   need it, and having each carry its own guess is precisely how the bar came
+   to sit on top of the Add expense button (reported 2026-07-31). Zero on wide
+   viewports, where the nav is a side rail and owes the bottom nothing. */
+:root { --ss-navbar-h: 0px; }
+
 .appshell { display: flex; min-height: 100dvh; }
 
 .railnav {
@@ -84,6 +90,7 @@ button {
 .railmain { flex: 1 1 auto; min-width: 0; }
 
 @media (max-width: 760px) {
+  :root { --ss-navbar-h: 58px; }
   .appshell { flex-direction: column; }
   .railnav {
     position: fixed; bottom: 0; left: 0; right: 0; top: auto;
@@ -97,5 +104,5 @@ button {
   .raillink { flex-direction: column; gap: 3px; flex: 1; justify-content: center; padding: 4px 2px; }
   .raillabel { font-size: 10.5px; }
   /* Clear the bar so the last row is never trapped under it. */
-  .railmain { padding-bottom: 78px; }
+  .railmain { padding-bottom: calc(var(--ss-navbar-h) + 20px); }
 }

@@ -113,8 +113,11 @@ button.row:hover { background: var(--ss-surface-2); }
 .checkrow .amt-in { width: 110px; margin-left: auto; }
 .checkrow .amt-in input { text-align: right; }
 
+/* Sits above the bottom nav on narrow viewports. --ss-navbar-h is 0 on wide
+   ones, where the nav is a side rail, so this is the same 24px it always was
+   there. The bar itself carries the safe-area inset, hence adding it once. */
 .fab { position: fixed; right: max(16px, calc(50vw - 304px));
-  bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 5;
+  bottom: calc(24px + var(--ss-navbar-h, 0px) + env(safe-area-inset-bottom, 0px)); z-index: 5;
   width: 56px; height: 56px; border-radius: 50%; border: none;
   background: var(--ss-brand); color: var(--ss-on-brand);
   font: 300 1.875rem/3.375rem var(--ss-font-body);
