@@ -109,9 +109,14 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 ### 2.4 Receipt scanning (OCR)
 
 - **FR-4.1 (MUST)** From the add-expense screen, the user photographs (or
-  uploads) a receipt. The server parses it via the **Claude API**
-  (`claude-opus-4-8`, vision + structured output) into: merchant, date,
-  currency, line items (name, quantity, price), subtotal, tax, tip, total.
+  uploads) a receipt. The server parses it with a **self-hosted vision model**
+  (`LOCAL_LLM_URL`, currently `qwen2.5vl:7b` — see `docs/llm-requirements.md`),
+  returning merchant, date, currency, line items, subtotal, tax, tip and
+  total. A third-party path (Claude) remains in the code and is selected only
+  when `LOCAL_LLM_URL` is empty; production deploys it disabled, with
+  `ANTHROPIC_API_KEY` written empty by `scripts/deploy-api.sh`. Say this
+  accurately rather than loosely: the privacy claim on the public site and in
+  the App Store review notes rests on it (issue #108).
 - **FR-4.2 (MUST)** Parsed results are always presented for review — the user
   confirms/edits before anything is saved. Parsing failures degrade
   gracefully to manual entry with the photo attached.

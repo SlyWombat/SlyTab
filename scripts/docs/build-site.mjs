@@ -172,6 +172,22 @@ writeFileSync(join(OUT, 'index.html'), page({
   toc,
 }));
 
+// The FAQ, from the same pipeline so it cannot drift from the manual either.
+// No shots: it answers questions rather than walking screens.
+const faqMd = readFileSync(join(GUIDE, 'faq.md'), 'utf8');
+const faq = render(faqMd, new Map());
+mkdirSync(join(OUT, 'faq'), { recursive: true });
+writeFileSync(join(OUT, 'faq/index.html'), page({
+  title: 'SlyTab — questions people actually ask',
+  description: 'Splitting unevenly, several currencies, receipts and privacy, leaving a group, deleting your account.',
+  body: faq.html,
+  toc: faq.toc,
+  // The FAQ sits one level deeper, so every relative link gains a hop. Order
+  // matters: rewrite the ../ links FIRST, then the stylesheet — doing it the
+  // other way sends guide.css to ../../ and the page loads unstyled.
+}).replace(/href="\.\.\//g, 'href="../../')
+   .replace('href="./guide.css"', 'href="../guide.css"'));
+
 // Images, copied rather than referenced across trees so the published page is
 // self-contained and `npm run deploy` needs no special case.
 let copied = 0;
@@ -190,4 +206,5 @@ if (missing.length) {
 }
 
 console.log(`  manual: ${toc.length} sections, ${shots.length} shots placed, ${copied} images copied`);
+console.log(`  faq:    ${faq.toc.length} sections`);
 console.log(`  -> ${OUT}/index.html`);

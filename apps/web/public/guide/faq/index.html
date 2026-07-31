@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — questions people actually ask</title>
+<meta name="description" content="Splitting unevenly, several currencies, receipts and privacy, leaving a group, deleting your account.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="../../welcome/"><span class="mark" aria-hidden>S</span>
+      <span class="wordmark">SlyTab</span></a>
+    <span class="sp"></span>
+    <a class="btn" href="../../">Open the app</a>
+  </div>
+  <div class="cols">
+    <nav class="toc" aria-label="Contents">
+      <p class="tochead">Contents</p>
+      <a href="#getting-started">Getting started</a>
+      <a href="#money-and-splitting">Money and splitting</a>
+      <a href="#several-currencies">Several currencies</a>
+      <a href="#receipts-and-privacy">Receipts and privacy</a>
+      <a href="#groups-and-people">Groups and people</a>
+      <a href="#your-account">Your account</a>
+    </nav>
+    <main class="doc">
+<h1 id="questions-people-actually-ask">Questions people actually ask</h1>
+<p>Short answers. The <a href="./">manual</a> covers each screen properly.</p>
+<hr>
+<h2 id="getting-started">Getting started</h2>
+<p><strong>Do I have to install anything?</strong> No. SlyTab runs in any browser and works on a phone that way. There are iPhone and Android apps if you prefer one, and the same account works everywhere.</p>
+<p><strong>Does everyone I split with need an account?</strong> No. You can add someone by email before they have signed up, and their share is tracked from that moment. They get an invitation and can join whenever they like — or never, and you still have accurate numbers.</p>
+<p><strong>It costs nothing? What's the catch?</strong> There isn't one. SlyTab was built for the author's family and friends and is shared as-is. There is no premium tier, no ads, and no analytics collecting anything about you.</p>
+<p><strong>I already use Splitwise. Can I bring my history?</strong> Yes — import a group directly, mapping their members onto people you already know. Anything already in SlyTab is skipped rather than duplicated.</p>
+<hr>
+<h2 id="money-and-splitting">Money and splitting</h2>
+<p><strong>Can more than one person pay for the same expense?</strong> Yes. Who paid and how it is split are separate questions. If you put £60 on your card and Alice put £40 on hers, record both.</p>
+<p><strong>How do I split something unevenly?</strong> Five ways: equally (optionally excluding people who were not there), by exact amounts, by shares (2 : 1 for the double room versus the single), by percentage, or equally with a plus-or-minus adjustment for one person.</p>
+<p><strong>Someone shared only the starter. Can I split by item?</strong> Yes. Scan the receipt and assign each line to whoever had it.</p>
+<p><strong>Why does the app tell Alice to pay me, when Alice owes Ben?</strong> Because it is fewer payments for the same result. If Alice owes Ben and Ben owes you, SlyTab skips the middle step. Nobody ends up better or worse off.</p>
+<p><strong>Does SlyTab move money?</strong> No. It records that money moved. You pay each other however you already do — your Interac, PayPal.Me and Venmo handles sit on your profile so people can find them.</p>
+<hr>
+<h2 id="several-currencies">Several currencies</h2>
+<p><strong>What happens when a group spends in more than one currency?</strong> Each expense keeps the currency it was paid in. The group has a home currency, and anything foreign converts at the reference rate for the <strong>date of the expense</strong>. That rate is then stored on the expense.</p>
+<p><strong>Will my balance change later?</strong> Not on its own. Nothing re-values your history in the background, which is the point of storing the rate. If you edit an expense, saving re-reads the rate for that date — and a rate you had overridden by hand needs entering again.</p>
+<p><strong>My card gave me a worse rate than the official one.</strong> Override it. Enter the rate you were actually charged and SlyTab uses that.</p>
+<p><strong>Do currencies without decimal places work properly?</strong> Yes. Chilean pesos, yen and won are handled as whole units throughout. A receipt total printed as 88.930 CLP is eighty-eight thousand nine hundred and thirty, and SlyTab reads it that way rather than as 88.93.</p>
+<hr>
+<h2 id="receipts-and-privacy">Receipts and privacy</h2>
+<p><strong>Where do my receipt photos go?</strong> To our own server, which runs the model that reads them. No third-party vision service is configured, so receipts do not leave it.</p>
+<p><strong>Do you strip the location from my photos?</strong> Yes, from JPEG photos when they arrive. The phone app also reads the photo's location <em>before</em> uploading, but only to guess which currency you paid in.</p>
+<p><strong>Do you track me?</strong> No. There is no analytics SDK, no advertising identifier and no crash reporter in either app. The app talks to our server and, if you enable notifications, to Apple's or Google's push service.</p>
+<p><strong>What if the scan gets a total wrong?</strong> Correct it — the scan fills the form in, it does not have the final word. Please report it with the photo attached, so it can be added to the test set.</p>
+<hr>
+<h2 id="groups-and-people">Groups and people</h2>
+<p><strong>How do I get someone into a group?</strong> Three ways: pick them from people you already share a group with (one tap, no email), send a share link that works for seven days and can be revoked, or invite by email.</p>
+<p><strong>Can I leave a group?</strong> Yes — open it, tap its name, then Leave this group. You are asked to settle up first if you still owe or are owed. Your past expenses stay so nobody else's balance moves.</p>
+<p><strong>What happens to a group we have finished with?</strong> Archive it. It becomes read-only and collapses out of the way, keeping its history so old balances stay honest.</p>
+<hr>
+<h2 id="your-account">Your account</h2>
+<p><strong>Can I get my data out?</strong> Yes — export any group's full history as CSV from the group screen on the web app.</p>
+<p><strong>How do I delete my account?</strong> Profile → Delete my account. You type your email to confirm. Your personal details go; your share of shared expenses is anonymised so nobody else's balance changes. If you signed in with Apple, we tell Apple to revoke that too.</p>
+<p><strong>I found a bug.</strong> Profile → Report a bug. It arrives with your app version attached, and you get an email when it is fixed.</p>
+    </main>
+  </div>
+  <footer>
+    <a href="../../welcome/">About SlyTab</a>
+    <a href="../../marketing/support/">Support</a>
+    <a href="../../marketing/privacy/">Privacy</a>
+    <a href="../../">Open the app</a>
+    <p>Screenshots on this page are generated from the running app, so they
+       cannot fall out of date with it.</p>
+  </footer>
+</div>
+</body>
+</html>
