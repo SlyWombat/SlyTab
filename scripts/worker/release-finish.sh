@@ -105,6 +105,52 @@ json.dump(d,open(p,'w'),indent=2)" "$STATE" "$IOSID"
   exit 0
 fi
 
+# --- ANDROID RETRY: a build that never started --------------------------------
+# release-mobile.sh records stage 'error' when `eas build` returns no id, and
+# nothing downstream advances that stage — so without this the whole release
+# stalls with iOS shipped and Android never built (the mirror of issue #90).
+# Deliberately does NOT exit: iOS must keep progressing while Android waits.
+if [ "$(get "['android']['stage']")" = "error" ]; then
+  TRIES=$(get "['android'].get('retries', 0)")
+  if [ "$TRIES" -ge 3 ]; then
+    say "android retried ${TRIES}x for v$VER and still failing — leaving it for a human"
+  else
+    ATT=$(mktemp)
+    say "retrying android build for v$VER (attempt $((TRIES + 1)))…"
+    ANDID=$(EAS_BUILD_PLATFORM=android "$OPS/eas.sh" build -p android \
+            --profile android-apk --non-interactive --no-wait --json 2>"$ATT" \
+            | python3 -c "
+import json,sys
+try: print((json.load(sys.stdin) or [{}])[0].get('id',''))
+except Exception: print('')" || true)
+    cat "$ATT" >> "$LOG"
+    if [ -n "$ANDID" ]; then
+      python3 - "$STATE" "$ANDID" <<'PY'
+import json, sys
+p, bid = sys.argv[1:3]; d = json.load(open(p))
+d['android'].update({'build': bid, 'stage': 'building',
+                     'retries': d['android'].get('retries', 0) + 1})
+json.dump(d, open(p, 'w'), indent=2)
+PY
+      say "android rebuild started: $ANDID"
+    elif grep -qi "builds from the Free plan\|build credits this billing period" "$ATT"; then
+      # A used-up monthly allowance is a clock problem, not a broken build. If
+      # it burned a retry the three-strike cap would expire long before the
+      # quota reset, and the release would be abandoned for waiting.
+      say "android monthly quota still exhausted — waiting for the reset, not counting a retry"
+    else
+      python3 - "$STATE" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d['android']['retries'] = d['android'].get('retries', 0) + 1
+json.dump(d, open(p, 'w'), indent=2)
+PY
+      say "android retry could not be started; will try again next cycle"
+    fi
+    rm -f "$ATT"
+  fi
+fi
+
 # --- ANDROID: build -> APK on the web download link ---------------------------
 if [ "$(get "['android']['stage']")" = "building" ]; then
   read -r AST AURL < <(build_status "$(get "['android']['build']")" android)
