@@ -116,7 +116,7 @@ final class Api
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
 
         // ---- admin (cron + deploy hooks, guarded by MIGRATE_TOKEN) ----
-        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs, $emailNotify): void {
+        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs, $emailNotify, $balances): void {
             // Bug-report review (profile-page reports): comment + screenshot together.
             $g->get('/bugs', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['items' => $bugs->listRecent()]));
@@ -146,6 +146,7 @@ final class Api
             $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify): Response {
                 $result = $bugs->syncGithub();
                 $result['digestsSent'] = $emailNotify->flushDigests();
+                $result['reminders'] = (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep();
                 return Http::json($rs, $result);
             });
             // Management metrics for the owner's Homepage dashboard. Behind the
@@ -153,6 +154,11 @@ final class Api
             // widget can send the header.
             $g->get('/metrics', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, (new \SlyTab\Services\MetricsService($pdo))->snapshot()));
+            // #19: payment reminders. Rides the same cron as everything else
+            // here; the service does its own rate limiting, so running it every
+            // ten minutes costs a query and sends nothing most of the time.
+            $g->post('/reminders', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep()));
             // Same sweep on its own, for testing and for forcing a send.
             $g->post('/notify-digest', function (Request $rq, Response $rs) use ($emailNotify): Response {
                 $grace = (int) (Http::body($rq)['graceMinutes'] ?? 10);
