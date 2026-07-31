@@ -1222,6 +1222,10 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
       {/* #92: the light palette shipped with the design tokens and nothing
           ever selected it, so the app was hard-dark by accident rather than by
           choice. "Match my device" follows the system and keeps following it. */}
+      {/* #104: the manual, reachable from inside the app rather than only from
+          a page nobody visits. */}
+      <Btn label="How SlyTab works"
+        onPress={() => { void Linking.openURL('https://electricrv.ca/slytab/guide/'); }} />
       <Text style={s.fieldLabel}>Theme</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
         {([['system', 'Match my device'], ['dark', 'Dark'], ['light', 'Light']] as const).map(([v, label]) => (

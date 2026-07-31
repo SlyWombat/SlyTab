@@ -98,6 +98,7 @@ export function GroupScreen({ groupId, user, onBack }: {
   const [catFilter, setCatFilter] = useState('');
   const [feed, setFeed] = useState<ActivityItem[] | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
+  const [showByCurrency, setShowByCurrency] = useState(false);
   const [totals, setTotals] = useState<GroupTotals | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -363,6 +364,34 @@ export function GroupScreen({ groupId, user, onBack }: {
               </div>
             </div>
           ))}
+          {/* #106: what you owe in each currency, unconverted. Splitwise makes
+              this the default and charges to convert; we convert by default,
+              because one number to settle beats two — but someone who would
+              rather settle each currency in its own should be able to see it. */}
+          {balances.byCurrency && Object.keys(balances.byCurrency).length > 0 && (
+            <>
+              <button className="btn block" style={{ marginTop: 10 }}
+                aria-expanded={showByCurrency}
+                onClick={() => setShowByCurrency((v) => !v)}>
+                {showByCurrency ? 'Hide' : 'Show'} balances per currency
+              </button>
+              {showByCurrency && Object.entries(balances.byCurrency).map(([cur, rows]) => (
+                <div key={cur}>
+                  <div className="sect">{cur} — as spent, not converted</div>
+                  {group.members.filter((m) => (rows[m.id] ?? 0) !== 0).map((m) => (
+                    <div className="row" key={`${cur}-${m.id}`}>
+                      <Badge id={m.id} name={m.displayName} sm />
+                      <div className="grow"><div className="name">
+                        {m.id === user.id ? 'You' : m.displayName}</div></div>
+                      <div className="right">
+                        <Amount minor={rows[m.id] ?? 0} currency={cur} signed />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
           <div className="sect">Suggested settlements · {balances.plan.length} transfer{balances.plan.length === 1 ? '' : 's'}</div>
           {balances.plan.length === 0 && <p className="muted" style={{ padding: 8 }}>Everyone is settled up ✓</p>}
           {balances.plan.map((tr, i) => (

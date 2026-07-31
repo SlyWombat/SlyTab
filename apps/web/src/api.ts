@@ -91,6 +91,12 @@ export interface Balances {
   net: Record<string, number>;
   plan: Transfer[];
   pairwise: Transfer[];
+  /**
+   * #106: the same balances kept in the currency each expense was spent in,
+   * unconverted. Present only when the group has spent in more than one —
+   * otherwise it says nothing the converted net does not.
+   */
+  byCurrency?: Record<string, Record<string, number>>;
 }
 
 export interface Settlement {

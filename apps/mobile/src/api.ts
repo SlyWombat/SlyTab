@@ -5,10 +5,22 @@
  */
 
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 import type { CategoryOverride } from '@slytab/core';
 
-const BASE = 'https://electricrv.ca/slytab/api/v1';
+/**
+ * Production by default. Overridable via `extra.apiBase` in the Expo config so
+ * a build can be pointed at a dev server — without this the documentation
+ * pipeline can only ever photograph production data, which is both a privacy
+ * problem and a determinism one (#104).
+ *
+ * Deliberately read once at module load: the base cannot change mid-session,
+ * and re-reading it per request would invite someone to make it do so.
+ */
+const BASE: string =
+  (Constants.expoConfig?.extra as { apiBase?: string } | undefined)?.apiBase
+  ?? 'https://electricrv.ca/slytab/api/v1';
 
 /**
  * Debug breadcrumbs for in-app bug reports: being inside the app, we can

@@ -129,6 +129,10 @@ final class BalanceService
         $home = $this->homeCurrency($groupId);
         $net = [];
         $pair = []; // pair["a|b"] > 0 means a owes b
+        // #106: the same effects, kept in the currency they were spent in.
+        // byCurrency[CUR][userId] — never converted, so it answers "what do I
+        // owe in euros?" without anyone having to trust a rate.
+        $byCurrency = [];
 
         // Seed every active member so settled members show explicit zeros.
         $members = $this->pdo->prepare(
@@ -151,6 +155,11 @@ final class BalanceService
             foreach ($converted as $uid => $amt) {
                 $net[$uid] = ($net[$uid] ?? 0) + $amt;
             }
+            // Unconverted, in the expense's own currency.
+            $cur = (string) $e['currency'];
+            foreach ($effects as $uid => $amt) {
+                $byCurrency[$cur][$uid] = ($byCurrency[$cur][$uid] ?? 0) + $amt;
+            }
 
             // Pairwise attribution: each sharer owes each payer in
             // proportion to that payer's fraction of the expense.
@@ -170,7 +179,7 @@ final class BalanceService
         }
 
         $settlements = $this->pdo->prepare(
-            "SELECT from_user, to_user, amount FROM settlements
+            "SELECT from_user, to_user, amount, currency FROM settlements
              WHERE group_id = ? AND status = 'confirmed'",
         );
         $settlements->execute([$groupId]);
@@ -178,6 +187,11 @@ final class BalanceService
             $net[$s['from_user']] = ($net[$s['from_user']] ?? 0) + (int) $s['amount'];
             $net[$s['to_user']] = ($net[$s['to_user']] ?? 0) - (int) $s['amount'];
             self::addPair($pair, $s['from_user'], $s['to_user'], -(int) $s['amount']);
+            // …and in the per-currency view (#106), or a debt someone has
+            // already paid keeps showing as outstanding there.
+            $sc = (string) ($s['currency'] ?: $home);
+            $byCurrency[$sc][$s['from_user']] = ($byCurrency[$sc][$s['from_user']] ?? 0) + (int) $s['amount'];
+            $byCurrency[$sc][$s['to_user']] = ($byCurrency[$sc][$s['to_user']] ?? 0) - (int) $s['amount'];
         }
 
         $pairwise = [];
@@ -192,7 +206,34 @@ final class BalanceService
         }
         usort($pairwise, static fn(array $x, array $y): int => [$x['from'], $x['to']] <=> [$y['from'], $y['to']]);
 
-        return ['net' => $net, 'plan' => Simplify::debts($net), 'pairwise' => $pairwise];
+        // Drop currencies where everyone has netted to zero: a row of zeros is
+        // noise, and the whole point of this view is the currencies you still
+        // owe something in.
+        // Gate on how many currencies the group SPENT in, counted before the
+        // zero rows are dropped. Gating on what is still outstanding meant
+        // that settling one currency made the whole view disappear — taking
+        // the other currency's outstanding detail with it, at exactly the
+        // moment it was the only thing left to look at.
+        $currenciesInPlay = count($byCurrency);
+
+        $byCurrency = array_filter(
+            array_map(
+                static fn(array $rows): array => array_filter($rows, static fn(int $v): bool => $v !== 0),
+                $byCurrency,
+            ),
+            static fn(array $rows): bool => $rows !== [],
+        );
+        ksort($byCurrency);
+
+        return [
+            'net' => $net,
+            'plan' => Simplify::debts($net),
+            'pairwise' => $pairwise,
+            // #106: unconverted, per currency. Present only when it says
+            // something the converted net does not — i.e. more than one
+            // currency is actually in play.
+            'byCurrency' => $currenciesInPlay > 1 ? $byCurrency : new \stdClass(),
+        ];
     }
 
     public function netFor(string $groupId, string $userId): int
