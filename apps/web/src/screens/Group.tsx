@@ -167,7 +167,7 @@ export function GroupScreen({ groupId, user, onBack }: {
   return (
     <div className="shell">
       <div className="header">
-        <button className="btn sm" onClick={onBack}><Icon name="back" size={16} /></button>
+        <button className="btn sm" aria-label="Back" onClick={onBack}><Icon name="back" size={16} /></button>
         <span style={{ fontSize: '1.5rem' }} aria-hidden>{group.emoji || <Icon name="group" size={20} />}</span>
         <button onClick={() => { if (!group.isDirect) setSettingsOpen(true); }} title={group.isDirect ? undefined : 'Group settings'}
           style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0,

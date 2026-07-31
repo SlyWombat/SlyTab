@@ -2,79 +2,79 @@
   "screens": {
     "welcome": {
       "uiHash": "d5197fc6208b0135",
-      "srcHash": "659ebd209eaf9294",
+      "srcHash": "cfbf050740873c66",
       "proseHash": "c0bb288590dfed9a",
       "acceptedAt": "2026-07-31"
     },
     "settle": {
-      "uiHash": "2d521959c8050350",
-      "srcHash": "cf1d0580dd9f2ce8",
+      "uiHash": "feaab6fc4b1a0faa",
+      "srcHash": "d6e18e5211968bfb",
       "proseHash": "f6dc4e55156e02a0",
       "acceptedAt": "2026-07-31"
     },
     "home": {
       "uiHash": "df3809cf434e81f4",
-      "srcHash": "d31f7d1bd2de07d7",
+      "srcHash": "3f29cd4d2cc0557b",
       "proseHash": "3a068e938b825548",
       "acceptedAt": "2026-07-31"
     },
     "home-narrow": {
       "uiHash": "e8a8f0ff64680c64",
-      "srcHash": "d31f7d1bd2de07d7",
+      "srcHash": "3f29cd4d2cc0557b",
       "proseHash": "3a068e938b825548",
       "acceptedAt": "2026-07-31"
     },
     "groups": {
       "uiHash": "5c97516e30fe33d4",
-      "srcHash": "f671e922fc504b8f",
+      "srcHash": "c5a9d28c721e1d61",
       "proseHash": "eed1fccb2d2390b1",
       "acceptedAt": "2026-07-31"
     },
     "group-expenses": {
-      "uiHash": "efe8d3219181d26a",
-      "srcHash": "cf1d0580dd9f2ce8",
+      "uiHash": "1726acf5d9ed8538",
+      "srcHash": "d6e18e5211968bfb",
       "proseHash": "3afa00b53d1a0bcc",
       "acceptedAt": "2026-07-31"
     },
     "group-balances": {
-      "uiHash": "19f2d926fbf6d967",
-      "srcHash": "cf1d0580dd9f2ce8",
+      "uiHash": "e7d000084f6a73e0",
+      "srcHash": "d6e18e5211968bfb",
       "proseHash": "81879e31ea049979",
       "acceptedAt": "2026-07-31"
     },
     "group-totals": {
-      "uiHash": "f904b191a248ab2e",
-      "srcHash": "cf1d0580dd9f2ce8",
+      "uiHash": "6a284a718939b0b9",
+      "srcHash": "d6e18e5211968bfb",
       "proseHash": "faa7dddf0a63d8cf",
       "acceptedAt": "2026-07-31"
     },
     "add-expense": {
-      "uiHash": "9bc1bb6c007859e5",
-      "srcHash": "2dd4928ed241642e",
+      "uiHash": "62de1b4eb391fa62",
+      "srcHash": "513683dab8e03f0b",
       "proseHash": "33c641715f17a96b",
       "acceptedAt": "2026-07-31"
     },
     "expense-foreign-currency": {
-      "uiHash": "8596b20e8dd6d472",
-      "srcHash": "d634ec3be352ca68",
+      "uiHash": "e14085d736946a39",
+      "srcHash": "c9dfc379bc0e02de",
       "proseHash": "db9adfd47c943345",
       "acceptedAt": "2026-07-31"
     },
     "activity": {
       "uiHash": "2dd534dbdab3f081",
-      "srcHash": "f2f51661f68e90f2",
+      "srcHash": "d3e3ae44ea6feee7",
       "proseHash": "20a69b3b0933871f",
       "acceptedAt": "2026-07-31"
     },
     "profile": {
       "uiHash": "11109b2c6f5b877e",
-      "srcHash": "cc2ecbb753bab9ad",
+      "srcHash": "9b47db40d33f8d95",
       "proseHash": "695d3adaab0c22b0",
       "acceptedAt": "2026-07-31"
     },
     "my-expenses": {
       "uiHash": "5ce3d047d9c93659",
-      "srcHash": "36489dd6014dfd16",
+      "srcHash": "4e9a7594eb4585b9",
       "proseHash": "c8b8c56fc819828f",
       "acceptedAt": "2026-07-31"
     }

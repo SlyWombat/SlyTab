@@ -79,9 +79,15 @@ button.row:hover { background: var(--ss-surface-2); }
   border: 1px solid var(--ss-danger); color: var(--ss-text);
   border-radius: 10px; padding: 10px 12px; font-size: 0.8125rem; margin-bottom: var(--ss-space-3); }
 
-.sheet-back { position: fixed; inset: 0; background: rgb(4 7 14 / 0.62); z-index: 10;
+/* Above the bottom nav (z-index 20), not below it. A sheet is anchored to the
+   same edge the bar occupies, so at z-index 10/11 the bar printed over the
+   bottom --ss-navbar-h of every sheet — which is exactly where its primary
+   button sits, Save expense included — and stayed tappable through the scrim.
+   Second half of the same report as the FAB (2026-07-31): a modal is the top
+   layer, and nothing routes around it. */
+.sheet-back { position: fixed; inset: 0; background: rgb(4 7 14 / 0.62); z-index: 30;
   touch-action: none; }
-.sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 11;
+.sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 31;
   /* dvh, not vh: with the mobile URL bar shown, 88vh overflows the visible
      viewport upward and the sheet header is unreachable (#42). */
   width: min(480px, 100vw); max-height: 88vh; max-height: 88dvh;
