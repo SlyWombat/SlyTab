@@ -74,69 +74,67 @@ RECIPIENTS=$(printf "SELECT u.email FROM users u JOIN oauth_identities o ON o.us
 WHERE o.provider='apple' AND u.deleted_at IS NULL AND u.notify_level<>'none';\n" \
   | bash "$REPO/scripts/ops/proddb.sh" 2>/dev/null | awk -F'|' '/@/ {gsub(/ /,"",$2); print $2}')
 
-TESTER_BODY="The iPhone version of SlyTab has just been updated, and this build
-fixes signing in with Apple — if you tried before and could not get in, that
-was our fault, and it works now.
+# The changelog lives in release-notes.md, keyed to the build it describes.
+# It used to be hard-coded in this script, which meant the NEXT release would
+# have mailed testers the previous build's changelog — and a confidently wrong
+# email is worse than no email. If the notes do not describe the build Apple
+# just approved, tell the owner and mail nobody.
+NOTES="$REPO/scripts/worker/release-notes.md"
+read -r NOTES_BUILD NOTES_VER < <(python3 -c "
+import re, sys
+try: t = open(sys.argv[1]).read()
+except OSError: print(' '); raise SystemExit
+g = lambda k: (re.search(rf'^{k}:\s*(\S+)\s*$', t, re.M) or [None, ''])[1]
+print(g('build') or '-', g('version') or '-')
+" "$NOTES" 2>/dev/null || echo "- -")
 
-Install or update it here: $TESTFLIGHT_URL
+if [ "$NOTES_BUILD" != "$BUILD_NO" ]; then
+  say "notes describe build '${NOTES_BUILD}' but Apple approved $BUILD_NO — mailing nobody"
+  if ! grep -qx "$BUILD_ID" "$MARKERS.alert" 2>/dev/null; then
+    mail_to "dave@drscapital.com" "SlyTab iOS build $BUILD_NO approved — but nobody was emailed" \
+"Apple approved iOS build $BUILD_NO, but scripts/worker/release-notes.md
+describes build '${NOTES_BUILD}'.
 
-Open that on your iPhone. If you do not have TestFlight yet, the link will
-send you to install it first, then bring you back to SlyTab.
+Nobody was emailed. Sending testers the wrong changelog is worse than sending
+nothing, so this stops rather than guesses.
 
-Sign in with Apple and your groups will already be there.
+Update release-notes.md to match build $BUILD_NO, then run
+scripts/worker/testflight-watch.sh (or wait for the next cron run) and the
+tester mail goes out."
+    echo "$BUILD_ID" >> "$MARKERS.alert"
+  fi
+  exit 0
+fi
 
-Also in this update: much better readability at larger text sizes, bigger
-buttons, saved-password support so you are not typing it out each time, and
-clearer messages when your phone is offline.
-
-If anything is still wrong, please tell us from Profile -> Report a bug.
-
-- SlyTab"
+TESTER_BODY=$(python3 -c "
+import sys
+body = open(sys.argv[1]).read().split('---', 2)[2].lstrip('\n')
+print(body.replace('{{TESTFLIGHT_URL}}', sys.argv[2]))
+" "$NOTES" "$TESTFLIGHT_URL")
 
 COUNT=0
 for addr in $RECIPIENTS; do
-  mail_to "$addr" "SlyTab for iPhone — Apple sign-in now works" "$TESTER_BODY"
+  mail_to "$addr" "SlyTab for iPhone — update $NOTES_VER is ready" "$TESTER_BODY"
   COUNT=$((COUNT + 1))
 done
 say "emailed $COUNT Apple-signin tester(s)"
 
 mail_to "dave@drscapital.com" "SlyTab iOS build $BUILD_NO approved — ready to test" \
-"TestFlight beta review has APPROVED iOS build $BUILD_NO.
+"TestFlight beta review has APPROVED iOS build $BUILD_NO (v$NOTES_VER).
 
-It is live to the 'SlyTab family' group now, and $COUNT tester(s) who sign in
-with Apple have been emailed the install link.
+It is installable now, and $COUNT tester(s) who sign in with Apple have been
+emailed the link — Jon among them, since his account is Apple-linked. He can
+install it whenever you nudge him.
 
-What is in it:
-  - Sign in with Apple, which the iOS build shipped without (Jon was locked
-    out entirely; his account is Apple-linked so there was no password path)
-  - WCAG AA contrast for all secondary text, in both themes
-  - Large-text fixes where the split checkbox and currency code were clipped
-    - both money-affecting
-  - 44pt touch targets on the split/payer/currency chips
-  - Password AutoFill and Enter-to-submit on sign-in
-  - An error boundary, so a render fault no longer blanks the whole app
-  - Honest offline behaviour instead of raw JS errors
-  - Confirmation before deleting an expense
-  - Privacy policy reachable in-app, and a privacy manifest (both were
-    certain App Store rejections)
-  - Google sign-in removed from iOS entirely — it bounced out to Safari and
-    polled to get back, which reads as a hang. Android keeps it.
-  - Leave a group from inside the app. The endpoint had existed for months
-    and no client called it, so anyone added by email was stuck.
-  - Apple account revocation on deletion, which Apple requires. Implemented
-    but INERT until a Sign in with Apple key exists — see below.
+The matching Android build is on the download link.
 
-The matching Android build is already on the download link.
+This is also the first build in which notifications have ever worked, so it is
+worth asking him to turn them on and confirm one actually arrives — that path
+has never once been exercised on a real device.
 
-Two things still need you:
-  - Create a Sign in with Apple key (developer portal, Certificates,
-    Identifiers & Profiles -> Keys) and set APPLE_SIWA_KEY_ID,
-    APPLE_TEAM_ID and APPLE_SIWA_KEY_PATH. Until then revocation logs and
-    skips; deletion itself works regardless.
-  - Register electricrv.ca for Sign in with Apple email communication, or
-    mail to @privaterelay.appleid.com addresses may be silently dropped.
+What the testers were told, verbatim:
 
-Still open: the light theme and System/Dark/Light control (#92). See #79."
+$TESTER_BODY"
 
 say "emailed the owner"
 echo "$BUILD_ID" >> "$MARKERS"
