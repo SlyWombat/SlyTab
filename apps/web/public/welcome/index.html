@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — split expenses with the people you actually share life with</title>
+<meta name="description" content="Split shared expenses with family and friends. Scan a receipt, split it fairly, settle up. Rates locked when you enter an expense, receipts read on our own server, no tracking.">
+<link rel="canonical" href="https://electricrv.ca/slytab/welcome/">
+<meta property="og:title" content="SlyTab — split expenses with the people you actually share life with">
+<meta property="og:description" content="Scan a receipt, split it fairly, settle up. No tracking, no ads, and exchange rates that cannot drift.">
+<meta property="og:url" content="https://electricrv.ca/slytab/welcome/">
+<style>
+  :root {
+    --bg:#0c1220; --surface:#141c2e; --surface2:#1c2740; --outline:#2e3d5e;
+    --text:#eef2fa; --text2:#a9b4cc; --text3:#909dba;
+    --brand:#4f8ef7; --brand2:#79aaff; --on-brand:#0c1220;
+    --owed:#34c98e; color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --surface:#fff; --surface2:#eef1f7; --outline:#d4dbe8;
+      --text:#16203a; --text2:#4a5878; --text3:#5a6680; --brand:#2f6fe0;
+      --brand2:#1d5ccb; --on-brand:#fff; --owed:#0d6b49; color-scheme: light; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 400 16px/1.65 Inter, "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  h1, h2, h3 { font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.02em; line-height: 1.15; }
+  a { color: var(--brand); }
+
+  /* --- top bar --- */
+  .top { display: flex; align-items: center; gap: 10px; padding: 18px 0; }
+  .mark { width: 30px; height: 30px; border-radius: 9px; background: var(--brand);
+    color: var(--on-brand); display: grid; place-items: center;
+    font: 700 17px/1 "Space Grotesk", system-ui, sans-serif; }
+  .wordmark { font: 600 19px/1 "Space Grotesk", system-ui, sans-serif; }
+  .top .sp { flex: 1; }
+  .badge { display: inline-block; background: linear-gradient(135deg, var(--brand), var(--owed));
+    color: var(--on-brand); font: 700 11px/1 "Space Grotesk", system-ui, sans-serif;
+    letter-spacing: 1.4px; text-transform: uppercase; padding: 5px 12px; border-radius: 20px; }
+
+  /* --- hero --- */
+  .hero { padding: 40px 0 12px; }
+  .hero h1 { font-size: clamp(30px, 6vw, 46px); margin: 14px 0 12px; }
+  .hero p.lede { color: var(--text2); font-size: clamp(16px, 2.4vw, 19px); max-width: 46ch; }
+  .cta { display: flex; gap: 10px; flex-wrap: wrap; margin: 24px 0 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 46px;
+    padding: 0 18px; border-radius: 12px; border: 1px solid var(--outline);
+    background: var(--surface); color: var(--text); text-decoration: none;
+    font-weight: 600; font-size: 15px; }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+  .fineprint { color: var(--text3); font-size: 13.5px; }
+
+  .shot { margin: 26px 0 8px; border: 1px solid var(--outline); border-radius: 16px;
+    background: var(--surface); padding: 14px; }
+  .shot .placeholder { border: 1px dashed var(--outline); border-radius: 10px;
+    padding: 34px 18px; text-align: center; color: var(--text3); font-size: 14px; }
+
+  /* --- sections --- */
+  section { padding: 40px 0; border-top: 1px solid var(--outline); }
+  section h2 { font-size: clamp(22px, 3.4vw, 29px); margin-bottom: 8px; }
+  section .sub { color: var(--text2); max-width: 60ch; margin-bottom: 22px; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--outline);
+    border-radius: 14px; padding: 18px; }
+  .card h3 { font-size: 16.5px; margin-bottom: 6px; }
+  .card p { color: var(--text2); font-size: 14.5px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--outline);
+    vertical-align: top; }
+  th { color: var(--text3); font-weight: 600; font-size: 13px; text-transform: uppercase;
+    letter-spacing: .04em; }
+  td.us { color: var(--text); }
+  td.them { color: var(--text2); }
+  .tablewrap { overflow-x: auto; }
+
+  details { border: 1px solid var(--outline); border-radius: 12px; background: var(--surface);
+    padding: 14px 16px; margin-bottom: 10px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--text2); margin-top: 10px; font-size: 15px; }
+
+  footer { border-top: 1px solid var(--outline); padding: 26px 0 60px; color: var(--text3);
+    font-size: 14px; }
+  footer a { margin-right: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <span class="mark" aria-hidden>S</span>
+    <span class="wordmark">SlyTab</span>
+    <span class="sp"></span>
+    <a class="btn" href="../">Open the app</a>
+  </div>
+
+  <header class="hero">
+    <span class="badge">Family &amp; friends beta</span>
+    <h1>Split expenses with the people you actually share life with.</h1>
+    <p class="lede">
+      Scan the receipt, split it however is fair, settle up. No spreadsheets,
+      no awkward reminders, and no arguing about who paid for the taxi.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="../">Start in your browser</a>
+      <a class="btn" href="../marketing/apps/">Get the phone app</a>
+    </div>
+    <p class="fineprint">Free. No ads, no tracking, no upsell to a premium tier.</p>
+
+    <!-- Screenshots are generated by the documentation pipeline (#104) so they
+         cannot drift from the app. Until that lands, this is a labelled
+         placeholder rather than a stale hand-taken image. -->
+    <div class="shot">
+      <div class="placeholder">Product screenshot — generated by the docs pipeline (issue #104)</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>What it does</h2>
+    <p class="sub">The whole job, in the order you actually do it.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Scan the receipt</h3>
+        <p>Photograph it and the total, the date and the line items come back filled in.
+           Split by item when three of you shared the starter and one didn't.</p>
+      </div>
+      <div class="card">
+        <h3>Split it fairly</h3>
+        <p>Equally, by exact amounts, by shares, by percentage, or equally after
+           someone's +/− adjustment. Whoever paid, however many paid.</p>
+      </div>
+      <div class="card">
+        <h3>See where you stand</h3>
+        <p>One balance per person across every group, in your own currency,
+           with the original amount always shown next to it.</p>
+      </div>
+      <div class="card">
+        <h3>Settle up</h3>
+        <p>Record a payment, the other person confirms it, and the balance clears.
+           Interac, PayPal.Me and Venmo handles live on each profile.</p>
+      </div>
+      <div class="card">
+        <h3>Travel without maths</h3>
+        <p>Enter an expense in the currency you paid in. It converts at that day's
+           rate and the rate is kept, so the number never changes underneath you.</p>
+      </div>
+      <div class="card">
+        <h3>Bring your history</h3>
+        <p>Import from Splitwise, mapping their members onto people you already
+           know. Duplicates are dropped rather than doubled.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why this one</h2>
+    <p class="sub">
+      Differences that are true and checkable, not slogans. Where the
+      alternative is better, it says so.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>SlyTab</th><th>Typically elsewhere</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Exchange rates</b></td>
+            <td class="us">Locked to the day you entered the expense and stored with it.
+              A balance you agreed on cannot change later.</td>
+            <td class="them">Conversion is a bulk action that rewrites past expenses —
+              Splitwise warns it affects settled ones and can move other people's balances.</td>
+          </tr>
+          <tr>
+            <td><b>Receipt scanning</b></td>
+            <td class="us">Read on our own server. No third-party AI service sees your
+              receipt, and location data is stripped from the photo on arrival.</td>
+            <td class="them">Usually a third-party vision API, with the photo leaving
+              the vendor's control.</td>
+          </tr>
+          <tr>
+            <td><b>Tracking</b></td>
+            <td class="us">None. No analytics SDK, no advertising identifier,
+              nothing to opt out of.</td>
+            <td class="them">Analytics and crash SDKs are close to universal.</td>
+          </tr>
+          <tr>
+            <td><b>Deleting your account</b></td>
+            <td class="us">In the app, in two taps. Your share of history is anonymised
+              so nobody else's balance moves, and we tell Apple to revoke the sign-in too.</td>
+            <td class="them">Often a web form or an email request.</td>
+          </tr>
+          <tr>
+            <td><b>Price</b></td>
+            <td class="us">Free, with no premium tier holding a feature hostage.</td>
+            <td class="them">Currency conversion, receipt scanning and charts are
+              common paid upgrades.</td>
+          </tr>
+          <tr>
+            <td><b>Where they're ahead</b></td>
+            <td class="us">Smaller. No web-wide integrations, and we do not yet offer
+              a per-currency balance view or recurring expenses.</td>
+            <td class="them">Splitwise is mature, has a large user base, and most people
+              you invite will already have an account.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Questions people actually ask</h2>
+    <p class="sub">Fuller answers live in the manual and the knowledge base.</p>
+
+    <details>
+      <summary>Does everyone need the app?</summary>
+      <p>No. It runs in any browser, and you can add someone by email before they
+         have signed up at all — their share is tracked from the moment you add them.</p>
+    </details>
+    <details>
+      <summary>What happens with several currencies in one group?</summary>
+      <p>Each expense keeps the currency it was paid in. The group has a home currency,
+         and anything foreign is converted at the reference rate for the date of the
+         expense — then that rate is stored, so the balance cannot drift afterwards.
+         You can override the rate if your card charged something different.</p>
+    </details>
+    <details>
+      <summary>Where do my receipt photos go?</summary>
+      <p>To our own server, which runs the model that reads them. They are not sent
+         to any third-party AI service. Location metadata is removed when the photo
+         arrives, so a receipt cannot reveal where you were.</p>
+    </details>
+    <details>
+      <summary>Someone paid me back in cash. Now what?</summary>
+      <p>Record it as a settlement. The other person gets asked to confirm it, and once
+         they do the balance between you clears.</p>
+    </details>
+    <details>
+      <summary>Can I get my data out?</summary>
+      <p>Yes — export any group's full history as CSV from the group screen on the web app.</p>
+    </details>
+    <details>
+      <summary>How do I leave a group?</summary>
+      <p>Open the group, tap its name, then <b>Leave this group</b>. You will be asked to
+         settle up first if you still owe or are owed — past expenses stay so nobody
+         else's balance changes.</p>
+    </details>
+  </section>
+
+  <footer>
+    <div class="wrap" style="padding:0">
+      <p style="margin-bottom:12px">
+        <a href="../">Open SlyTab</a>
+        <a href="../marketing/apps/">Phone apps</a>
+        <a href="../marketing/support/">Support</a>
+        <a href="../marketing/privacy/">Privacy</a>
+        <a href="../marketing/delete-account/">Delete your data</a>
+      </p>
+      <p>SlyTab is made by Electric RV in Ontario, Canada.</p>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>

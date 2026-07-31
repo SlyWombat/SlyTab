@@ -6,6 +6,31 @@
   },
   "shots": [
     {
+      "id": "welcome",
+      "screen": "2.1 Welcome / auth",
+      "title": "The sign-in screen",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/welcome.png",
+      "sources": [
+        "apps/web/src/screens/Auth.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "signing-in"
+      },
+      "uiHash": "d5197fc6208b0135"
+    },
+    {
+      "id": "settle",
+      "screen": "2.7 Settle up",
+      "error": "locator.click: Timeout 30000ms exceeded."
+    },
+    {
       "id": "home",
       "screen": "2.2 Home",
       "title": "Home — where you stand across every group",

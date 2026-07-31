@@ -23,7 +23,7 @@
  * screenshot, so bump deliberately.
  */
 
-export const SEED_REV = 'r1';
+export const SEED_REV = 'r2';
 
 /** Pinned "now". Bump deliberately (and re-accept the docs) — never automatically. */
 export const TODAY = '2026-07-15T10:24:00-04:00';
@@ -155,13 +155,18 @@ export const GROUPS = [
         shares: equal(8999, ['dave', 'alice']),
       },
       {
+        // Alice pays both household bills on purpose. The reader has to OWE
+        // somebody somewhere or the manual can never photograph settling up —
+        // the Settle button only renders on a row where you are the payer of
+        // the suggested transfer. It also gives Home both halves of its
+        // "you're owed … · you owe …" line instead of a one-sided balance.
         description: 'Hydro',
         amountMinor: 14215,
         currency: 'CAD',
         expenseDate: '2026-07-01',
         category: 'adulting.utilities',
         splitMethod: 'equal',
-        payers: [{ key: 'dave', amountMinor: 14215 }],
+        payers: [{ key: 'alice', amountMinor: 14215 }],
         shares: equal(14215, ['dave', 'alice']),
       },
     ],

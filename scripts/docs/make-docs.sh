@@ -54,7 +54,17 @@ up() { curl -fsS -m 5 -o /dev/null "$1" 2>/dev/null; }
 # --- 1. local stack --------------------------------------------------------
 echo "== 1/4 local stack =="
 if up "$BASE/api/v1/health"; then
-  echo "   api already up"
+  # Reusing whatever is already serving :8100 is convenient, but a plain
+  # `npm run dev:api` container does NOT set MAIL_DISABLE, and seeding
+  # registers four accounts — which means four verification emails handed to
+  # the real MTA. They go to example.com and die there, but slowly, and the
+  # seed crawls. Say so rather than letting it look like a hang.
+  if ! docker ps -q -f name=slytab-docs-api | grep -q .; then
+    echo "   api already up (not ours) — if seeding is slow, stop it and let"
+    echo "     this script start its own container with MAIL_DISABLE=1"
+  else
+    echo "   api already up"
+  fi
 else
   ENVFILE="$REPO/.env"
   docker rm -f slytab-docs-api >/dev/null 2>&1 || true

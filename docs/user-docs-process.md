@@ -117,6 +117,19 @@ gate cross-references it: a screen listed there with no shot fails the build.
 That is what stops the manual from silently missing a feature — coverage is
 asserted against the design document rather than against someone's memory.
 
+Two §4 screens deliberately have no shot, declared with their reason in the
+`UNSHOT` map in `shots.mjs` (first-run setup, which needs a never-onboarded
+account; receipt capture, which needs the self-hosted vision model running and
+is therefore not reproducible offline). The gate reports those as notes rather
+than failures — a known gap stays visible without permanently redding the
+build, and adding one silently is impossible.
+
+One caveat on the signed-out `welcome` shot: it renders Google's and Apple's
+sign-in buttons, which are third-party scripts fetched at runtime. It is the
+one screen whose appearance depends on someone else's CDN, so it will differ
+on a machine with no outbound network. Worth knowing before wiring capture
+into an air-gapped CI runner.
+
 `sources` is the weak point of the whole design and deserves care. If it is
 too narrow, a change slips past the gate; too broad, and unrelated edits nag
 for a re-read. Keep it to the screen's own component plus the shared shell and
@@ -133,9 +146,23 @@ whatever `@slytab/core` module actually decides what the screen shows.
   ferry ticket in a CAD group, which is the manual's multi-currency exhibit,
   and one non-equal `exact` split.
 - **Household** (CAD, two people) — two utility bills, one of them an odd
-  amount (C$89.99) so the manual can show what happens to the stray cent.
+  amount (C$89.99) so the manual can show what happens to the stray cent, and
+  **both paid by Alice** so that the reader *owes* in this group.
 - A 1:1 **friend split with Priya**, so the manual can show that friends are
   not a different feature from groups.
+
+That last detail was not obvious and the pipeline found it: the first version
+of the world had Dave owed money everywhere, and the Settle shot failed
+because the `Settle` button only renders on a settlement row where *you* are
+the payer. A fixture where the reader is only ever the creditor cannot
+photograph half the product. It also means Home now shows both sides of its
+"you're owed … · you owe …" line instead of a one-sided balance.
+
+The demo accounts are namespaced by `SEED_REV` in `demo-world.mjs`. Changing
+the shape of the world means bumping it, which builds a clean world rather
+than colliding with the previous one — that is how the payer change above was
+applied. Bumping it changes the email visible on the Profile screenshot, so
+bump deliberately.
 
 `scripts/docs/seed-demo.mjs` builds that world **through the real API** — the
 same `POST /groups`, `POST /groups/{id}/invites`, `POST /join/{token}`,
@@ -149,11 +176,11 @@ Two states have no public endpoint, and only those two are set with SQL, via
 in an email from a script, and without it an amber "Confirm your email" banner
 sits across the top of every Home screenshot) and `is_test`.
 
-The seed is idempotent. Accounts are namespaced by `SEED_REV`; groups and
-expenses that already exist are reused. It also caches its session tokens and
-retires stale sessions, because every login opens a session and the Profile
-screen lists them — a seed that logged in on every run would grow that list by
-one row per rebuild and make the Profile screenshot different every time.
+The seed is idempotent: groups and expenses that already exist are reused. It
+also caches its session tokens and retires stale sessions, because every login
+opens a session and the Profile screen lists them — a seed that logged in on
+every run would grow that list by one row per rebuild and make the Profile
+screenshot different every time.
 
 **The seed refuses to run against production.** It rejects any base URL
 containing `electricrv.ca`, and rejects any non-localhost URL unless

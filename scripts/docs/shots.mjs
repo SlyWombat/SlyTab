@@ -63,8 +63,10 @@ export const SHOTS = [
     sources: ['apps/web/src/screens/Group.tsx', ...WEB_SHELL],
     doc: { file: 'docs/user-guide/manual.md', anchor: 'settling-up' },
     expect: ['Record cash'],
+    // Household is the group where the reader owes, so it is the only one
+    // whose settlement plan offers them a Settle button (see demo-world.mjs).
     steps: async ({ openGroup, page, settle }) => {
-      await openGroup('Cottage Trip');
+      await openGroup('Household');
       await page.getByRole('tab', { name: 'Balances' }).click();
       await settle();
       await page.getByRole('button', { name: 'Settle' }).first().click();
