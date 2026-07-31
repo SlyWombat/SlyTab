@@ -34,7 +34,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { DEVICES, SHOTS } from './shots.mjs';
 import { TODAY } from './demo-world.mjs';
 
@@ -222,9 +222,21 @@ async function main() {
   }
 
   await browser.close();
-  await writeFile(join(OUT, 'shots.web.json'), JSON.stringify({
+
+  // With --only, merge into the existing metadata instead of replacing it —
+  // re-shooting one screen while iterating must not silently drop the other
+  // twelve and make the gate think they were never captured.
+  const metaPath = join(OUT, 'shots.web.json');
+  let merged = results;
+  if (only.length && existsSync(metaPath)) {
+    const prev = JSON.parse(readFileSync(metaPath, 'utf8')).shots ?? [];
+    const byId = new Map(prev.map((s) => [s.id, s]));
+    for (const r of results) byId.set(r.id, r);
+    merged = SHOTS.map((s) => byId.get(s.id)).filter(Boolean);
+  }
+  await writeFile(metaPath, JSON.stringify({
     generatedFor: { seedRev: seed.seedRev, today: TODAY, theme: THEME },
-    shots: results,
+    shots: merged,
   }, null, 2) + '\n');
 
   const failed = results.filter((r) => r.error);

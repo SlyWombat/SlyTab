@@ -27,6 +27,10 @@ export const DEVICES = {
   // Phone-width browser: bottom bar instead of the rail. Same code, and the
   // manual has to show what a phone user actually sees.
   narrow: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+  // For modal sheets. A sheet is `position: fixed`, so it does not extend the
+  // document and `fullPage` cannot reveal the part below the fold — the only
+  // way to photograph a tall sheet whole is a taller window.
+  desktopTall: { width: 1280, height: 1400, deviceScaleFactor: 2 },
 };
 
 /**
@@ -59,6 +63,13 @@ export const SHOTS = [
     id: 'settle',
     screen: '2.7 Settle up',
     title: 'Settling up with someone',
+    // FINDING (2026-07-31, worth a bug report): the settle sheet is cut off at
+    // the bottom of the window on web — its last control sits below the fold
+    // at 900px AND at 1400px viewport height, so growing the window does not
+    // reveal it. `fullPage` cannot help either, because the sheet is
+    // `position: fixed` and does not extend the document. Shot at the standard
+    // desktop device until the sheet's own layout is fixed; the manual should
+    // not pretend the screen looks whole when it does not.
     device: 'desktop',
     sources: ['apps/web/src/screens/Group.tsx', ...WEB_SHELL],
     doc: { file: 'docs/user-guide/manual.md', anchor: 'settling-up' },

@@ -120,6 +120,28 @@ Generated, gitignored, rebuilt on demand — they are not source:
 Listing copy (short and full description, release notes) lives in
 `docs/private/android-play-setup.md`.
 
+## App-association files (invite links)
+
+`bash scripts/ops/publish-applinks.sh` — run after changing them, after an
+Android signing-key change, and after any rebuild of the hosting account.
+
+**Not part of `npm run deploy`, and it cannot be.** Apple and Google fetch
+these from the **domain root**:
+
+- `https://electricrv.ca/.well-known/apple-app-site-association`
+- `https://electricrv.ca/.well-known/assetlinks.json`
+
+The web deploy writes to `public_html/slytab`, so the copy in
+`apps/web/public/.well-known/` lands at `/slytab/.well-known/` where nothing
+reads it. The script uploads to the root and then checks what the server
+actually returns, because three things break universal links silently:
+
+| Failure | Why it bites |
+|---|---|
+| A redirect | Apple follows none |
+| Wrong content type | The AASA has no extension, so the server serves it as nothing at all — an `.htaccess ForceType` is uploaded alongside it |
+| Stale Android fingerprint | Read from the **published APK's v2 signing block**, not the keystore, so it matches what users install and needs no password |
+
 ## Monitoring
 
 Uptime Kuma on kdocker2 (`http://192.168.10.11:3001`, container

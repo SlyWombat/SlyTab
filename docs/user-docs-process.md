@@ -191,9 +191,9 @@ bills are not ours to publish.
 
 ### 3.3 How determinism is achieved
 
-Verified: **two consecutive full runs produce byte-identical PNGs** for all
-eleven screens, and identical `uiHash` values. That is the bar, and it is met
-by nailing down every source of variation:
+Verified on 2026-07-31: **two consecutive full runs produced byte-identical
+PNGs** for every screen then in the list, with identical `uiHash` values. That
+is the bar, and it is met by nailing down every source of variation:
 
 | Source of drift | How it is pinned |
 |---|---|
@@ -290,6 +290,11 @@ Docker, the `slytab-php:dev` image, and the dev MySQL on `kdocker2`. If the
 dev database is behind, run `npm run db:migrate` first — the pipeline will
 otherwise fail at the seed with a column error, which is the correct place to
 fail.
+
+`capture-web.mjs --only <id>` re-shoots one screen and **merges** into the
+existing `shots.web.json` rather than replacing it, so iterating on a single
+screen cannot silently drop the other twelve and make the gate think they were
+never captured.
 
 Practical note: a full rebuild takes several minutes on this machine. The repo
 lives on the WSL `/mnt/d` mount and each shot opens a fresh browser context
@@ -609,14 +614,38 @@ Explicit, so nobody expands this by accident:
 
 ---
 
+## 10a. Things the pipeline found on its first run
+
+Worth recording, because "building the docs found bugs" is the argument for
+running it every release rather than once:
+
+- **The Balances tab shipped blank** in the first capture and the run reported
+  success. Cause was `networkidle`, not the app — but it is exactly the class
+  of thing a hand-taken screenshot would have hidden, because a human would
+  have waited a beat before pressing the shutter.
+- **The demo world could not photograph settling up**, because the reader was
+  the creditor in every group and the `Settle` button only renders for the
+  debtor. Fixed in the fixture (§3.2).
+- **The settle sheet is cut off at the bottom of the browser window** — its
+  last control sits below the fold at both 900px and 1400px viewport height,
+  and growing the window does not reveal it. Not a pipeline problem: this is
+  the app. It deserves a bug report (`ui_requirements.md` §2.7 describes an
+  `I sent it` confirmation that a web user at these sizes cannot reach). The
+  shot is left honest rather than staged around.
+- **This machine has no emoji font**, so every group emoji rendered as ▯ until
+  capture moved into the pinned container (§3.3).
+- **`docs/requirements.md` FR-4.1 is stale** — it still says receipts are
+  parsed by the Claude API, which production has not done since the local
+  model landed (§8).
+
 ## 11. Current status
 
 | Piece | State |
 |---|---|
 | Demo world + API seeding | **Working**, idempotent, refuses production |
-| Web capture, 11 screens | **Working**; two consecutive runs byte-identical |
+| Web capture, 13 screens | **Working**; two consecutive runs byte-identical |
 | Pinned capture container | **Working** (`playwright:v1.61.1-noble`) |
-| `uiHash` / `srcHash` / `proseHash` gate | **Written**; blocked on prose existing (it fails today with "no section anchored …", which is correct — the manual is not written) |
+| `uiHash` / `srcHash` / `proseHash` gate | **Working and exercised end-to-end**: baseline recorded → a tampered fingerprint produced `✗ group-balances: the screen changed and its documentation did not` and exit 1 → `--accept group-balances` cleared it. Against the repo as it stands it reports "no section anchored …" for every screen, which is correct: the manual is not written yet |
 | Android capture | **Written, not yet run end-to-end**; non-deterministic until `EXPO_PUBLIC_API_BASE` exists (§3.4) |
 | `build-site.mjs` | **Deliberately deferred** to the first draft (§7) |
 | `manual.md` / `faq.md` / `why-slytab.md` | Not written — out of scope for #104 |
