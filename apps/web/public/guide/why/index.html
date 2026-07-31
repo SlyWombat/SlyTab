@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>SlyTab — why this one</title>
+<meta name="description" content="Honest, checkable differences: locked exchange rates, self-hosted receipt reading, no tracking, real account deletion.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="../../welcome/"><span class="mark" aria-hidden>S</span>
+      <span class="wordmark">SlyTab</span></a>
+    <span class="sp"></span>
+    <a class="btn" href="../../">Open the app</a>
+  </div>
+  <div class="cols">
+    <nav class="toc" aria-label="Contents">
+      <p class="tochead">Contents</p>
+      <a href="#the-rate-thing-in-more-detail">The rate thing, in more detail</a>
+      <a href="#what-no-third-party-ai-actually-means">What "no third-party AI" actually means</a>
+      <a href="#what-we-do-not-do">What we do not do</a>
+    </nav>
+    <main class="doc">
+<h1 id="why-slytab">Why SlyTab</h1>
+<p>Honest differences, each one checkable in the code. Where the alternatives are better, this says so — a comparison that only flatters is one nobody believes twice.</p>
+<p>&lt;!--COMPARISON--&gt;</p>
+<div class="tablewrap"><table><thead><tr>
+<th></th>
+<th>SlyTab</th>
+<th>Typically elsewhere</th>
+</tr></thead><tbody>
+<tr><td><strong>Exchange rates</strong></td><td>Fixed to the day of the expense and stored on it, so a balance never drifts on its own — nothing re-values your history in the background. Editing an expense re-reads the rate for that same date, and a rate you overrode by hand needs entering again.</td><td>Conversion is a bulk action over past expenses. Splitwise warns that it affects settled ones and can move other members' balances, and that new expenses need it re-running.</td></tr>
+<tr><td><strong>Receipt scanning</strong></td><td>Read by a model on our own server. No third-party vision service is configured, so receipts do not leave it. Location data is stripped from JPEG photos on arrival.</td><td>Usually a third-party vision API, with the photo leaving the vendor's control.</td></tr>
+<tr><td><strong>Tracking</strong></td><td>None. No analytics SDK, no advertising identifier, no crash reporter. The app talks to our server, and to Apple's or Google's push service if you turn notifications on.</td><td>Analytics and crash SDKs are close to universal.</td></tr>
+<tr><td><strong>Deleting your account</strong></td><td>In the app, in two taps. Your share of shared history is anonymised so nobody else's balance moves, and Apple is told to revoke the sign-in.</td><td>Often a web form or an email request.</td></tr>
+<tr><td><strong>Money handling</strong></td><td>Integer minor units with per-currency scale everywhere, so zero-decimal currencies like CLP and JPY are never a rounding accident.</td><td>Varies; floating-point money bugs are a common complaint.</td></tr>
+<tr><td><strong>Price</strong></td><td>Free. No premium tier holding a feature hostage.</td><td>Currency conversion, receipt scanning and charts are common paid upgrades.</td></tr>
+<tr><td><strong>Where they are ahead</strong></td><td>Smaller and younger. No per-currency balance view, no recurring expenses, no web-wide integrations.</td><td>Mature, large user base, and most people you invite will already have an account.</td></tr>
+</tbody></table></div>
+<p>&lt;!--/COMPARISON--&gt;</p>
+<h2 id="the-rate-thing-in-more-detail">The rate thing, in more detail</h2>
+<p>This is the difference that matters most and is easiest to miss.</p>
+<p>When you enter an expense in a foreign currency, SlyTab looks up the reference rate <strong>for the date of that expense</strong> and stores it on the expense. From then on, that expense's contribution to everyone's balance is fixed.</p>
+<p>The alternative — converting on the fly, or converting the group's history in one action — means a balance you agreed to last month can be a different number today, through no action of yours. Splitwise's own documentation warns that converting "affects all expenses, including settled ones" and "may impact other members' balances".</p>
+<p>Ours cannot do that, because there is nothing to re-run.</p>
+<p>The honest caveat: <strong>editing an expense re-reads the rate for its date</strong>, so a rate you overrode by hand must be entered again if you edit that expense later. Same date, so the automatic figure is unchanged — but a manual override is not remembered through an edit.</p>
+<h2 id="what-no-third-party-ai-actually-means">What "no third-party AI" actually means</h2>
+<p>Receipts are read by a self-hosted model. The code does contain a path to a third-party service, and it is selected only when no local model is configured — production configures one, and ships with the third-party API key empty.</p>
+<p>So: no receipt has been sent to a third party, and none can be while the service is configured as it is. That is a stronger claim than most apps can make and a weaker one than "impossible", and the difference is worth stating rather than glossing.</p>
+<h2 id="what-we-do-not-do">What we do not do</h2>
+<ul>
+<li><strong>Move money.</strong> SlyTab records that a payment happened. You pay each other</li>
+</ul>
+<p>  however you already do.</p>
+<ul>
+<li><strong>Charge.</strong> There is no paid tier, so no feature is withheld.</li>
+<li><strong>Track you.</strong> No analytics, so no dashboard of your behaviour exists to be</li>
+</ul>
+<p>  breached or sold.</p>
+<ul>
+<li><strong>Guess.</strong> Where a number is approximate — a total converted from several</li>
+</ul>
+<p>  currencies — it is marked approximate rather than presented as exact.</p>
+    </main>
+  </div>
+  <footer>
+    <a href="../../welcome/">About SlyTab</a>
+    <a href="../../marketing/support/">Support</a>
+    <a href="../../marketing/privacy/">Privacy</a>
+    <a href="../../">Open the app</a>
+    <p>Screenshots on this page are generated from the running app, so they
+       cannot fall out of date with it.</p>
+  </footer>
+</div>
+</body>
+</html>

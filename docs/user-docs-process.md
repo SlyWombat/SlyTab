@@ -669,6 +669,12 @@ Deliberately a small hand-rolled markdown subset rather than a dependency:
 the input is one file we control, and adding a toolchain to the web build for
 headings, lists, one table and inline emphasis would cost more than it saves.
 
+Artefact 1 (the comparison) is `docs/user-guide/why-slytab.md`, rendered to
+`/slytab/guide/why/` **and** injected as a table into the marketing overview
+between `<!--COMPARISON-->` markers. One source, two renderings — the table
+used to be hand-written HTML on that page, which is precisely the arrangement
+that lets a claim on the front door drift from the claim in the docs.
+
 **Still outstanding**
 
 - Android capture has never run end-to-end; the script follows the proven

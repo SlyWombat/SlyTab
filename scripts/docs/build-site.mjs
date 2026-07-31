@@ -197,6 +197,33 @@ writeFileSync(join(OUT, 'faq/index.html'), page({
 }).replace(/href="\.\.\//g, 'href="../../')
    .replace('href="./guide.css"', 'href="../guide.css"'));
 
+// Why SlyTab — the comparison. One source, two renderings: its own page, and
+// the table injected into the marketing overview. The table used to be
+// hand-written HTML on that page, which is exactly the arrangement that lets
+// a claim on the front door drift from the claim in the docs.
+const whyMd = readFileSync(join(GUIDE, 'why-slytab.md'), 'utf8');
+const why = render(whyMd, new Map());
+mkdirSync(join(OUT, 'why'), { recursive: true });
+writeFileSync(join(OUT, 'why/index.html'), page({
+  title: 'SlyTab — why this one',
+  description: 'Honest, checkable differences: locked exchange rates, self-hosted receipt reading, no tracking, real account deletion.',
+  body: why.html,
+  toc: why.toc,
+}).replace(/href="\.\.\//g, 'href="../../')
+   .replace('href="./guide.css"', 'href="../guide.css"'));
+
+// Inject just the table into the overview page, between its markers.
+const between = /<!--COMPARISON-->[\s\S]*?<!--\/COMPARISON-->/;
+const tableHtml = (/<div class="tablewrap">[\s\S]*?<\/table><\/div>/.exec(why.html) ?? [''])[0];
+if (!tableHtml) { console.error('  could not find the comparison table in why-slytab.md'); process.exit(1); }
+const welcomePath = join(REPO, 'apps/web/public/welcome/index.html');
+let welcome = readFileSync(welcomePath, 'utf8');
+if (!between.test(welcome)) {
+  console.error('  welcome/index.html has no <!--COMPARISON--> markers'); process.exit(1);
+}
+welcome = welcome.replace(between, `<!--COMPARISON-->\n${tableHtml}\n<!--/COMPARISON-->`);
+writeFileSync(welcomePath, welcome);
+
 // Images, copied rather than referenced across trees so the published page is
 // self-contained and `npm run deploy` needs no special case.
 let copied = 0;
@@ -216,4 +243,5 @@ if (missing.length) {
 
 console.log(`  manual: ${toc.length} sections, ${shots.length} shots placed, ${copied} images copied`);
 console.log(`  faq:    ${faq.toc.length} sections`);
+console.log(`  why:    ${why.toc.length} sections, comparison table injected into /welcome/`);
 console.log(`  -> ${OUT}/index.html`);
