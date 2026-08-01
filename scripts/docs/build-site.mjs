@@ -102,15 +102,30 @@ function render(md, shotsByAnchor) {
     if (li) {
       const want = /^\d/.test(li[2]) ? 'ol' : 'ul';
       if (inList !== want) { closeList(); out.push(`<${want}>`); inList = want; }
-      out.push(`<li>${inline(li[3])}</li>`);
+      // A list item may be soft-wrapped over several lines — the manual wraps
+      // at 79 columns, so "- **I'm in** — every expense…\n  your money." is
+      // ONE item. This used to emit the <li> and move on, leaving the
+      // continuation to fall through to the paragraph branch below and come
+      // out as its own <p>, leading spaces and all. Ten of them shipped that
+      // way (reported 2026-08-01).
+      const text = [li[3]];
+      while (i + 1 < lines.length
+             && lines[i + 1].trim() !== ''
+             && /^\s{2,}\S/.test(lines[i + 1])
+             && !/^\s*([-*]|\d+\.)\s/.test(lines[i + 1])) {
+        text.push(lines[++i].trim());
+      }
+      out.push(`<li>${inline(text.join(' '))}</li>`);
       i++;
       continue;
     }
 
     closeList();
-    const para = [line];
+    // Trimmed before joining: a wrapped line carries its indentation, and
+    // joining raw produced "word  word" in the output.
+    const para = [line.trim()];
     while (i + 1 < lines.length && lines[i + 1].trim() !== ''
-           && !/^[-*#|]|^\d+\./.test(lines[i + 1])) { para.push(lines[++i]); }
+           && !/^[-*#|]|^\d+\./.test(lines[i + 1])) { para.push(lines[++i].trim()); }
     out.push(`<p>${inline(para.join(' '))}</p>`);
     i++;
   }
