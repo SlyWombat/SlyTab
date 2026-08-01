@@ -137,5 +137,34 @@ What the testers were told, verbatim:
 $TESTER_BODY"
 
 say "emailed the owner"
+
+# Issues deliberately left open because their fix was only in code, not on
+# anyone's phone (CLAUDE.md). Closing one sends "it's fixed, update your app",
+# which becomes true at approval and not a moment earlier — so it happens here
+# rather than at commit time, where `Closes #N` would have fired days ago.
+CLOSE=$(python3 -c "
+import re, sys
+t = open(sys.argv[1]).read()
+m = re.search(r'^issues:\s*(.+?)\s*\$', t, re.M)
+print(m.group(1).replace(',', ' ') if m else '')
+" "$NOTES" 2>/dev/null || echo "")
+for N in $CLOSE; do
+  python3 -c "
+import json, sys
+print(json.dumps({'body':
+  f'Shipped. iOS build {sys.argv[1]} (v{sys.argv[2]}) has passed TestFlight beta '
+  f'review and is installable, and the matching Android build is on the download '
+  f'link. Testers have been emailed.\n\nClosed now rather than at commit time: '
+  f'until Apple approved it, the fix existed only in the repository.'}))
+" "$BUILD_NO" "$NOTES_VER" > /tmp/_gh_comment.json
+  bash "$REPO/scripts/ops/gh-api.sh" POST "/repos/SlyWombat/SlyTab/issues/$N/comments" \
+    /tmp/_gh_comment.json >/dev/null 2>&1 || true
+  echo '{"state":"closed","state_reason":"completed"}' > /tmp/_gh_state.json
+  bash "$REPO/scripts/ops/gh-api.sh" PATCH "/repos/SlyWombat/SlyTab/issues/$N" \
+    /tmp/_gh_state.json >/dev/null 2>&1 || true
+  say "closed #$N"
+done
+rm -f /tmp/_gh_comment.json /tmp/_gh_state.json
+
 echo "$BUILD_ID" >> "$MARKERS"
 say "done"

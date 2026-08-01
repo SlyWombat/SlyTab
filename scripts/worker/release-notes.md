@@ -1,6 +1,7 @@
 ---
 build: 13
 version: 1.0.6
+issues: 79, 92, 101, 102
 ---
 The iPhone version of SlyTab has just been updated.
 
