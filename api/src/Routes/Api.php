@@ -154,6 +154,8 @@ final class Api
                     'reports' => fn(): array => $bugs->syncGithub(),
                     'digestsSent' => fn(): int => $emailNotify->flushDigests(),
                     'reminders' => fn(): array => (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep(),
+                    // #111: diagnostics should not become an archive.
+                    'timingsPruned' => fn(): int => (new \SlyTab\Services\ClientTimingService($pdo))->prune(),
                 ] as $name => $job) {
                     try {
                         $result[$name] = $job();
@@ -193,6 +195,13 @@ final class Api
             });
             $g->post('/fetch-rates', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, $fx->refresh()));
+            // #111: p50/p95 per endpoint and per screen, as measured on real
+            // devices. p95 rather than a mean — an average hides the tail, and
+            // the tail is what people mean by "laggy".
+            $g->get('/metrics/timing', function (Request $rq, Response $rs) use ($pdo): Response {
+                $hours = (int) ($rq->getQueryParams()['hours'] ?? 24);
+                return Http::json($rs, (new \SlyTab\Services\ClientTimingService($pdo))->summary($hours));
+            });
             // Testing metrics (issue #10): recent receipt-pipeline rows.
             $g->get('/metrics/receipts', function (Request $rq, Response $rs) use ($pdo): Response {
                 $stmt = $pdo->query(
@@ -336,6 +345,24 @@ final class Api
                 $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify, $bugs,
             ): void {
                 // Report a bug (profile page): comment + optional screenshot.
+                // #111: how long things actually take on the device. Two
+                // testers reported lag on two platforms and we could not see
+                // any of it, so the first diagnosis was made by reading code
+                // and was wrong. Fire-and-forget by design: a phone must never
+                // be shown an error because a measurement failed to send.
+                $p->post('/timings', function (Request $rq, Response $rs) use ($pdo, $limiter): Response {
+                    $userId = Http::user($rq)['id'];
+                    // Generous — a busy session batches every 20s — but bounded.
+                    $limiter->guard('timings', $userId, 300, 3600);
+                    $body = $rq->getParsedBody() ?? [];
+                    $kept = (new \SlyTab\Services\ClientTimingService($pdo))->record(
+                        $userId,
+                        is_array($body['items'] ?? null) ? $body['items'] : [],
+                        (string) ($body['platform'] ?? ''),
+                        (string) ($body['appVersion'] ?? ''),
+                    );
+                    return Http::json($rs, ['kept' => $kept]);
+                });
                 $p->post('/bugs', function (Request $rq, Response $rs) use ($bugs, $limiter): Response {
                     $userId = Http::user($rq)['id'];
                     // 50/day matches the other upload caps — 10 proved too

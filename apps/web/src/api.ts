@@ -19,6 +19,7 @@ export class ApiFailure extends Error {
 }
 
 import type { CategoryOverride } from '@slytab/core';
+import { record, setTimingSender } from './timing';
 
 export interface User {
   id: string;
@@ -185,24 +186,47 @@ export function setToken(token: string | null): void {
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiFailure(
-      (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'request failed' },
-      res.status,
-    );
+  const started = Date.now();
+  let status = 0;
+  try {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    status = res.status;
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new ApiFailure(
+        (json as { error?: ApiError }).error ?? { code: 'NETWORK', message: 'request failed' },
+        res.status,
+      );
+    }
+    return json as T;
+  } finally {
+    // #111: measure everything except the measurements themselves, or a slow
+    // link turns one dropped batch into an endless conversation with itself.
+    // status 0 means it never got a response, which is worth seeing: "slow"
+    // and "failed after a long wait" feel identical to whoever is waiting.
+    if (path !== '/timings') {
+      record({ kind: 'api', name: `${method} ${path}`, ms: Date.now() - started, status });
+    }
   }
-  return json as T;
 }
+
+// Wired here rather than imported the other way round, so the timing module
+// does not drag the whole API surface in behind it.
+setTimingSender((items) =>
+  req('POST', '/timings', {
+    items,
+    platform: 'web',
+    appVersion: import.meta.env.VITE_APP_VERSION ?? '',
+  }),
+);
 
 export interface ReceiptItem {
   name: string;
