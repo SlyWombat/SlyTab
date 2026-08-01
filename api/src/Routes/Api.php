@@ -519,6 +519,15 @@ final class Api
                     $groups->archive($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, ['ok' => true]);
                 });
+                // A group that never held money can be deleted outright.
+                // Archiving is for groups with a history worth keeping;
+                // making that the only exit meant a mistyped or accidental
+                // group stayed in your list for ever. GroupService::delete
+                // owns the rules, including who is allowed to.
+                $p->delete('/groups/{id}', function (Request $rq, Response $rs, array $a) use ($groups): Response {
+                    $groups->delete($a['id'], Http::user($rq)['id']);
+                    return Http::json($rs, ['ok' => true]);
+                });
 
                 // expenses
                 // #101: every expense your money is in, across all groups.

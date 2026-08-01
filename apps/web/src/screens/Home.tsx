@@ -570,10 +570,22 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
         href={TESTFLIGHT_URL} target="_blank" rel="noreferrer">
         <Icon name="apple" size={16} /> Get the iPhone app (TestFlight)
       </a>
+      {/* Straight to the APK, the way the row above goes straight to
+          TestFlight. It used to point at marketing/apps/, so choosing Android
+          here landed you on a page listing all three options and asking you to
+          choose Android a second time — the iPhone row never did that. The one
+          thing that page said which you genuinely need is repeated below;
+          nothing else on it was worth a second click (reported by the owner,
+          2026-08-01). */}
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
-        href={`${import.meta.env.BASE_URL}marketing/apps/`} target="_blank" rel="noreferrer">
-        <Icon name="android" size={16} /> Get the Android app
+        href={`${import.meta.env.BASE_URL}downloads/slytab-latest.apk`}>
+        <Icon name="android" size={16} /> Get the Android app (APK)
       </a>
+      <p className="muted" style={{ padding: '6px 4px 0', textAlign: 'center' }}>
+        Downloads straight away. The first time, your browser will ask you to allow
+        installing unknown apps. <a href={`${import.meta.env.BASE_URL}marketing/apps/`}
+          target="_blank" rel="noreferrer" style={{ color: 'var(--ss-brand)' }}>Other ways to install</a>
+      </p>
       <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
       {!deleting ? (

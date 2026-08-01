@@ -416,6 +416,91 @@ final class GroupService
         $this->activity->record($groupId, $userId, 'archived', 'group', $groupId);
     }
 
+    /**
+     * Delete a group that never held any money.
+     *
+     * Archiving is the right answer for a group with history — the numbers
+     * stay auditable and everyone keeps their record. It is the wrong answer
+     * for a group made by mistake, which is a common first-run accident: you
+     * tap "New group" while looking around, and then it sits in your list for
+     * ever because the only way out is to file it away as though it mattered.
+     *
+     * The bar for deleting is therefore "this group has never had money in
+     * it", not "it has none right now":
+     *
+     *  - ANY expense row disqualifies it, including a soft-deleted one. A
+     *    group where something was added and then removed has a history worth
+     *    keeping, and `deleted_at` is how that history is kept.
+     *  - Any settlement disqualifies it, for the same reason.
+     *
+     * Anything that fails those tests can still be archived, so nothing
+     * becomes unreachable — it just stops being destructible.
+     */
+    public function delete(string $groupId, string $userId): void
+    {
+        $this->assertMember($groupId, $userId);
+
+        $count = function (string $sql) use ($groupId): int {
+            $st = $this->pdo->prepare($sql);
+            $st->execute([$groupId]);
+            return (int) $st->fetchColumn();
+        };
+        // Deliberately counts soft-deleted expenses too — see above.
+        if ($count('SELECT COUNT(*) FROM expenses WHERE group_id = ?') > 0
+            || $count('SELECT COUNT(*) FROM settlements WHERE group_id = ?') > 0) {
+            throw new ApiException(
+                'GROUP_NOT_EMPTY',
+                'this group has expenses, so it can be archived but not deleted',
+                409,
+            );
+        }
+
+        // One member deleting a shared group out from under everyone else is a
+        // different act from tidying up your own mistake. The creator may
+        // always delete an empty group; anyone else only once they are the
+        // last one left in it.
+        $st = $this->pdo->prepare(
+            'SELECT g.created_by, (SELECT COUNT(*) FROM memberships m
+                                     WHERE m.group_id = g.id AND m.left_at IS NULL) AS members
+               FROM `groups` g WHERE g.id = ?'
+        );
+        $st->execute([$groupId]);
+        $row = $st->fetch();
+        if ($row === false) {
+            throw new ApiException('NOT_FOUND', 'group not found', 404);
+        }
+        if ((string) $row['created_by'] !== $userId && (int) $row['members'] > 1) {
+            throw new ApiException(
+                'FORBIDDEN',
+                'only the person who created this group can delete it while others are still in it',
+                403,
+            );
+        }
+
+        // Ordered by foreign key: only group_categories cascades, so
+        // everything else that points at the group goes first. Wrapped so a
+        // failure part-way cannot leave a group with no members.
+        $this->pdo->beginTransaction();
+        try {
+            foreach ([
+                'DELETE FROM activity WHERE group_id = ?',
+                'DELETE FROM notification_emails WHERE group_id = ?',
+                'DELETE FROM receipts WHERE group_id = ?',
+                'DELETE FROM invites WHERE group_id = ?',
+                'DELETE FROM memberships WHERE group_id = ?',
+                'DELETE FROM group_categories WHERE group_id = ?',
+                'DELETE FROM `groups` WHERE id = ?',
+            ] as $sql) {
+                $this->pdo->prepare($sql)->execute([$groupId]);
+            }
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+        // No activity record: the thing it would belong to no longer exists.
+    }
+
     private static function hashInvite(string $token): string
     {
         return hash_hmac('sha256', $token, Env::require('INVITE_HMAC_KEY'));

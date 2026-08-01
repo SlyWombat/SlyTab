@@ -366,6 +366,9 @@ export const api = {
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   /** Report a bug from the profile page: comment + optional screenshot. */
   archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
+  // Only for a group that never held money — the server refuses with
+  // GROUP_NOT_EMPTY otherwise, and archiving stays the answer for the rest.
+  deleteGroup: (groupId: string) => req<{ ok: true }>('DELETE', `/groups/${groupId}`),
   reportBug: async (message: string, image?: File | null): Promise<{ id: string; status: string; tracking?: string }> => {
     const fd = new FormData();
     fd.append('message', message);

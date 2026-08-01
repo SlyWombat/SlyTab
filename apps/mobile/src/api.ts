@@ -380,6 +380,9 @@ export const api = {
   addKnownMember: (groupId: string, userId: string) =>
     req<Group>('POST', `/groups/${groupId}/members`, { userId }),
   archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
+  // Only for a group that never held money — the server refuses with
+  // GROUP_NOT_EMPTY otherwise, and archiving stays the answer for the rest.
+  deleteGroup: (groupId: string) => req<{ ok: true }>('DELETE', `/groups/${groupId}`),
   createGroup: (name: string, emoji: string, homeCurrency: string, currencies: string[] = []) =>
     req<Group>('POST', '/groups', { name, emoji, homeCurrency, currencies }),
   updateGroup: (id: string, data: { name?: string; emoji?: string; currencies?: string[] }) =>

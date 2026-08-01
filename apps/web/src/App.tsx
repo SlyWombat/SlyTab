@@ -5,6 +5,7 @@ import { Home } from './screens/Home';
 import { Groups } from './screens/Groups';
 import { Activity } from './screens/Activity';
 import { Profile } from './screens/Profile';
+import { cacheClear } from './cache';
 import { Shell, type Dest } from './Shell';
 import { GroupScreen } from './screens/Group';
 import { Onboarding } from './screens/Onboarding';
@@ -188,6 +189,9 @@ export function App() {
     api.logout().catch(() => {});
     setToken(null);
     setUser(null);
+    // Cached balances and expenses must not outlive the session that fetched
+    // them — this is frequently a shared or borrowed browser.
+    cacheClear();
   };
   const openGroup = (groupId: string) => setNav({ screen: 'group', groupId });
   const dest = nav.dest;

@@ -19,6 +19,7 @@ import {
   type ParsedReceipt, type User,
 } from './src/api';
 import { Icon } from './src/Icon';
+import { cacheClear, cacheKey, swr } from './src/cache';
 
 /**
  * The active palette (#92).
@@ -448,6 +449,9 @@ function AppShell({ themePref, onThemeChange, scheme }: {
                 setToken(null);
                 setUser(null);
                 SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+                // Cached balances and expenses must not outlive the session
+                // that fetched them — including on a shared or handed-on phone.
+                void cacheClear();
               }} />
           </View>
           <TabBar tab={tab} onTab={setTab} user={user} />
@@ -1690,8 +1694,9 @@ function AddFriendSheet({ onClose, onCreated }: {
   );
 }
 
-function GroupSettingsSheet({ group, onClose, onSaved }: {
+function GroupSettingsSheet({ group, onClose, onSaved, looksEmpty = false, onDeleted }: {
   group: Group; onClose: () => void; onSaved: () => void;
+  looksEmpty?: boolean; onDeleted?: () => void;
 }) {
   const [name, setName] = useState(group.name);
   const [emoji, setEmoji] = useState(group.emoji);
@@ -1724,8 +1729,32 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
             .finally(() => setBusy(false));
         }} />
       <View style={{ height: 8 }} />
-      {/* Issue #35: groups aren't deleted (balances must stay honest) —
-          they archive to read-only and collapse on the home page. */}
+      {/* A group that never held money can simply go. #35 established that
+          groups archive rather than delete, so balances stay honest — that
+          still holds for every group with a history. It should never have
+          applied to one made by accident, where "archive" files away
+          something that never meant anything and leaves it in the list for
+          ever. The server decides: it counts deleted expenses too, so a group
+          that once had an expense stays archivable-only. */}
+      {looksEmpty && (
+        <Btn label="Delete this group…" destructive disabled={busy}
+          onPress={() => Alert.alert(
+            `Delete "${group.name}"?`,
+            'It has no expenses, so there is nothing to keep. This removes it for '
+            + 'everyone in it and cannot be undone.',
+            [
+              { text: 'Keep it', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => {
+                setBusy(true);
+                api.deleteGroup(group.id)
+                  .then(() => (onDeleted ?? onSaved)())
+                  .catch((e) => { setError((e as Error).message); setBusy(false); });
+              } },
+            ],
+          )} />
+      )}
+      {/* Issue #35: a group with a history archives rather than deletes —
+          balances must stay honest — and collapses on the home page. */}
       <Btn label="Archive this group…" disabled={busy}
         onPress={() => Alert.alert(
           `Archive "${group.name}"?`,
@@ -1828,27 +1857,43 @@ function GroupScreen({ groupId, user, onBack }: {
       .catch(() => setHomeRate(null)); // fall back to group-home display
   }, [groupHome, user.defaultCurrency]);
 
+  // Incremented by reload() so the expense list refetches exactly once per
+  // refresh. It used to depend on `group` and `feed` — both of which reload()
+  // sets — so one refresh fetched the list three times: on mount, then again
+  // as each of those resolved. Two were discarded, and because they were
+  // triggered BY earlier responses they cost sequential round trips instead of
+  // running alongside everything else. From Chile that is most of a second of
+  // waiting for data we had already asked for.
+  const [rev, setRev] = useState(0);
+
+  const ck = (name: string) => cacheKey(user.id, `${name}:${groupId}`);
   const reload = useCallback(() => {
     // The primary fetch owns the error: swallowing it left a spinner that
     // never resolved, with nothing on screen to explain or retry (#93/#98).
     // The secondary ones stay best-effort — a missing rate should not blank
     // the screen.
-    api.group(groupId).then((g) => { setGroup(g); setLoadError(null); })
+    swr(ck('group'), (g: Group) => { setGroup(g); setLoadError(null); }, () => api.group(groupId))
       .catch((e) => setLoadError((e as Error).message));
-    api.balances(groupId).then(setBalances).catch(() => {});
-    api.groupTotals(groupId).then(setTotals).catch(() => {});
-    api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
-    api.groupCategories(groupId).then((r) => setCatOverrides(r.overrides ?? {})).catch(() => {});
-  }, [groupId]);
+    swr(ck('balances'), setBalances, () => api.balances(groupId)).catch(() => {});
+    swr(ck('totals'), setTotals, () => api.groupTotals(groupId)).catch(() => {});
+    swr(ck('feed'), (r) => setFeed(r.items), () => api.activity(groupId)).catch(() => {});
+    swr(ck('cats'), (r) => setCatOverrides(r.overrides ?? {}), () => api.groupCategories(groupId))
+      .catch(() => {});
+    setRev((v) => v + 1);
+  }, [groupId, user.id]);
   useEffect(reload, [reload]);
 
+  // Only the unfiltered list is cached: a cached answer for someone else's
+  // search term would paint the wrong rows.
   useEffect(() => {
+    const plain = search === '' && catFilter === '';
     const t = setTimeout(() => {
-      api.expenses(groupId, { q: search, category: catFilter })
-        .then((r) => setExpenses(r.items)).catch(() => {});
+      const fetcher = () => api.expenses(groupId, { q: search, category: catFilter });
+      const apply = (r: { items: Expense[] }) => setExpenses(r.items);
+      (plain ? swr(ck('expenses'), apply, fetcher) : fetcher().then(apply)).catch(() => {});
     }, search !== '' ? 300 : 0);
     return () => clearTimeout(t);
-  }, [groupId, search, catFilter, group, feed]);
+  }, [groupId, search, catFilter, rev, user.id]);
 
   const memberById = useMemo(() => new Map((group?.members ?? []).map((m) => [m.id, m])), [group]);
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? 'Former member';
@@ -2155,7 +2200,12 @@ function GroupScreen({ groupId, user, onBack }: {
       )}
       {settingsOpen && (
         <GroupSettingsSheet group={group} onClose={() => setSettingsOpen(false)}
-          onSaved={() => { setSettingsOpen(false); reload(); }} />
+          // Best guess at "nothing here": an unfiltered empty page. The server
+          // has the real say — it also counts deleted expenses, which this
+          // cannot see — so the offer is hidden on a guess but refused on fact.
+          looksEmpty={expenses !== null && expenses.length === 0 && search === '' && catFilter === ''}
+          onSaved={() => { setSettingsOpen(false); reload(); }}
+          onDeleted={onBack} />
       )}
       {settling && (
         <SettleSheet group={group} to={settling.to} suggested={settling.suggested}

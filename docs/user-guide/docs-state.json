@@ -8,21 +8,21 @@
     },
     "settle": {
       "uiHash": "feaab6fc4b1a0faa",
-      "srcHash": "d6e18e5211968bfb",
+      "srcHash": "c039ee9454e28dfb",
       "proseHash": "f6dc4e55156e02a0",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "home": {
       "uiHash": "df3809cf434e81f4",
-      "srcHash": "3f29cd4d2cc0557b",
+      "srcHash": "7fcb3f23a9ec4a0b",
       "proseHash": "3a068e938b825548",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "home-narrow": {
       "uiHash": "e8a8f0ff64680c64",
-      "srcHash": "3f29cd4d2cc0557b",
+      "srcHash": "7fcb3f23a9ec4a0b",
       "proseHash": "3a068e938b825548",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "groups": {
       "uiHash": "5c97516e30fe33d4",
@@ -32,33 +32,33 @@
     },
     "group-expenses": {
       "uiHash": "1726acf5d9ed8538",
-      "srcHash": "d6e18e5211968bfb",
+      "srcHash": "c039ee9454e28dfb",
       "proseHash": "3afa00b53d1a0bcc",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "group-balances": {
       "uiHash": "e7d000084f6a73e0",
-      "srcHash": "d6e18e5211968bfb",
+      "srcHash": "c039ee9454e28dfb",
       "proseHash": "81879e31ea049979",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "group-totals": {
       "uiHash": "6a284a718939b0b9",
-      "srcHash": "d6e18e5211968bfb",
+      "srcHash": "c039ee9454e28dfb",
       "proseHash": "faa7dddf0a63d8cf",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "add-expense": {
       "uiHash": "62de1b4eb391fa62",
-      "srcHash": "513683dab8e03f0b",
+      "srcHash": "d660654fb4227682",
       "proseHash": "33c641715f17a96b",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "expense-foreign-currency": {
       "uiHash": "e14085d736946a39",
-      "srcHash": "c9dfc379bc0e02de",
+      "srcHash": "bbc440f00d164d89",
       "proseHash": "db9adfd47c943345",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-01"
     },
     "activity": {
       "uiHash": "2dd534dbdab3f081",
@@ -67,10 +67,10 @@
       "acceptedAt": "2026-07-31"
     },
     "profile": {
-      "uiHash": "11109b2c6f5b877e",
+      "uiHash": "b005889bc4ee874e",
       "srcHash": "9b47db40d33f8d95",
-      "proseHash": "695d3adaab0c22b0",
-      "acceptedAt": "2026-07-31"
+      "proseHash": "4bfe08cae2c3cb17",
+      "acceptedAt": "2026-08-01"
     },
     "my-expenses": {
       "uiHash": "5ce3d047d9c93659",

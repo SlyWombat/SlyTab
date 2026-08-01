@@ -7,6 +7,7 @@ import {
   type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
 import { CategoriesScreen } from './Categories';
+import { cacheKey, swr } from '../cache';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet, SkeletonRows } from '../ui';
 
 export type ScanStage =
@@ -124,24 +125,44 @@ export function GroupScreen({ groupId, user, onBack }: {
       .catch(() => setHomeRate(null)); // fall back to group-home display
   }, [groupHome, user.defaultCurrency]);
 
+  // Incremented by reload() so the expense list refetches exactly once per
+  // refresh. It used to depend on `group` and `feed` — both of which reload()
+  // sets — so a single refresh fetched the list three times: once on mount,
+  // then again as each of those resolved. The two extras were discarded, and
+  // because they were triggered BY earlier responses they cost sequential
+  // round trips instead of running alongside the rest.
+  const [rev, setRev] = useState(0);
+
+  const ck = (name: string) => cacheKey(user.id, `${name}:${groupId}`);
   const reload = useCallback(() => {
-    api.group(groupId).then(setGroup).catch((e) => setError(e.message));
-    api.balances(groupId).then(setBalances).catch(() => {});
-    api.groupTotals(groupId).then(setTotals).catch(() => {});
-    api.activity(groupId).then((r) => setFeed(r.items)).catch(() => {});
-    api.groupCategories(groupId).then((r) => setCatOverrides(r.overrides ?? {})).catch(() => {});
-  }, [groupId]);
+    swr(ck('group'), setGroup, () => api.group(groupId)).catch((e) => setError(e.message));
+    swr(ck('balances'), setBalances, () => api.balances(groupId)).catch(() => {});
+    swr(ck('totals'), setTotals, () => api.groupTotals(groupId)).catch(() => {});
+    swr(ck('feed'), (r) => setFeed(r.items), () => api.activity(groupId)).catch(() => {});
+    swr(ck('cats'), (r) => setCatOverrides(r.overrides ?? {}), () => api.groupCategories(groupId))
+      .catch(() => {});
+    setRev((v) => v + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, user.id]);
   useEffect(reload, [reload]);
 
-  // Expenses refetch when search/filter change (server-side, debounced).
+  // Expenses refetch when search/filter change (server-side, debounced), and
+  // once per reload via `rev`. Only the unfiltered list is cached: a cached
+  // answer for someone else's search term would paint the wrong rows.
   useEffect(() => {
+    const plain = search === '' && catFilter === '';
     const t = setTimeout(() => {
-      api.expenses(groupId, { q: search, category: catFilter })
-        .then((r) => { setExpenses(r.items); setNextCursor(r.nextCursor); })
+      const fetcher = () => api.expenses(groupId, { q: search, category: catFilter });
+      const apply = (r: Awaited<ReturnType<typeof fetcher>>) => {
+        setExpenses(r.items);
+        setNextCursor(r.nextCursor);
+      };
+      (plain ? swr(ck('expenses'), apply, fetcher) : fetcher().then(apply))
         .catch(() => setExpenses([]));
     }, search !== '' ? 300 : 0);
     return () => clearTimeout(t);
-  }, [groupId, search, catFilter, group, feed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, search, catFilter, rev, user.id]);
 
   const memberById = useMemo(
     () => new Map((group?.members ?? []).map((m) => [m.id, m])),
@@ -438,7 +459,12 @@ export function GroupScreen({ groupId, user, onBack }: {
       {inviting && <InviteSheet group={group} user={user} onClose={() => setInviting(false)} onChanged={reload} />}
       {settingsOpen && (
         <GroupSettingsSheet group={group} onClose={() => setSettingsOpen(false)}
-          onSaved={() => { setSettingsOpen(false); reload(); }} />
+          // Best guess at "nothing here": an unfiltered empty page. The server
+          // has the real say — it also counts deleted expenses, which this
+          // cannot see — so the offer is hidden on a guess but refused on fact.
+          looksEmpty={expenses !== null && expenses.length === 0 && search === '' && catFilter === ''}
+          onSaved={() => { setSettingsOpen(false); reload(); }}
+          onDeleted={onBack} />
       )}
       {importing && (
         <ImportSheet group={group} user={user} onClose={() => setImporting(false)}
@@ -1272,8 +1298,9 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
 
 const GROUP_EMOJI_IMPORT = GROUP_EMOJI;
 
-function GroupSettingsSheet({ group, onClose, onSaved }: {
+function GroupSettingsSheet({ group, onClose, onSaved, looksEmpty = false, onDeleted }: {
   group: Group; onClose: () => void; onSaved: () => void;
+  looksEmpty?: boolean; onDeleted?: () => void;
 }) {
   const [name, setName] = useState(group.name);
   const [emoji, setEmoji] = useState(group.emoji);
@@ -1320,8 +1347,31 @@ function GroupSettingsSheet({ group, onClose, onSaved }: {
         </div>
         <button className="btn primary block" disabled={busy || name.trim() === ''}>Save</button>
       </form>
-      {/* Issue #35: groups aren't deleted (balances must stay honest) —
-          they archive to read-only and collapse on the home page. */}
+      {/* A group that never held money can simply go. #35 established that
+          groups archive rather than delete, so balances stay honest — that
+          still holds for every group with a history. It should never have
+          applied to one made by accident, where "archive" files away
+          something that never meant anything and leaves it in the list for
+          ever. The server decides: it counts deleted expenses too, so a group
+          that once had an expense stays archivable-only. */}
+      {looksEmpty && (
+        <button type="button" className="btn block" style={{ marginTop: 10, color: 'var(--ss-owe)' }}
+          disabled={busy}
+          onClick={() => {
+            if (!window.confirm(
+              `Delete "${group.name}"? It has no expenses, so there is nothing to keep. `
+              + 'This removes it for everyone in it and cannot be undone.',
+            )) return;
+            setBusy(true);
+            api.deleteGroup(group.id)
+              .then(() => (onDeleted ?? onSaved)())
+              .catch((err) => { setError((err as Error).message); setBusy(false); });
+          }}>
+          Delete this group…
+        </button>
+      )}
+      {/* Issue #35: a group with a history archives rather than deletes —
+          balances must stay honest — and collapses on the home page. */}
       <button type="button" className="btn block" style={{ marginTop: 10, color: 'var(--ss-owe)' }}
         disabled={busy}
         onClick={() => {

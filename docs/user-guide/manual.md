@@ -215,6 +215,10 @@ number.
 - **Devices** — every signed-in session, with the ability to revoke any of
   them.
 - **How SlyTab works** — this manual, from inside the app.
+- **Get the phone apps** — the iPhone app through TestFlight, or the Android
+  app as a direct download. Android will ask you to allow installing it the
+  first time; that is your phone being careful about an app that did not come
+  from the Play Store, not a warning about SlyTab.
 - **Report a bug** — goes straight to us with your app version attached, and
   you get an email when it is fixed.
 - **Delete my account** — really deletes it. Your share of shared history is
