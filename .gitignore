@@ -63,3 +63,9 @@ SlyTab-play-feature-*.png
 # Generated store screenshots
 store-screenshots/
 SlyTab-play-icon-*.png
+
+# Local release bookkeeping — machine state, not source
+scripts/worker/.release-state.json
+scripts/worker/.testflight-notified*
+scripts/worker/release.log
+scripts/worker/.slytab.apk
