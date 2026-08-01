@@ -3073,6 +3073,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   return (
     <SheetModal title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
       {error && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{error}</Text>}
+      {/* Directly above the amount, because it is about the amount. On web
+          this sat at the foot of the sheet and was reported as no warning at
+          all while it was rendering fine — a phone screen is shorter, so the
+          same placement would have been worse here. */}
+      {scanNote !== null && (
+        <View accessibilityLiveRegion="polite"
+          style={[s.notice, { borderColor: scanNote.tone === 'bad' ? c.owe : c.brand }]}>
+          <Text style={s.noticeText}>{scanNote.text}</Text>
+          <Btn small label="Got it" onPress={() => setScanNote(null)} />
+        </View>
+      )}
       <Field label={`Amount (${currency})`} value={amountStr}
         onChangeText={setAmountStr}
         keyboardType="decimal-pad" placeholder="0.00" />
@@ -3177,12 +3188,6 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       {/* Splitting item by item is a choice now, not a toll gate: a scanned
           receipt lands filled in and splittable equally, and this is here
           for the times somebody only ate the starter. */}
-      {scanNote !== null && (
-        <View style={[s.notice, { borderColor: scanNote.tone === 'bad' ? c.owe : c.brand }]}>
-          <Text style={s.noticeText}>{scanNote.text}</Text>
-          <Btn small label="Got it" onPress={() => setScanNote(null)} />
-        </View>
-      )}
       {lastParsed !== null && lastParsed.items.length > 0 && (
         <Btn label={`🍽 Split by item (${lastParsed.items.length})`}
           disabled={scanBusy} onPress={() => setAssigning(lastParsed)} />

@@ -820,6 +820,19 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     <Sheet title={editing ? 'Edit expense' : 'New expense'} onClose={onClose}>
       <form onSubmit={submit}>
         {error && <div className="error" role="alert">{error}</div>}
+        {/* Directly under the amount, because it is about the amount. This
+            used to live at the foot of the sheet, past the split tabs and the
+            member list, where a narrow window put it below the fold — and it
+            was reported as no warning at all while it was rendering fine. */}
+        {scanNote !== null && (
+          <div className="error" role="status" style={{
+            borderColor: scanNote.tone === 'bad' ? 'var(--ss-owe)' : 'var(--ss-brand)',
+          }}>
+            {scanNote.text}
+            <button type="button" className="btn sm" style={{ marginTop: 8 }}
+              onClick={() => setScanNote(null)}>Got it</button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <label className="field" style={{ flex: 2 }}><span>Amount</span>
             <input className="amt" inputMode="decimal" value={amountStr} placeholder="0.00"
@@ -1046,16 +1059,6 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         {/* Splitting item by item is a choice now, not a toll gate: a
             scanned receipt lands filled in and splittable equally, and this
             is here for the times somebody only ate the starter. */}
-        {scanNote !== null && (
-          <div className="error" style={{
-            marginTop: 8,
-            borderColor: scanNote.tone === 'bad' ? 'var(--ss-owe)' : 'var(--ss-brand)',
-          }}>
-            {scanNote.text}
-            <button type="button" className="btn sm" style={{ marginTop: 8 }}
-              onClick={() => setScanNote(null)}>Got it</button>
-          </div>
-        )}
         {lastParsed !== null && lastParsed.items.length > 0 && (
           <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={scanBusy}
             onClick={() => setAssigning(lastParsed)}>
