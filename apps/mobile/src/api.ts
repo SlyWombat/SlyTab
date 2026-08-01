@@ -8,6 +8,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 import type { CategoryOverride } from '@slytab/core';
+import { record, setTimingSender } from './timing';
 
 /**
  * Production by default. Overridable via `extra.apiBase` in the Expo config so
@@ -176,6 +177,29 @@ export interface HomeBalances {
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const started = Date.now();
+  let status = 0;
+  try {
+    return await reqInner<T>(method, path, body, (s) => { status = s; });
+  } finally {
+    // #111: measure everything except the measurements themselves, or a slow
+    // link turns one dropped batch into an endless conversation with itself.
+    // status 0 means no response arrived at all, which is worth seeing:
+    // "slow" and "failed after a long wait" feel identical while you wait.
+    if (path.split('?')[0] !== '/timings') {
+      record({
+        kind: 'api',
+        name: `${method} ${path.split('?')[0] ?? path}`,
+        ms: Date.now() - started,
+        status,
+      });
+    }
+  }
+}
+
+async function reqInner<T>(
+  method: string, path: string, body: unknown, onStatus: (s: number) => void,
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -201,6 +225,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     );
   }
 
+  onStatus(res.status);
   const json = await res.json().catch(() => null);
   if (!res.ok) {
     const err = (json as { error?: ApiError } | null)?.error
@@ -220,6 +245,19 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   }
   return (json ?? {}) as T;
 }
+
+// Wired here rather than imported the other way round, so the timing module
+// does not drag the whole API surface in behind it. Version and platform ride
+// along so a regression can be pinned to the build that introduced it —
+// which is the whole reason for measuring on the phone rather than the web.
+setTimingSender((items) => {
+  const { version, build } = appVersion();
+  return req('POST', '/timings', {
+    items,
+    platform: Platform.OS,
+    appVersion: `${version}(${build})`,
+  });
+});
 
 export interface ReceiptItem { name: string; quantity: number; totalMinor: number }
 export interface ParsedReceipt {
