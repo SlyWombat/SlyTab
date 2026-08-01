@@ -2816,6 +2816,8 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // drop the user into item assignment, which meant every receipt cost an
   // extra decision before it could be saved (owner, 2026-07-27).
   const [lastParsed, setLastParsed] = useState<ParsedReceipt | null>(null);
+  /** What the scan could not do, shown where the scan happened (owner, 2026-08-01). */
+  const [scanNote, setScanNote] = useState<{ tone: 'warn' | 'bad'; text: string } | null>(null);
   const scanBusy = scanProg !== null;
   const [exact, setExact] = useState<Record<string, string>>(() => {
     if (!editing) return {};
@@ -2972,7 +2974,36 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       ? parsed.currency : currency;
     const pinned = normalizeParsedReceipt(parsed, cur);
     setLastParsed(pinned);
-    if (pinned.totalMinor !== null) setAmountStr(minorToAmountString(pinned.totalMinor, cur));
+
+    // A parse that finds the lines but not the printed total used to set no
+    // amount at all and say nothing, so the form sat at zero looking like the
+    // scan had simply failed. receiptBill already reconstructs the bill from
+    // the items — use it, and say plainly that is what happened, because a
+    // number we added up ourselves deserves more suspicion than one we read.
+    const bill = receiptBill(pinned);
+    const total = pinned.totalMinor ?? (pinned.items.length > 0 ? bill.billTotal : null);
+    if (total !== null) setAmountStr(minorToAmountString(total, cur));
+
+    const money = (m: number) => `${minorToAmountString(m, cur)}${cur ? ` ${cur}` : ''}`;
+    setScanNote(
+      pinned.items.length === 0 && total === null
+        ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
+        : pinned.totalMinor === null
+          ? {
+            tone: 'warn',
+            text: `We could not find a printed total, so we added up the ${pinned.items.length} `
+              + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
+              + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
+          }
+          : pinned.confidence === 'low'
+            ? {
+              tone: 'warn',
+              text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
+                + `${money(bill.itemsSum)}. Worth a look before saving.`,
+            }
+            : null,
+    );
+
     if (pinned.merchant) setDescription(pinned.merchant);
     if (pinned.currency && CURRENCIES.includes(pinned.currency as never)) setCurrency(pinned.currency);
     if (pinned.date && /^\d{4}-\d{2}-\d{2}$/.test(pinned.date)) setDate(pinned.date);
@@ -3146,6 +3177,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       {/* Splitting item by item is a choice now, not a toll gate: a scanned
           receipt lands filled in and splittable equally, and this is here
           for the times somebody only ate the starter. */}
+      {scanNote !== null && (
+        <View style={[s.notice, { borderColor: scanNote.tone === 'bad' ? c.owe : c.brand }]}>
+          <Text style={s.noticeText}>{scanNote.text}</Text>
+          <Btn small label="Got it" onPress={() => setScanNote(null)} />
+        </View>
+      )}
       {lastParsed !== null && lastParsed.items.length > 0 && (
         <Btn label={`🍽 Split by item (${lastParsed.items.length})`}
           disabled={scanBusy} onPress={() => setAssigning(lastParsed)} />
@@ -3631,6 +3668,14 @@ function makeStyles(c: Palette) {
     color: c.text, backgroundColor: 'rgba(239,93,107,0.14)', borderColor: c.danger,
     borderWidth: 1, borderRadius: 10, padding: 10, fontSize: 13, marginBottom: 10,
   },
+  // What a scan could not do. Deliberately not the error style: a receipt we
+  // partly read is not a failure, and colouring it like one teaches people to
+  // dismiss it without reading.
+  notice: {
+    backgroundColor: c.surface2, borderWidth: 1, borderRadius: 10,
+    padding: 10, marginTop: 8, gap: 8,
+  },
+  noticeText: { color: c.text, fontSize: 13, lineHeight: 18 },
   tabs: { flexDirection: 'row', backgroundColor: c.surface2, borderRadius: 10, padding: 3, marginBottom: 12 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8,
     minHeight: 44, justifyContent: 'center' },

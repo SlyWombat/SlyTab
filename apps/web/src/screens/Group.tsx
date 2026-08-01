@@ -569,6 +569,8 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   // so every receipt cost an extra decision before it could be saved
   // (owner, 2026-07-27).
   const [lastParsed, setLastParsed] = useState<ParsedReceipt | null>(null);
+  /** What the scan could not do, shown where the scan happened (owner, 2026-08-01). */
+  const [scanNote, setScanNote] = useState<{ tone: 'warn' | 'bad'; text: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const scanBusy = scan !== null;
 
@@ -670,7 +672,36 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     const cur = parsed.currency && /^[A-Z]{3}$/.test(parsed.currency) ? parsed.currency : currency;
     const pinned = normalizeParsedReceipt(parsed, cur);
     setLastParsed(pinned);
-    if (pinned.totalMinor !== null) setAmountStr(minorToAmountString(pinned.totalMinor, cur));
+
+    // A parse that finds the lines but not the printed total used to set no
+    // amount at all and say nothing, so the form sat at zero looking like the
+    // scan had simply failed. receiptBill already reconstructs the bill from
+    // the items — use it, and say plainly that is what happened, because a
+    // number we added up ourselves deserves more suspicion than one we read.
+    const bill = receiptBill(pinned);
+    const total = pinned.totalMinor ?? (pinned.items.length > 0 ? bill.billTotal : null);
+    if (total !== null) setAmountStr(minorToAmountString(total, cur));
+
+    const money = (m: number) => `${minorToAmountString(m, cur)}${cur ? ` ${cur}` : ''}`;
+    setScanNote(
+      pinned.items.length === 0 && total === null
+        ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
+        : pinned.totalMinor === null
+          ? {
+            tone: 'warn',
+            text: `We could not find a printed total, so we added up the ${pinned.items.length} `
+              + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
+              + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
+          }
+          : pinned.confidence === 'low'
+            ? {
+              tone: 'warn',
+              text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
+                + `${money(bill.itemsSum)}. Worth a look before saving.`,
+            }
+            : null,
+    );
+
     if (pinned.currency && /^[A-Z]{3}$/.test(pinned.currency)) setCurrency(pinned.currency);
     if (pinned.merchant) setDescription(pinned.merchant);
     if (pinned.date && /^\d{4}-\d{2}-\d{2}$/.test(pinned.date)) setDate(pinned.date);
@@ -1015,6 +1046,16 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
         {/* Splitting item by item is a choice now, not a toll gate: a
             scanned receipt lands filled in and splittable equally, and this
             is here for the times somebody only ate the starter. */}
+        {scanNote !== null && (
+          <div className="error" style={{
+            marginTop: 8,
+            borderColor: scanNote.tone === 'bad' ? 'var(--ss-owe)' : 'var(--ss-brand)',
+          }}>
+            {scanNote.text}
+            <button type="button" className="btn sm" style={{ marginTop: 8 }}
+              onClick={() => setScanNote(null)}>Got it</button>
+          </div>
+        )}
         {lastParsed !== null && lastParsed.items.length > 0 && (
           <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={scanBusy}
             onClick={() => setAssigning(lastParsed)}>

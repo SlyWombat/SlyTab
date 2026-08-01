@@ -129,6 +129,13 @@ When equal is not right:
 and the line items come back filled in. From there you can split **by item**,
 which is what you want when three of you shared the starter and one did not.
 
+**When the scan only half works, it says so.** Some things — a card statement,
+a faded till roll — have readable lines but no total we can find. Rather than
+leaving the amount at zero, we add up the lines we did read and tell you that
+is what we have done, with the figure we got. Check it: anything we failed to
+read is missing from that number too. If nothing usable came back at all, it
+says that instead, and you can type the amount yourself or take another photo.
+
 The receipt is read by a model running on our own server. No third-party
 service is configured, so receipts do not leave it. Location data is stripped
 from JPEG photos when they arrive.

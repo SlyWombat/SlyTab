@@ -5,6 +5,38 @@ import { gpsFromJpeg } from '../src/exif-gps.js';
 
 const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
 
+describe('receiptBill with no printed total', () => {
+  // The real payload from a scan on 2026-08-01: a card statement rather than a
+  // restaurant bill, so the parser found three charge lines and no total. The
+  // form showed zero and said nothing, which read as "the scan failed" when in
+  // fact it had read every line. The reconstruction below is what it should
+  // have shown.
+  const statement = {
+    items: [{ totalMinor: 28000 }, { totalMinor: 23100 }, { totalMinor: 60000 }],
+    totalMinor: null, taxMinor: null, tipMinor: null,
+  };
+
+  it('reconstructs the bill from the lines when no total was printed', () => {
+    const bill = receiptBill(statement);
+    expect(bill.itemsSum).toBe(111100);
+    expect(bill.billTotal).toBe(111100);
+    // Nothing is unaccounted for: every minor unit came from a line we read.
+    expect(bill.extraMinor).toBe(0);
+  });
+
+  it('still reconstructs when a line is ignored', () => {
+    const bill = receiptBill(statement, new Set([1]));
+    expect(bill.itemsSum).toBe(88000);
+    expect(bill.billTotal).toBe(88000);
+  });
+
+  it('reports nothing to show when there are no lines either', () => {
+    const bill = receiptBill({ items: [], totalMinor: null, taxMinor: null, tipMinor: null });
+    expect(bill.itemsSum).toBe(0);
+    expect(bill.billTotal).toBe(0);
+  });
+});
+
 describe('receiptBill', () => {
   const uber = { // issue #23: loyalty credit parsed as an item
     items: [{ totalMinor: 19597 }, { totalMinor: 145 }],
