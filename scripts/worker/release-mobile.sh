@@ -35,14 +35,26 @@ except Exception:
 " 2>/dev/null || echo 0)
 say "highest iOS build on App Store Connect: ${REMOTE_BN:-0}"
 
-python3 - "$VJSON" "${REMOTE_BN:-0}" <<'PY'
-import json, sys
-p, remote = sys.argv[1], int(sys.argv[2] or 0)
+# Usage: release-mobile.sh "<report-ids>" [marketing-version]
+# The default is a patch bump. Pass a version to set one explicitly — the owner
+# asked for "1.1" rather than 1.0.8, and hand-editing versions.json between
+# releases is exactly how the counter drifts out of step with App Store Connect.
+# Build numbers still increment on their own; only the marketing version is
+# taken verbatim.
+SETVER="${2:-}"
+python3 - "$VJSON" "${REMOTE_BN:-0}" "$SETVER" <<'PY'
+import json, re, sys
+p, remote, setver = sys.argv[1], int(sys.argv[2] or 0), sys.argv[3].strip()
 d = json.load(open(p))
-bump = lambda v: (lambda a: f"{a[0]}.{a[1]}.{int(a[2])+1}")(v.split('.'))
-d['ios']['version'] = bump(d['ios']['version'])
+if setver:
+    if not re.fullmatch(r'\d+(\.\d+){1,2}', setver):
+        raise SystemExit(f'refusing a version Apple will not accept: {setver!r}')
+    nextver = lambda _v: setver
+else:
+    nextver = lambda v: (lambda a: f"{a[0]}.{a[1]}.{int(a[2])+1}")(v.split('.'))
+d['ios']['version'] = nextver(d['ios']['version'])
 d['ios']['buildNumber'] = str(max(int(d['ios']['buildNumber']), remote) + 1)
-d['android']['version'] = bump(d['android']['version'])
+d['android']['version'] = nextver(d['android']['version'])
 d['android']['versionCode'] = int(d['android']['versionCode']) + 1
 with open(p, 'w') as f:
     json.dump(d, f, indent=2)

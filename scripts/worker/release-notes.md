@@ -1,31 +1,28 @@
 ---
-build: 14
-version: 1.0.7
-issues: 110
+build: 15
+version: 1.1.0
+issues:
 ---
-The iPhone version of SlyTab has just been updated.
+The iPhone version of SlyTab has just been updated to 1.1.
 
 Install or update it here: {{TESTFLIGHT_URL}}
 
 Open that on your iPhone. If you do not have TestFlight yet, the link will
 send you to install it first, then bring you back to SlyTab.
 
-What is in it:
+What is new since the last one:
 
-  - Groups open faster. Opening one was quietly asking for the same list of
-    expenses several times over, and each extra request cost a full round trip
-    to Canada — which is why it felt slow from further away. It now asks once.
-  - A group you have opened before appears straight away, showing what it
-    looked like last time while the current figures load behind it. You should
-    not be watching an empty screen for data we already had.
-  - Scanning a receipt with no printed total on it — a card statement, a faded
-    till roll — used to leave the amount at zero and say nothing, as though the
-    scan had failed. It now adds up the lines it did read, fills that in, and
-    tells you that is what it did. Worth checking against the receipt, since
-    anything it failed to read is missing from that number too.
-  - A group with no expenses in it can now be deleted outright, instead of only
-    being archived. Archiving is right for a group with a history; it was never
-    right for one created by accident.
+  - When a receipt has no total we can find — a card statement, a faded till
+    roll — we add up the lines we did read and fill that in. The explanation
+    now sits directly against the amount, rather than at the bottom of the
+    screen where it was easy to scroll straight past.
+
+Carried over from the update before it, in case you skipped that one:
+
+  - Groups open faster, and one you have opened before appears straight away
+    while the current figures load behind it.
+  - A group with no expenses in it can be deleted outright instead of only
+    archived.
 
 If anything is wrong, please tell us from Profile -> Report a bug.
 
