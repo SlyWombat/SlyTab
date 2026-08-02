@@ -252,18 +252,60 @@ final class BalanceService
             'SELECT id, currency, fx_rate FROM expenses WHERE group_id = ? AND deleted_at IS NULL',
         );
         $stmt->execute([$groupId]);
+        $rows = $stmt->fetchAll();
+        if ($rows === []) {
+            return [];
+        }
+
+        // Three queries, not 2E+1.
+        //
+        // This used to fetch payers and shares one expense at a time. The
+        // database is on a different host — /health/deep measures the round
+        // trip at ~11ms — so each of those cost 11ms of pure latency, making a
+        // group's balances grow at ~22ms per expense with no upper bound. A
+        // user with 49 expenses measured 2.2-2.6s on a real device; 225
+        // expenses would have been five seconds, and around 1,360 it would
+        // have hit the request timeout and simply stopped working.
+        //
+        // Batched, the cost no longer depends on how many expenses a group
+        // has, which is the property that matters — not the constant.
+        $ids = array_column($rows, 'id');
+        $payersById = $this->childAmounts('expense_payers', $ids);
+        $sharesById = $this->childAmounts('expense_shares', $ids);
+
         $out = [];
-        foreach ($stmt->fetchAll() as $e) {
-            $payers = $this->pdo->prepare('SELECT user_id, amount FROM expense_payers WHERE expense_id = ?');
-            $payers->execute([$e['id']]);
-            $shares = $this->pdo->prepare('SELECT user_id, amount FROM expense_shares WHERE expense_id = ?');
-            $shares->execute([$e['id']]);
+        foreach ($rows as $e) {
+            $id = (string) $e['id'];
             $out[] = [
                 'currency' => (string) $e['currency'],
                 'fx_rate' => $e['fx_rate'] === null ? null : (float) $e['fx_rate'],
-                'payers' => array_map('intval', $payers->fetchAll(PDO::FETCH_KEY_PAIR)),
-                'shares' => array_map('intval', $shares->fetchAll(PDO::FETCH_KEY_PAIR)),
+                'payers' => $payersById[$id] ?? [],
+                'shares' => $sharesById[$id] ?? [],
             ];
+        }
+        return $out;
+    }
+
+    /**
+     * user_id => amount for every given expense, in one query.
+     *
+     * @param list<string> $ids
+     * @return array<string,array<string,int>> keyed by expense id
+     */
+    private function childAmounts(string $table, array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        // The table name is a literal from the two call sites, never input.
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT expense_id, user_id, amount FROM {$table} WHERE expense_id IN ({$in})",
+        );
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $out[(string) $r['expense_id']][(string) $r['user_id']] = (int) $r['amount'];
         }
         return $out;
     }

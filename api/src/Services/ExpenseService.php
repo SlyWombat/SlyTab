@@ -210,7 +210,7 @@ final class ExpenseService
             array_pop($rows);
             $next = $rows[array_key_last($rows)]['id'];
         }
-        return ['items' => array_map($this->shape(...), $rows), 'nextCursor' => $next];
+        return ['items' => $this->shapeMany($rows), 'nextCursor' => $next];
     }
 
     /**
@@ -301,14 +301,19 @@ final class ExpenseService
             $last = $rows[array_key_last($rows)];
             $next = $cmp !== null ? $last['id'] : $last['amount'] . ':' . $last['id'];
         }
-        // shape() is the shared expense projection; the group label is extra
-        // context this view needs and the per-group lists do not.
-        $items = array_map(function (array $r): array {
-            $out = $this->shape($r);
+        // shapeMany() is the shared expense projection; the group label is
+        // extra context this view needs and the per-group lists do not.
+        // /me/expenses measured 4582ms on a real device — the slowest call in
+        // the whole dataset — largely because this shaped thirty rows at three
+        // queries each.
+        $shaped = $this->shapeMany($rows);
+        $items = [];
+        foreach ($rows as $i => $r) {
+            $out = $shaped[$i];
             $out['groupName'] = (string) ($r['group_name'] ?? '');
             $out['groupEmoji'] = (string) ($r['group_emoji'] ?? '');
-            return $out;
-        }, $rows);
+            $items[] = $out;
+        }
         return ['items' => $items, 'nextCursor' => $next];
     }
 
@@ -618,24 +623,97 @@ final class ExpenseService
         }
     }
 
-    /** @param array<string,mixed> $e @return array<string,mixed> */
-    private function shape(array $e): array
+    /**
+     * Shape a page of expenses with a fixed number of queries.
+     *
+     * shape() costs three queries per row, and a thirty-row page therefore
+     * cost ninety — about a second of pure round trip, since the database is
+     * on another host at ~11ms a query. Prefetching the three child tables in
+     * one query each makes a page cost four queries regardless of its size.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @return list<array<string,mixed>>
+     */
+    private function shapeMany(array $rows): array
     {
-        $payers = $this->pdo->prepare('SELECT user_id, amount FROM expense_payers WHERE expense_id = ? ORDER BY user_id');
-        $payers->execute([$e['id']]);
-        $shares = $this->pdo->prepare(
-            'SELECT user_id, amount, split_method, split_input FROM expense_shares WHERE expense_id = ? ORDER BY user_id',
-        );
-        $shares->execute([$e['id']]);
-        $shareRows = $shares->fetchAll();
+        if ($rows === []) {
+            return [];
+        }
+        $ids = array_column($rows, 'id');
+        $pre = [
+            'payers' => $this->childRows(
+                'SELECT expense_id, user_id, amount FROM expense_payers', $ids, 'user_id',
+            ),
+            'shares' => $this->childRows(
+                'SELECT expense_id, user_id, amount, split_method, split_input FROM expense_shares',
+                $ids, 'user_id',
+            ),
+            'receipts' => $this->childRows(
+                'SELECT expense_id, id, created_at FROM receipts', $ids, 'created_at',
+            ),
+        ];
+        return array_map(fn(array $r): array => $this->shape($r, $pre), $rows);
+    }
 
-        // All linked receipts (bill + card slip …), primary first, so the
-        // client can offer view/rescan on a previously scanned expense.
-        $receipts = $this->pdo->prepare(
-            'SELECT id FROM receipts WHERE expense_id = ? ORDER BY (id = ?) DESC, created_at',
-        );
-        $receipts->execute([$e['id'], $e['receipt_id'] ?? '']);
-        $receiptIds = array_column($receipts->fetchAll(), 'id');
+    /**
+     * One query for a child table across many expenses, grouped by expense id
+     * and sorted the way the per-row queries sorted.
+     *
+     * @param list<string> $ids
+     * @return array<string,list<array<string,mixed>>>
+     */
+    private function childRows(string $select, array $ids, string $orderBy): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare("{$select} WHERE expense_id IN ({$in}) ORDER BY {$orderBy}");
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll() as $r) {
+            $out[(string) $r['expense_id']][] = $r;
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $e
+     * @param array<string,array<string,list<array<string,mixed>>>>|null $pre
+     *        prefetched children when shaping a page; null shapes one row on its own
+     * @return array<string,mixed>
+     */
+    private function shape(array $e, ?array $pre = null): array
+    {
+        $id = (string) $e['id'];
+        if ($pre !== null) {
+            $payerRows = $pre['payers'][$id] ?? [];
+            $shareRows = $pre['shares'][$id] ?? [];
+            // Primary receipt first, then by created_at — the same order the
+            // per-row query produced with its ORDER BY (id = ?) DESC.
+            $rs = $pre['receipts'][$id] ?? [];
+            $primary = (string) ($e['receipt_id'] ?? '');
+            usort($rs, fn(array $a, array $b): int =>
+                ((string) $b['id'] === $primary ? 1 : 0) <=> ((string) $a['id'] === $primary ? 1 : 0));
+            $receiptIds = array_column($rs, 'id');
+        } else {
+            $payers = $this->pdo->prepare('SELECT user_id, amount FROM expense_payers WHERE expense_id = ? ORDER BY user_id');
+            $payers->execute([$id]);
+            $payerRows = $payers->fetchAll();
+            $shares = $this->pdo->prepare(
+                'SELECT user_id, amount, split_method, split_input FROM expense_shares WHERE expense_id = ? ORDER BY user_id',
+            );
+            $shares->execute([$id]);
+            $shareRows = $shares->fetchAll();
+
+            // All linked receipts (bill + card slip …), primary first, so the
+            // client can offer view/rescan on a previously scanned expense.
+            $receipts = $this->pdo->prepare(
+                'SELECT id FROM receipts WHERE expense_id = ? ORDER BY (id = ?) DESC, created_at',
+            );
+            $receipts->execute([$id, $e['receipt_id'] ?? '']);
+            $receiptIds = array_column($receipts->fetchAll(), 'id');
+        }
 
         return [
             'id' => $e['id'],
@@ -661,7 +739,7 @@ final class ExpenseService
                 : null,
             'payers' => array_map(static fn(array $p): array => [
                 'userId' => $p['user_id'], 'amountMinor' => (int) $p['amount'],
-            ], $payers->fetchAll()),
+            ], $payerRows),
             'shares' => array_map(static fn(array $s): array => [
                 'userId' => $s['user_id'], 'amountMinor' => (int) $s['amount'],
             ], $shareRows),

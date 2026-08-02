@@ -57,7 +57,33 @@ final class ReceiptService
         $parsed = null;
         $parseError = null;
         $t1 = microtime(true);
+        // One parse at a time, across the whole app.
+        //
+        // The vision model serialises absolutely — four concurrent requests
+        // measured 3.2s, 6.3s, 9.3s, 12.4s, one behind the other. A real
+        // first-seen parse takes ~22s (p50, n=21), so a second scan arriving
+        // during a first waits ~22s and then takes ~22s, blowing past the
+        // host's ~30s request limit. That has already happened in production
+        // at four users: report 01KYDXM6JR ("on wifi but still failed") was
+        // filed 55 seconds after a parse this table records as SUCCESSFUL.
+        //
+        // Worse, a blocked upload holds one of the account's twenty entry
+        // processes for its whole duration, so twenty simultaneous scans take
+        // the entire app down with 508s for several minutes.
+        //
+        // Refusing in a millisecond is strictly better than hanging for
+        // forty-five seconds and failing anyway. The photo is already stored
+        // by this point, so the user keeps it and can Rescan.
+        $lock = self::parseLock();
         try {
+            if ($lock['busy']) {
+                throw new ApiException(
+                    'SCAN_BUSY',
+                    'someone else is scanning a receipt right now — the photo is attached, '
+                    . 'tap Rescan in a few seconds',
+                    429,
+                );
+            }
             $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime, $currencyHint);
             // Issue #10: keep the raw parse for repeat testing (data dir only).
             @file_put_contents(
@@ -71,6 +97,11 @@ final class ReceiptService
                     ? 'the receipt reader is offline right now — the photo is attached, try Rescan later'
                     : 'could not read this receipt — the photo is attached, enter the details manually');
             error_log('receipt parse failed: ' . $e->getMessage());
+        } finally {
+            if ($lock['handle'] !== null) {
+                flock($lock['handle'], LOCK_UN);
+                fclose($lock['handle']);
+            }
         }
         $parseMs = (int) round((microtime(true) - $t1) * 1000);
 
@@ -621,6 +652,34 @@ final class ReceiptService
             'required' => ['merchant', 'date', 'currency', 'currencyExplicit', 'items', 'subtotalMinor', 'taxMinor', 'tipMinor', 'totalMinor', 'confidence'],
             'additionalProperties' => false,
         ];
+    }
+
+    /**
+     * Try to take the global parse lock without waiting.
+     *
+     * flock is the right primitive here precisely because the kernel releases
+     * it when the process dies: a crashed parse cannot leave the feature
+     * wedged, which a database flag or a lock row could.
+     *
+     * Fails OPEN. If the lock file cannot be created the parse proceeds
+     * unguarded and says so in the log — a guard that cannot be taken must not
+     * become an outage of its own.
+     *
+     * @return array{busy: bool, handle: resource|null}
+     */
+    private static function parseLock(): array
+    {
+        $path = self::dataDir() . '/receipt-parse.lock';
+        $fh = @fopen($path, 'c');
+        if ($fh === false) {
+            error_log("receipt parse lock unavailable at {$path} — parsing unguarded");
+            return ['busy' => false, 'handle' => null];
+        }
+        if (!flock($fh, LOCK_EX | LOCK_NB)) {
+            fclose($fh);
+            return ['busy' => true, 'handle' => null];
+        }
+        return ['busy' => false, 'handle' => $fh];
     }
 
     private static function dataDir(): string
