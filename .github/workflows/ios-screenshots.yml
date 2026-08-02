@@ -1,0 +1,139 @@
+# App Store screenshots from the real iOS app.
+#
+# Apple requires 6.9-inch iPhone screenshots and will not accept a submission
+# without them. Neither the owner nor this project has an iPhone or a Mac, and
+# dressing up Android or web captures as iOS would be a misrepresentation Apple
+# rejects for — so this runs the actual app in the iOS Simulator on a GitHub
+# macOS runner.
+#
+# Manual only. It builds through EAS and takes a while, so it is not something
+# to fire on every push.
+name: iOS App Store screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Simulator device (must be a 6.9-inch class iPhone)
+        default: iPhone 16 Pro Max
+        type: string
+
+jobs:
+  screenshots:
+    # macOS is not optional here: the iOS Simulator does not exist elsewhere.
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      # The simulator and the API share a machine, so the app can talk to
+      # localhost. app.config.js bakes this into the build.
+      SLYTAB_API_BASE: http://127.0.0.1:8100/api/v1
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: slytab_shots
+      DB_USER: root
+      DB_PASS: ''
+      MAIL_DISABLE: '1'
+      FX_OFFLINE: '1'
+      APP_URL: http://127.0.0.1:8100
+      INVITE_HMAC_KEY: screenshots-only-not-a-secret
+      JWT_SECRET: screenshots-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install workspace deps
+        run: npm ci
+
+      # --- the demo world it will photograph --------------------------------
+      - name: Start MySQL
+        run: |
+          brew install mysql
+          brew services start mysql
+          for i in $(seq 1 30); do
+            mysqladmin ping -h 127.0.0.1 --silent && break
+            sleep 2
+          done
+          mysql -h 127.0.0.1 -u root -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} \
+            CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring, gd
+
+      - name: Migrate and serve the API
+        working-directory: api
+        run: |
+          composer install --no-interaction --prefer-dist
+          php bin/migrate.php
+          nohup php -S 127.0.0.1:8100 -t public > /tmp/php-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -m 2 http://127.0.0.1:8100/api/v1/health && break
+            sleep 1
+          done
+
+      - name: Seed the demo world
+        run: node scripts/docs/seed-demo.mjs --base http://127.0.0.1:8100
+
+      # --- the app itself ----------------------------------------------------
+      - name: Build for the simulator
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build \
+            --platform ios --profile ios-simulator \
+            --non-interactive --wait --json > /tmp/build.json
+          URL=$(python3 -c "import json;d=json.load(open('/tmp/build.json'));print((d[0] if isinstance(d,list) else d).get('artifacts',{}).get('applicationArchiveUrl') or (d[0] if isinstance(d,list) else d).get('applicationArchiveUrl'))")
+          echo "artifact: $URL"
+          curl -sSL -o /tmp/app.tar.gz "$URL"
+          mkdir -p /tmp/app && tar -xzf /tmp/app.tar.gz -C /tmp/app
+          find /tmp/app -name '*.app' -maxdepth 3 | head -1 > /tmp/app-path.txt
+          echo "app: $(cat /tmp/app-path.txt)"
+
+      - name: Boot the simulator
+        run: |
+          xcrun simctl list devices available | head -40
+          UDID=$(xcrun simctl create "shots" "${{ inputs.device }}")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Install and capture
+        run: |
+          APP=$(cat /tmp/app-path.txt)
+          xcrun simctl install "$UDID" "$APP"
+          # Credentials come from the seeder's own definitions rather than
+          # being duplicated here, so they cannot drift apart.
+          EMAIL=$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.READER.email))")
+          PASSWORD=$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.DEMO_PASSWORD))")
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          export PATH="$PATH:$HOME/.maestro/bin"
+          mkdir -p build/ios-shots
+          maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
+            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD"
+
+      - name: Report what was captured
+        if: always()
+        run: |
+          ls -la build/ios-shots || echo "no screenshots produced"
+          for f in build/ios-shots/*.png; do
+            [ -e "$f" ] || continue
+            echo "$f  $(sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' ')"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-screenshots
+          path: |
+            build/ios-shots/
+            /tmp/php-server.log
+          if-no-files-found: warn

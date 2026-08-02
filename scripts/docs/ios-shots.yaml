@@ -1,0 +1,71 @@
+# App Store screenshots, captured from the real iOS app in a simulator.
+#
+# Driven by accessibility label rather than coordinates: the app labels its
+# controls properly (that work was done for #79), so this survives layout
+# changes in a way that tapping at x,y would not.
+#
+# The app under test points at a locally seeded demo world — see
+# SLYTAB_API_BASE in app.config.js. Nothing here touches production, and no
+# real person's spending can reach a store listing.
+appId: ca.electricrv.slytab
+---
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+
+# --- sign in as the demo reader ---------------------------------------------
+# The app opens straight onto the form with both fields visible, so there is
+# nothing to tap first. Email and password sign-in exists on iOS — only the
+# social providers differ there (Apple yes, Google no).
+- tapOn: "Email"
+- inputText: "${DEMO_EMAIL}"
+- tapOn: "Password"
+- inputText: "${DEMO_PASSWORD}"
+- hideKeyboard
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Groups"
+    timeout: 30000
+
+# --- 1. Home: what you are owed, across every group -------------------------
+- takeScreenshot: build/ios-shots/01-home
+
+# --- 2. A group's expenses --------------------------------------------------
+- tapOn: "Groups"
+- extendedWaitUntil:
+    visible: "Cottage Trip"
+    timeout: 15000
+- tapOn: "Cottage Trip"
+- extendedWaitUntil:
+    visible: "Balances"
+    timeout: 15000
+- takeScreenshot: build/ios-shots/02-group-expenses
+
+# --- 3. Balances and the settle-up plan -------------------------------------
+- tapOn: "Balances"
+- takeScreenshot: build/ios-shots/03-balances
+
+# --- 4. Totals --------------------------------------------------------------
+- tapOn:
+    text: "Totals"
+    optional: true
+- takeScreenshot: build/ios-shots/04-totals
+
+# --- 5. Adding an expense, with the split controls on screen ----------------
+- tapOn:
+    text: "Expenses"
+    optional: true
+- tapOn: "Add expense"
+- extendedWaitUntil:
+    visible: "New expense"
+    timeout: 15000
+- takeScreenshot: build/ios-shots/05-add-expense
+- tapOn:
+    text: "Close"
+    optional: true
+- back
+
+# --- 6. Everything you have spent, across groups ----------------------------
+- tapOn: "Activity"
+- takeScreenshot: build/ios-shots/06-activity
