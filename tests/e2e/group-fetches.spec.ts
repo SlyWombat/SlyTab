@@ -12,6 +12,18 @@ import { signUp } from './signup';
  * the screen has already appeared — invisible on a fast link, and reported as
  * lag by two testers in Chile.
  *
+ * WHAT THIS CAN AND CANNOT CATCH, as of 2026-08-02. Measured, not assumed:
+ * putting the old `[…, group, feed]` dependencies back now produces the SAME
+ * counts as the fix (expenses=1, balances=1). In-flight GET coalescing in
+ * api.ts absorbs the duplicates, so the original regression can no longer be
+ * reproduced through that route and this test cannot fail on it.
+ *
+ * It is kept as a guard on the invariant rather than on that one bug: the
+ * expense list must never be fetched more often than the rest of the screen,
+ * by any route. It would catch a new over-fetch, or the removal of coalescing
+ * combined with a reintroduced dependency. Treat it as a weak guard, and do
+ * not assume a passing run proves the dependency array is right.
+ *
  * Two things this test needs in order to work, both learned the hard way:
  *
  *  1. **Staggered latency.** The duplicates are triggered by the group and
@@ -67,17 +79,21 @@ test('opening a group fetches each thing exactly once', async ({ page }) => {
     calls.filter((c) => c.startsWith('/groups/') && c.endsWith(needle)).length;
   const detail = () => `calls: ${JSON.stringify(calls, null, 1)}`;
 
-  // Relative to the other group fetches, not a fixed number: React StrictMode
-  // double-invokes effects in development, so the absolute count is 2 under
-  // `vite dev` and 1 in a production build. Pinning either would make this
-  // assert the build mode rather than the behaviour.
-  const baseline = count('/balances');
-  expect(baseline, `no group fetches were captured — ${detail()}`).toBeGreaterThan(0);
+  // The bug was that the expense list was fetched two to three times per open
+  // while everything else was fetched once. So that is what this asserts: the
+  // list must not OUTPACE its neighbours.
+  //
+  // Not equality across all five, which is what this used to check. Two things
+  // make exact counts unstable without saying anything about the bug. React
+  // StrictMode double-invokes effects in development, so the absolute number
+  // is 2 under `vite dev` and 1 in a production build. And in-flight GET
+  // coalescing means a request issued just before the measurement window can
+  // absorb the one inside it, legitimately leaving an endpoint at zero — which
+  // is exactly what happened to /activity in CI once coalescing shipped.
+  const others = ['/balances', '/totals', '/activity', '/categories'].map(count);
+  const busiest = Math.max(...others);
+  expect(busiest, `no group fetches were captured at all — ${detail()}`).toBeGreaterThan(0);
 
   expect(count('/expenses'), `the expense list outpaced the rest — ${detail()}`)
-    .toBe(baseline);
-
-  for (const path of ['/totals', '/activity', '/categories']) {
-    expect(count(path), `${path} disagrees with /balances — ${detail()}`).toBe(baseline);
-  }
+    .toBeLessThanOrEqual(busiest);
 });
