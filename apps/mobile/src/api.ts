@@ -176,7 +176,35 @@ export interface HomeBalances {
   };
 }
 
+/**
+ * GETs already in flight, keyed by path.
+ *
+ * Four separate components each ask for /me/balances, and the shell keeps all
+ * four tabs mounted rather than unmounting the ones you cannot see — so the
+ * same request went out four times within a second. Measured on a real device
+ * in Santiago, those four then queued behind each other and behind the group
+ * screen's own fan-out: identical requests, issued together, completing at
+ * 422ms, 1143ms, 1234ms … 3554ms, because each waited for a free connection.
+ *
+ * Coalescing them is the cheapest fix available: the second caller of an
+ * in-flight GET gets the same promise instead of a second round trip. Only
+ * GETs, and only while in flight — this is not a cache and never returns
+ * anything that has already resolved.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method === 'GET') {
+    const running = inFlight.get(path) as Promise<T> | undefined;
+    if (running) return running;
+    const p = timedReq<T>(method, path, body).finally(() => { inFlight.delete(path); });
+    inFlight.set(path, p);
+    return p;
+  }
+  return timedReq<T>(method, path, body);
+}
+
+async function timedReq<T>(method: string, path: string, body?: unknown): Promise<T> {
   const started = Date.now();
   let status = 0;
   try {

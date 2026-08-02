@@ -185,7 +185,30 @@ export function setToken(token: string | null): void {
   else localStorage.setItem(TOKEN_KEY, token);
 }
 
+/**
+ * GETs already in flight, keyed by path. See the mobile client for the
+ * measurements that prompted this: identical requests issued together queue
+ * behind each other, and the wait shows up in every one of them. The second
+ * caller of an in-flight GET gets the same promise rather than a second round
+ * trip.
+ *
+ * Not a cache — entries live only while the request is outstanding, so nothing
+ * already resolved is ever handed back.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method === 'GET') {
+    const running = inFlight.get(path) as Promise<T> | undefined;
+    if (running) return running;
+    const p = timedReq<T>(method, path, body).finally(() => { inFlight.delete(path); });
+    inFlight.set(path, p);
+    return p;
+  }
+  return timedReq<T>(method, path, body);
+}
+
+async function timedReq<T>(method: string, path: string, body?: unknown): Promise<T> {
   const started = Date.now();
   let status = 0;
   try {

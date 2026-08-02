@@ -6,6 +6,7 @@ import {
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
+import { foldSummaryLines } from '@slytab/core';
 import { CategoriesScreen } from './Categories';
 import { cacheKey, swr } from '../cache';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet, SkeletonRows } from '../ui';
@@ -670,7 +671,12 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
    */
   function applyParse(parsed: ParsedReceipt) {
     const cur = parsed.currency && /^[A-Z]{3}$/.test(parsed.currency) ? parsed.currency : currency;
-    const pinned = normalizeParsedReceipt(parsed, cur);
+    const raw = normalizeParsedReceipt(parsed, cur);
+    // A card slip prints its totals as line items. Move those into the fields
+    // they belong in before anything reads the item list, or the assign-items
+    // screen offers to split "IVA" between four people.
+    const fold = foldSummaryLines(raw.items, raw.taxMinor, raw.tipMinor);
+    const pinned = { ...raw, items: fold.items, taxMinor: fold.taxMinor, tipMinor: fold.tipMinor };
     setLastParsed(pinned);
 
     // A parse that finds the lines but not the printed total used to set no
@@ -684,22 +690,29 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
 
     const money = (m: number) => `${minorToAmountString(m, cur)}${cur ? ` ${cur}` : ''}`;
     setScanNote(
-      pinned.items.length === 0 && total === null
-        ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
-        : pinned.totalMinor === null
-          ? {
-            tone: 'warn',
-            text: `We could not find a printed total, so we added up the ${pinned.items.length} `
-              + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
-              + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
-          }
-          : pinned.confidence === 'low'
+      fold.allSummary && total !== null
+        ? {
+          tone: 'warn',
+          text: `This looks like a card slip rather than an itemised bill — every line on it was a `
+            + `summary (${fold.removed.map((r) => r.name.replace(/[:\s]+$/, '')).join(', ')}), so there is `
+            + `nothing to split by item. The total of ${money(total)} is what it says.`,
+        }
+        : pinned.items.length === 0 && total === null
+          ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
+          : pinned.totalMinor === null
             ? {
               tone: 'warn',
-              text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
-                + `${money(bill.itemsSum)}. Worth a look before saving.`,
+              text: `We could not find a printed total, so we added up the ${pinned.items.length} `
+                + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
+                + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
             }
-            : null,
+            : pinned.confidence === 'low'
+              ? {
+                tone: 'warn',
+                text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
+                  + `${money(bill.itemsSum)}. Worth a look before saving.`,
+              }
+              : null,
     );
 
     if (pinned.currency && /^[A-Z]{3}$/.test(pinned.currency)) setCurrency(pinned.currency);

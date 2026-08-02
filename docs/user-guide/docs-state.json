@@ -8,9 +8,9 @@
     },
     "settle": {
       "uiHash": "feaab6fc4b1a0faa",
-      "srcHash": "7ca431a14860be17",
+      "srcHash": "7cafb34621676c54",
       "proseHash": "f6dc4e55156e02a0",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "home": {
       "uiHash": "df3809cf434e81f4",
@@ -32,33 +32,33 @@
     },
     "group-expenses": {
       "uiHash": "1726acf5d9ed8538",
-      "srcHash": "7ca431a14860be17",
+      "srcHash": "7cafb34621676c54",
       "proseHash": "3afa00b53d1a0bcc",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "group-balances": {
       "uiHash": "e7d000084f6a73e0",
-      "srcHash": "7ca431a14860be17",
+      "srcHash": "7cafb34621676c54",
       "proseHash": "81879e31ea049979",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "group-totals": {
       "uiHash": "6a284a718939b0b9",
-      "srcHash": "7ca431a14860be17",
+      "srcHash": "7cafb34621676c54",
       "proseHash": "faa7dddf0a63d8cf",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "add-expense": {
       "uiHash": "62de1b4eb391fa62",
-      "srcHash": "18e4513785111cd9",
+      "srcHash": "0f65729eaec8d112",
       "proseHash": "221a931e41262fe2",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "expense-foreign-currency": {
       "uiHash": "e14085d736946a39",
-      "srcHash": "ec34a84da49bbf11",
+      "srcHash": "31055a673b8af43f",
       "proseHash": "db9adfd47c943345",
-      "acceptedAt": "2026-08-01"
+      "acceptedAt": "2026-08-02"
     },
     "activity": {
       "uiHash": "2dd534dbdab3f081",

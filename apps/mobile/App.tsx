@@ -3,6 +3,7 @@ import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator, Alert, AppState, BackHandler, FlatList, Image, KeyboardAvoidingView, Linking,
   Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,7 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
+import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, foldSummaryLines, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
   api, ApiFailure, appVersion, noteClientError, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
@@ -2805,6 +2806,9 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   // stays linked on save and can be viewed/rescanned here.
   const [receiptId, setReceiptId] = useState<string | null>(editing?.receiptId ?? null);
   const [viewingReceipt, setViewingReceipt] = useState<number | null>(null); // index into linked receipts
+  const [zoom, setZoom] = useState(1);
+  const win = useWindowDimensions();
+  useEffect(() => { setZoom(1); }, [viewingReceipt === null]);
   const [extraReceiptIds, setExtraReceiptIds] = useState<string[]>(
     editing ? (editing.receiptIds ?? []).filter((id) => id !== editing.receiptId) : [],
   );
@@ -2972,7 +2976,12 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   function applyParse(parsed: ParsedReceipt): void {
     const cur = parsed.currency && CURRENCIES.includes(parsed.currency as never)
       ? parsed.currency : currency;
-    const pinned = normalizeParsedReceipt(parsed, cur);
+    const raw = normalizeParsedReceipt(parsed, cur);
+    // A card slip prints its totals as line items. Move those into the fields
+    // they belong in before anything reads the item list, or the assign-items
+    // screen offers to split "IVA" between four people.
+    const fold = foldSummaryLines(raw.items, raw.taxMinor, raw.tipMinor);
+    const pinned = { ...raw, items: fold.items, taxMinor: fold.taxMinor, tipMinor: fold.tipMinor };
     setLastParsed(pinned);
 
     // A parse that finds the lines but not the printed total used to set no
@@ -2986,22 +2995,29 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
 
     const money = (m: number) => `${minorToAmountString(m, cur)}${cur ? ` ${cur}` : ''}`;
     setScanNote(
-      pinned.items.length === 0 && total === null
-        ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
-        : pinned.totalMinor === null
-          ? {
-            tone: 'warn',
-            text: `We could not find a printed total, so we added up the ${pinned.items.length} `
-              + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
-              + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
-          }
-          : pinned.confidence === 'low'
+      fold.allSummary && total !== null
+        ? {
+          tone: 'warn',
+          text: `This looks like a card slip rather than an itemised bill — every line on it was a `
+            + `summary (${fold.removed.map((r) => r.name.replace(/[:\s]+$/, '')).join(', ')}), so there is `
+            + `nothing to split by item. The total of ${money(total)} is what it says.`,
+        }
+        : pinned.items.length === 0 && total === null
+          ? { tone: 'bad', text: 'We could not read anything usable from that photo. Enter the amount yourself, or take another picture with the whole receipt in frame.' }
+          : pinned.totalMinor === null
             ? {
               tone: 'warn',
-              text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
-                + `${money(bill.itemsSum)}. Worth a look before saving.`,
+              text: `We could not find a printed total, so we added up the ${pinned.items.length} `
+                + `line${pinned.items.length === 1 ? '' : 's'} we did read: ${money(bill.billTotal)}. `
+                + 'Check that against the receipt before saving — anything we missed is missing from that number too.',
             }
-            : null,
+            : pinned.confidence === 'low'
+              ? {
+                tone: 'warn',
+                text: `We read a total of ${money(pinned.totalMinor)}, but the lines we found only come to `
+                  + `${money(bill.itemsSum)}. Worth a look before saving.`,
+              }
+              : null,
     );
 
     if (pinned.merchant) setDescription(pinned.merchant);
@@ -3346,9 +3362,31 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             <Pressable style={{ flex: 1, backgroundColor: 'rgba(8,12,22,0.92)',
               alignItems: 'center', justifyContent: 'center', gap: 12 }}
               onPress={() => setViewingReceipt(null)}>
-              <Image source={receiptImageSource(ids[idx]!)} resizeMode="contain"
-                style={{ width: '92%', height: '76%', borderRadius: 10 }}
-                accessibilityLabel="Receipt photo" />
+              {/* Zoom, reported 2026-08-02: a photographed till roll is
+                  unreadable at fit-to-screen, and this was a plain Image.
+                  Done without a gesture library — that is a native dependency
+                  and a rebuild for one screen. iOS gets real pinch from the
+                  ScrollView; both platforms get the buttons, which also beat
+                  pinch for anyone who cannot do a two-finger gesture.
+                  The nesting is what allows panning in both directions once
+                  the image is larger than the window. */}
+              <ScrollView
+                style={{ width: '92%', height: '76%' }}
+                contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }}
+                maximumZoomScale={4} minimumZoomScale={1} bouncesZoom
+                showsVerticalScrollIndicator={false}
+                centerContent>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }}>
+                  <Pressable onPress={() => setZoom((z) => (z >= 3 ? 1 : z + 1))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Receipt photo, zoom ${zoom}x. Double the size, or reset after 3x.`}>
+                    <Image source={receiptImageSource(ids[idx]!)} resizeMode="contain"
+                      style={{ width: win.width * 0.92 * zoom, height: win.height * 0.76 * zoom,
+                        borderRadius: 10 }} />
+                  </Pressable>
+                </ScrollView>
+              </ScrollView>
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                 {ids.length > 1 && (
                   <>
@@ -3359,6 +3397,11 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
                     <Btn small label="›" onPress={() => setViewingReceipt(idx + 1)} />
                   </>
                 )}
+                <Btn small label="−" a11yLabel="Zoom out"
+                  disabled={zoom <= 1} onPress={() => setZoom((z) => Math.max(1, z - 1))} />
+                <Text style={{ color: c.text2, fontSize: 13 }} maxFontSizeMultiplier={1.4}>{zoom}×</Text>
+                <Btn small label="+" a11yLabel="Zoom in"
+                  disabled={zoom >= 4} onPress={() => setZoom((z) => Math.min(4, z + 1))} />
                 <Btn small label="Close" onPress={() => setViewingReceipt(null)} />
               </View>
             </Pressable>
