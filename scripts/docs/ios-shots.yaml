@@ -53,19 +53,25 @@ appId: ca.electricrv.slytab
 - takeScreenshot: build/ios-shots/04-totals
 
 # --- 5. Adding an expense, with the split controls on screen ----------------
-- tapOn:
-    text: "Expenses"
-    optional: true
+- tapOn: "Expenses"
 - tapOn: "Add expense"
 - extendedWaitUntil:
     visible: "New expense"
     timeout: 15000
 - takeScreenshot: build/ios-shots/05-add-expense
-- tapOn:
-    text: "Close"
-    optional: true
-- back
+- tapOn: "Close"
 
-# --- 6. Everything you have spent, across groups ----------------------------
+# --- 6. The activity feed ---------------------------------------------------
+# Leave the group first. "Activity" names BOTH a tab inside a group and a
+# destination in the bottom bar, so tapping it while still in the group would
+# hit the wrong one — and would have done so silently, producing a screenshot
+# of the right name showing the wrong screen.
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible: "Groups"
+    timeout: 15000
 - tapOn: "Activity"
+- extendedWaitUntil:
+    visible: "Activity"
+    timeout: 15000
 - takeScreenshot: build/ios-shots/06-activity
