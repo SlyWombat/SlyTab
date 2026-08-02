@@ -2,12 +2,16 @@
 #
 # Apple requires 6.9-inch iPhone screenshots and will not accept a submission
 # without them. Neither the owner nor this project has an iPhone or a Mac, and
-# dressing up Android or web captures as iOS would be a misrepresentation Apple
-# rejects for — so this runs the actual app in the iOS Simulator on a GitHub
-# macOS runner.
+# dressing up Android or web captures as iOS would be misrepresenting one
+# platform as another — which is what Apple rejects for. So this runs the
+# actual iOS app in the Simulator, on the only macOS available: a GitHub
+# runner, free and unmetered because this repository is public.
 #
-# Manual only. It builds through EAS and takes a while, so it is not something
-# to fire on every push.
+# Written without a Mac to test on, so it is built to FAIL LOUDLY AND
+# COMPLETELY. Every step that can report what it saw does: the device types
+# available, the contents of the build artifact, the app's own view hierarchy,
+# and Maestro's debug output. One failed run should be enough to fix the cause,
+# because iterating on this blind costs half an hour a time.
 name: iOS App Store screenshots
 
 on:
@@ -59,6 +63,8 @@ jobs:
             mysqladmin ping -h 127.0.0.1 --silent && break
             sleep 2
           done
+          mysqladmin ping -h 127.0.0.1 --silent \
+            || { echo "::error::MySQL never came up"; exit 1; }
           mysql -h 127.0.0.1 -u root -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} \
             CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
@@ -78,6 +84,8 @@ jobs:
             curl -fsS -m 2 http://127.0.0.1:8100/api/v1/health && break
             sleep 1
           done
+          curl -fsS -m 5 http://127.0.0.1:8100/api/v1/health \
+            || { echo "::error::API never answered"; cat /tmp/php-server.log; exit 1; }
 
       - name: Seed the demo world
         run: node scripts/docs/seed-demo.mjs --base http://127.0.0.1:8100
@@ -88,23 +96,64 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "::error::No EXPO_TOKEN secret. Create one at expo.dev (Account Settings -> Access Tokens) and add it under Settings -> Secrets -> Actions."
+            exit 1
+          fi
           npx eas-cli@latest build \
             --platform ios --profile ios-simulator \
             --non-interactive --wait --json > /tmp/build.json
-          URL=$(python3 -c "import json;d=json.load(open('/tmp/build.json'));print((d[0] if isinstance(d,list) else d).get('artifacts',{}).get('applicationArchiveUrl') or (d[0] if isinstance(d,list) else d).get('applicationArchiveUrl'))")
+          echo "--- build json ---"; head -c 2000 /tmp/build.json; echo
+          URL=$(python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/build.json'))
+          b = d[0] if isinstance(d, list) else d
+          print(b.get('artifacts', {}).get('applicationArchiveUrl')
+                or b.get('applicationArchiveUrl') or '')
+          PY
+          )
+          [ -n "$URL" ] || { echo "::error::No artifact URL in the build output above"; exit 1; }
           echo "artifact: $URL"
           curl -sSL -o /tmp/app.tar.gz "$URL"
           mkdir -p /tmp/app && tar -xzf /tmp/app.tar.gz -C /tmp/app
-          find /tmp/app -name '*.app' -maxdepth 3 | head -1 > /tmp/app-path.txt
-          echo "app: $(cat /tmp/app-path.txt)"
+          echo "--- what the artifact contained ---"; find /tmp/app -maxdepth 3 | head -40
+          APP=$(find /tmp/app -name '*.app' -maxdepth 4 | head -1)
+          [ -n "$APP" ] || { echo "::error::No .app inside the artifact — see the listing above"; exit 1; }
+          echo "$APP" > /tmp/app-path.txt
+          echo "app: $APP"
 
       - name: Boot the simulator
         run: |
-          xcrun simctl list devices available | head -40
-          UDID=$(xcrun simctl create "shots" "${{ inputs.device }}")
+          echo "--- device types available ---"
+          xcrun simctl list devicetypes | grep -i iphone || true
+          echo "--- runtimes available ---"
+          xcrun simctl list runtimes | grep -i ios || true
+          # Resolve the display name to its identifier; simctl accepts either,
+          # but the failure when a name is wrong is unhelpfully terse.
+          DEVTYPE=$(xcrun simctl list devicetypes --json \
+            | python3 -c "
+          import json,sys,os
+          want = os.environ['WANT']
+          for d in json.load(sys.stdin)['devicetypes']:
+              if d['name'] == want:
+                  print(d['identifier']); break
+          " )
+          if [ -z "$DEVTYPE" ]; then
+            echo "::error::No simulator device type named '${{ inputs.device }}' — pick one from the list above"
+            exit 1
+          fi
+          UDID=$(xcrun simctl create "shots" "$DEVTYPE")
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+          # Deterministic status bar: 9:41, full bars, full battery — the same
+          # convention Apple's own marketing uses, and it stops the clock in
+          # the corner changing between runs.
+          xcrun simctl status_bar "$UDID" override \
+            --time "9:41" --cellularMode active --cellularBars 4 \
+            --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100 || true
+        env:
+          WANT: ${{ inputs.device }}
 
       - name: Install and capture
         run: |
@@ -114,16 +163,32 @@ jobs:
           # being duplicated here, so they cannot drift apart.
           EMAIL=$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.READER.email))")
           PASSWORD=$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.DEMO_PASSWORD))")
+          echo "signing in as $EMAIL"
           curl -Ls "https://get.maestro.mobile.dev" | bash
           export PATH="$PATH:$HOME/.maestro/bin"
+          maestro --version
           mkdir -p build/ios-shots
           maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
-            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD"
+            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" --debug-output /tmp/maestro-debug
+
+      - name: What the app actually showed
+        # The whole point of this step: when a tap fails it is because the label
+        # differs from what the flow expects, and only the hierarchy says how.
+        if: failure()
+        run: |
+          echo "--- current view hierarchy ---"
+          export PATH="$PATH:$HOME/.maestro/bin"
+          maestro --device "$UDID" hierarchy 2>&1 | head -200 || true
+          echo "--- last screen ---"
+          mkdir -p build/ios-shots
+          xcrun simctl io "$UDID" screenshot build/ios-shots/zz-failure-state.png || true
+          echo "--- app logs ---"
+          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'processImagePath CONTAINS "SlyTab"' 2>&1 | tail -80 || true
 
       - name: Report what was captured
         if: always()
         run: |
-          ls -la build/ios-shots || echo "no screenshots produced"
+          ls -la build/ios-shots 2>/dev/null || echo "no screenshots produced"
           for f in build/ios-shots/*.png; do
             [ -e "$f" ] || continue
             echo "$f  $(sips -g pixelWidth -g pixelHeight "$f" | tail -2 | tr '\n' ' ')"
@@ -135,5 +200,7 @@ jobs:
           name: ios-screenshots
           path: |
             build/ios-shots/
+            /tmp/maestro-debug/
             /tmp/php-server.log
+            /tmp/build.json
           if-no-files-found: warn

@@ -27,8 +27,7 @@
       "extends": "production",
       "ios": {
         "simulator": true
-      },
-      "channel": "screenshots"
+      }
     }
   },
   "submit": {
