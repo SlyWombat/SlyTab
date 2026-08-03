@@ -113,7 +113,11 @@ appId: ca.electricrv.slytab
 - tapOn:
     id: "Amount.*"
 - inputText: "84.20"
-- hideKeyboard
+# Not hideKeyboard: the amount field raises a decimal pad, which has no return
+# key and no dismiss action, so Maestro cannot close it and the run dies there.
+# Tapping the sheet's own title does close it, and does nothing else.
+- tapOn:
+    text: "New expense"
 - takeScreenshot: 05-add-expense
 - tapOn: "Close"
 
