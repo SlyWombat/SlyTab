@@ -538,6 +538,11 @@ export const api = {
   addKnownMember: (groupId: string, userId: string) =>
     req<Group>('POST', `/groups/${groupId}/members`, { userId }),
   clearAvatar: () => req<{ ok: true }>('DELETE', '/me/avatar'),
+  /** What the current released app is, so this one can tell it is behind (#118). */
+  appRelease: () => req<{
+    ios?: { version: string; build: number };
+    android?: { version: string; build: number };
+  }>('GET', '/app/release'),
   archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
   // Only for a group that never held money — the server refuses with
   // GROUP_NOT_EMPTY otherwise, and archiving stays the answer for the rest.

@@ -289,6 +289,73 @@ type ThemePref = 'system' | 'dark' | 'light';
 // Last server answer to "is Google sign-in configured?" — shows the button
 // instantly on later launches instead of after a network round-trip (#40).
 const GOOGLE_READY_KEY = 'slytab.googleReady';
+// The newest build the user has already been told about, so a release nags
+// once rather than every launch (#118).
+const UPDATE_SEEN_KEY = 'slytab.updateSeen';
+/** Where a new build actually comes from, per platform. */
+const APK_URL = 'https://electricrv.ca/slytab/downloads/slytab-latest.apk';
+const APP_STORE_URL = 'https://apps.apple.com/app/id6794502588';
+
+/**
+ * Tell someone a newer build exists (#118).
+ *
+ * Nothing did this before. On iOS it mostly does not matter, because the App
+ * Store updates in the background — but Android is a plain APK downloaded from
+ * the site, and a sideloaded APK never updates itself. Someone could sit on a
+ * months-old build forever while the bug-report email tells them to "update to
+ * the latest version", with nothing in the app to say one exists.
+ *
+ * A dismissible line, not a wall. This app has no business blocking the door
+ * over a version number, and it is advisory on purpose: the server publishes
+ * what the current release is and expresses no opinion about what is allowed
+ * to run. Dismissal is remembered per build, so a release asks once.
+ */
+function UpdateBanner() {
+  const [latest, setLatest] = useState<{ version: string; build: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await api.appRelease();
+        const mine = Number(appVersion().build);
+        const theirs = Platform.OS === 'ios' ? r.ios : r.android;
+        // Number() on a missing or non-numeric build gives NaN, and every
+        // comparison against NaN is false — so an app that cannot work out its
+        // own version stays quiet instead of nagging about nothing.
+        if (!theirs || !Number.isFinite(mine) || theirs.build <= mine) return;
+        const seen = await SecureStore.getItemAsync(UPDATE_SEEN_KEY).catch(() => null);
+        if (Number(seen) >= theirs.build) return;
+        if (alive) setLatest(theirs);
+      } catch {
+        // Offline, or an older server without the endpoint. Never worth a word.
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (latest === null) return null;
+
+  function dismiss() {
+    void SecureStore.setItemAsync(UPDATE_SEEN_KEY, String(latest?.build ?? '')).catch(() => {});
+    setLatest(null);
+  }
+
+  return (
+    <View style={[s.row, { backgroundColor: c.surface2, alignItems: 'center', gap: 8 }]}>
+      <Text style={{ color: c.text, flex: 1, fontSize: 13.5 }}>
+        SlyTab {latest.version} is out — you have {appVersion().version}.
+      </Text>
+      <Btn small label="Get it" onPress={() => {
+        void Linking.openURL(Platform.OS === 'ios' ? APP_STORE_URL : APK_URL);
+        dismiss();
+      }} />
+      <Pressable onPress={dismiss} accessibilityRole="button" accessibilityLabel="Dismiss">
+        <Text style={{ color: c.text3, paddingHorizontal: 6, fontSize: 18 }}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 /**
  * Catches a render-time throw instead of letting it unmount everything (#89).
@@ -1083,6 +1150,9 @@ function HomeScreen({ user, onOpenGroup, active }: {
         ListHeaderComponent={(
           <View>
             {chrome}
+            {/* #118: at the top of Home, where it is seen once and can be
+                dismissed, rather than in Profile where nobody would find it. */}
+            <UpdateBanner />
             {(data?.items ?? []).some((i) => i.group.isDirect) && (
               <>
             <Text style={s.cap}>FRIENDS · {(data?.items ?? []).filter((i) => i.group.isDirect).length}</Text>

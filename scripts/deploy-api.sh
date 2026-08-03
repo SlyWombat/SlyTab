@@ -24,6 +24,11 @@ echo "== 1/6 stage + zip production API =="
 STAGE=$(mktemp -d)
 mkdir -p "$STAGE/api"
 cp -r "$REPO/api/src" "$REPO/api/bin" "$REPO/api/composer.json" "$REPO/api/composer.lock" "$STAGE/api/"
+# The released app versions, so the API can tell a running app it is behind
+# (#118). Copied from the mobile app's own file rather than restated here:
+# that is what the release scripts bump, so the two cannot disagree about what
+# was actually built.
+cp "$REPO/apps/mobile/versions.json" "$STAGE/api/releases.json"
 docker run --rm -v "$STAGE/api":/app -w /app composer:2 install --no-dev --no-interaction --no-progress -o >/dev/null 2>&1
 python3 - "$STAGE" <<'PY'
 import os, sys, zipfile

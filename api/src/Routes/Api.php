@@ -304,6 +304,13 @@ final class Api
                 $verifier->verify($a['token']);
                 return Http::json($rs, ['ok' => true]);
             });
+            // What the current released app is, so a running one can tell it
+            // is behind (#118). Public: an app that cannot sign in still
+            // deserves to be told it is out of date, and the answer is the
+            // same for everyone.
+            $g->get('/app/release', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, (new \SlyTab\Services\ReleaseService())->current())
+                    ->withHeader('Cache-Control', 'public, max-age=3600'));
             $g->get('/auth/google/config', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['enabled' => $google->enabled(), 'clientId' => $google->clientId()]));
             $g->post('/auth/google', function (Request $rq, Response $rs) use ($google, $limiter, $ip): Response {
