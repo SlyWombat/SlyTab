@@ -28,6 +28,15 @@ appId: ca.electricrv.slytab
 - inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"
+# iOS offers to save the password to iCloud Keychain the moment a signed-in
+# form is submitted — a system alert, drawn above the app, which is why the
+# run reached Home and still could not see the tab bar behind it. The app
+# invites it by design: textContentType/autoComplete on the password field is
+# what makes AutoFill work (#99), so the prompt is correct behaviour and the
+# flow simply has to dismiss it.
+- tapOn:
+    text: "Not Now"
+    optional: true
 - extendedWaitUntil:
     visible: "Groups"
     timeout: 30000
