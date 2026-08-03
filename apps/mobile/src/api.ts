@@ -130,6 +130,8 @@ export interface User {
   displayName: string; avatar: string;
   /** #112: whether to fetch a photo for this person, not the photo itself. */
   hasAvatar?: boolean;
+  /** Changes whenever the photo does, so a replaced one is a new URL. */
+  avatarVersion?: string | null;
   notifyLevel?: 'all' | 'important' | 'none';
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
@@ -139,6 +141,7 @@ export interface User {
 export interface Member {
   id: string; displayName: string; avatar: string;
   hasAvatar?: boolean;
+  avatarVersion?: string | null;
   paymentHandles: User['paymentHandles'];
 }
 export interface Group {
@@ -348,10 +351,13 @@ export interface ReceiptResult {
  * ULID appears in ordinary responses and knowing one must not be the same as
  * being allowed to see someone's face.
  */
-export function avatarSource(userId: string): { uri: string; headers: Record<string, string> } {
+export function avatarSource(userId: string, version?: string | null): { uri: string; headers: Record<string, string> } {
   const { base, token } = conn;
+  // ?v= is a cache-buster the server ignores. React Native caches images by
+  // URI, so without it a replaced photo keeps showing the old one.
+  const v = version ? `?v=${encodeURIComponent(version)}` : '';
   return {
-    uri: `${base}/users/${userId}/avatar`,
+    uri: `${base}/users/${userId}/avatar${v}`,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   };
 }

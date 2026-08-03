@@ -21,16 +21,17 @@ export function badgeColor(id: string): string {
  * it every badge on a busy screen would fire a request for a photo that
  * usually does not exist, and a group screen draws dozens of them.
  */
-export function Badge({ id, name, sm = false, hasAvatar = false }: {
-  id: string; name: string; sm?: boolean; hasAvatar?: boolean;
+export function Badge({ id, name, sm = false, hasAvatar = false, avatarVersion = null }: {
+  id: string; name: string; sm?: boolean; hasAvatar?: boolean; avatarVersion?: string | null;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     if (!hasAvatar) { setSrc(null); return; }
     let alive = true;
-    void api.avatarUrl(id).then((u) => { if (alive) setSrc(u); });
+    void api.avatarUrl(id, avatarVersion).then((u) => { if (alive) setSrc(u); });
     return () => { alive = false; };
-  }, [id, hasAvatar]);
+    // avatarVersion in the deps is what redraws the badge after an upload.
+  }, [id, hasAvatar, avatarVersion]);
 
   return (
     <span className={`badge${sm ? ' sm' : ''}`}

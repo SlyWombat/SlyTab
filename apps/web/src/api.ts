@@ -29,6 +29,8 @@ export interface User {
   notifyLevel?: 'all' | 'important' | 'none';
   avatar: string;
   hasAvatar?: boolean;
+  /** Changes whenever the photo does, so a replaced one is a new URL (#112). */
+  avatarVersion?: string | null;
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
   /** null until the first-run welcome flow is completed (issue #36). */
@@ -43,6 +45,8 @@ export interface Member {
   avatar: string;
   /** #112: whether to fetch a photo for this person, rather than the photo itself. */
   hasAvatar?: boolean;
+  /** Changes whenever the photo does, so a replaced one is a new URL (#112). */
+  avatarVersion?: string | null;
   paymentHandles: User['paymentHandles'];
 }
 
@@ -455,22 +459,28 @@ export const api = {
    */
   avatarUrl: (() => {
     const cache = new Map<string, Promise<string | null>>();
-    return (userId: string): Promise<string | null> => {
-      const hit = cache.get(userId);
+    return (userId: string, version?: string | null): Promise<string | null> => {
+      // Keyed by person AND version. Keyed by person alone — which is how this
+      // was written — the first fetch was memoised forever, so uploading a new
+      // photo changed nothing on screen no matter where you navigated. That is
+      // the bug the owner hit on 2026-08-03, and the HTTP cache header was only
+      // the second reason it stuck.
+      const key = `${userId}:${version ?? ''}`;
+      const hit = cache.get(key);
       if (hit) return hit;
       const headers: Record<string, string> = {};
       const token = getToken();
       if (token) headers.Authorization = `Bearer ${token}`;
-      const p = fetch(`${BASE}/users/${userId}/avatar`, { headers })
+      const v = version ? `?v=${encodeURIComponent(version)}` : '';
+      const p = fetch(`${BASE}/users/${userId}/avatar${v}`, { headers })
         .then(async (res) => (res.ok ? URL.createObjectURL(await res.blob()) : null))
         // A missing or forbidden photo is not an error worth surfacing — the
         // initials badge is a perfectly good answer.
         .catch(() => null);
-      cache.set(userId, p);
+      cache.set(key, p);
       return p;
     };
   })(),
-  /** Drop a cached photo after it changes, so the new one is fetched. */
   receiptImageUrl: async (receiptId: string): Promise<string> => {
     const headers: Record<string, string> = {};
     const token = getToken();

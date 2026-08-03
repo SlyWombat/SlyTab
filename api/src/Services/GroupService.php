@@ -137,6 +137,7 @@ final class GroupService
                 'displayName' => $u['display_name'],
                 'avatar' => $u['avatar'],
                 'hasAvatar' => ($u['avatar_path'] ?? null) !== null && $u['avatar_path'] !== '',
+                'avatarVersion' => \SlyTab\Services\AvatarService::versionOf($u['avatar_path'] ?? null),
                 'paymentHandles' => json_decode($u['payment_handles'] ?: '{}', true),
             ], $m->fetchAll()),
         ];

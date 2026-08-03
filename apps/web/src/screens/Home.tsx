@@ -97,7 +97,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated, onMyExpenses
         <div className="spacer" />
         <button className="btn sm" onClick={() => setProfileOpen(true)}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} sm /> Profile
+          <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} avatarVersion={user.avatarVersion} sm /> Profile
         </button>
       </div>
 
@@ -640,7 +640,7 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
       {/* #112: a photo instead of an initial. Kept next to the name, which is
           the other thing that identifies you to everyone else. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} />
+        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} avatarVersion={user.avatarVersion} />
         <input ref={avatarInput} type="file" accept="image/*" hidden
           onChange={(e) => {
             const f = e.target.files?.[0];

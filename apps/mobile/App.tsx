@@ -59,10 +59,12 @@ function badgeColor(id: string): string {
  * people do not have — over a link that is already the slowest thing about
  * the app.
  */
-function Badge({ id, name, size = 30, hasAvatar = false }: {
-  id: string; name: string; size?: number; hasAvatar?: boolean;
+function Badge({ id, name, size = 30, hasAvatar = false, avatarVersion = null }: {
+  id: string; name: string; size?: number; hasAvatar?: boolean; avatarVersion?: string | null;
 }) {
   const [failed, setFailed] = useState(false);
+  // A new photo is a new URL, so the previous failure must not stick to it.
+  useEffect(() => { setFailed(false); }, [avatarVersion]);
   const showPhoto = hasAvatar && !failed;
   return (
     <View accessible={false} importantForAccessibility="no-hide-descendants"
@@ -73,7 +75,7 @@ function Badge({ id, name, size = 30, hasAvatar = false }: {
       }]}>
       {showPhoto
         ? (
-          <Image source={avatarSource(id)} resizeMode="cover"
+          <Image source={avatarSource(id, avatarVersion)} resizeMode="cover"
             style={{ width: size, height: size }}
             // A photo that will not load falls back to the initial rather
             // than leaving a hole where a person should be.
@@ -637,7 +639,7 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
     { key: 'groups', label: 'Groups', icon: (a) => <Icon name="group" size={22} color={a ? c.brand : c.text3} /> },
     { key: 'activity', label: 'Activity', icon: (a) => <Icon name="clock" size={22} color={a ? c.brand : c.text3} /> },
     // The Profile tab is the user's avatar badge (UI spec §1 / issue #40).
-    { key: 'profile', label: 'Profile', icon: () => <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} size={22} /> },
+    { key: 'profile', label: 'Profile', icon: () => <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} avatarVersion={user.avatarVersion} size={22} /> },
   ];
   return (
     <View style={[s.tabbar, { paddingBottom: insets.bottom }]}>
@@ -1465,7 +1467,7 @@ function ProfileScreen({
   return (
     <View style={s.screen}>
       <View style={s.header}>
-        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} size={34} />
+        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} avatarVersion={user.avatarVersion} size={34} />
         <Text style={s.h1}>Profile</Text>
       </View>
       {/* This screen has fields near the bottom (payment handles, the
@@ -1481,7 +1483,7 @@ function ProfileScreen({
       {/* #112: a photo instead of an initial, next to the name — the other
           thing that identifies you to everyone else. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-        <Badge id={user.id} name={user.displayName} size={44} hasAvatar={user.hasAvatar} />
+        <Badge id={user.id} name={user.displayName} size={44} hasAvatar={user.hasAvatar} avatarVersion={user.avatarVersion} />
         <Btn small disabled={avatarBusy}
           label={avatarBusy ? 'Uploading…' : user.hasAvatar ? 'Change photo' : 'Add a photo'}
           onPress={pickAvatar} />
@@ -2465,7 +2467,7 @@ function GroupScreen({ groupId, user, onBack }: {
           {chrome}
           {group.members.map((m) => (
             <View style={s.row} key={m.id}>
-              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} />
+              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} />
               <Text style={[s.rowName, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
               {(balances?.net[m.id] ?? 0) === 0 ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
                 : <Amount minor={balances?.net[m.id] ?? 0} currency={group.homeCurrency} signed />}
@@ -3489,7 +3491,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             <>
               {group.members.map((m) => (
                 <View key={m.id} style={s.checkRow}>
-                  <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
+                  <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} size={22} />
                   <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
                   <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme} placeholder="0.00" keyboardType="decimal-pad"
                     value={payerAmounts[m.id] ?? ''}
@@ -3578,7 +3580,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               <Icon name={on ? 'checkboxOn' : 'checkboxOff'} size={20}
                 color={on ? c.brand : c.text3} />
             )}
-            <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
+            <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} size={22} />
             <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
             {method !== 'exact' && (
               <Text style={s.meta}>
@@ -3879,7 +3881,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
                     style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
                       minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center',
                       borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
-                    <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
+                    <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} size={22} />
                   </Pressable>
                 );
               })}

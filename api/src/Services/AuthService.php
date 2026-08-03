@@ -364,6 +364,7 @@ final class AuthService
             // storage path would make the photo reachable to anyone who could
             // guess it (#112).
             'hasAvatar' => ($row['avatar_path'] ?? null) !== null && $row['avatar_path'] !== '',
+            'avatarVersion' => \SlyTab\Services\AvatarService::versionOf($row['avatar_path'] ?? null),
             'defaultCurrency' => $row['default_currency'],
             'paymentHandles' => json_decode($row['payment_handles'] ?: '{}', true),
             'notifyLevel' => $row['notify_level'] ?? 'all',

@@ -195,6 +195,36 @@ final class AvatarTest extends TestCase
         self::assertGreaterThan($bRight, $rRight, 'the upper half should have turned to the right');
     }
 
+    /**
+     * Replacing a photo must change its version.
+     *
+     * The URL is /users/<id>/avatar and does not change, and the reply is
+     * cacheable — so without a version the old picture kept being shown after
+     * an upload, everywhere, until the cache expired. Reported by the owner on
+     * 2026-08-03. Clients put the version on the URL as ?v=, which is what
+     * makes the new photo a different thing to fetch.
+     */
+    public function testReplacingAPhotoChangesItsVersion(): void
+    {
+        $ann = $this->register('ann-ver@example.com', 'Ann');
+
+        $this->request('POST', '/api/v1/me/avatar', null, $ann['token'], ['image' => $this->png()]);
+        $first = self::json($this->request('GET', '/api/v1/me', null, $ann['token']))['avatarVersion'];
+        self::assertNotNull($first, 'a stored photo must carry a version');
+
+        $this->request('POST', '/api/v1/me/avatar', null, $ann['token'], ['image' => $this->png()]);
+        $second = self::json($this->request('GET', '/api/v1/me', null, $ann['token']))['avatarVersion'];
+
+        self::assertNotSame($first, $second, 'a replaced photo must not reuse the old version');
+
+        // And removing it takes the version away with it, so a badge falls back
+        // to initials rather than asking for a photo that is gone.
+        $this->request('DELETE', '/api/v1/me/avatar', null, $ann['token']);
+        $me = self::json($this->request('GET', '/api/v1/me', null, $ann['token']));
+        self::assertFalse($me['hasAvatar']);
+        self::assertNull($me['avatarVersion']);
+    }
+
     public function testUploadThenSeeItAndRemoveIt(): void
     {
         $ann = $this->register('ann-av@example.com', 'Ann');

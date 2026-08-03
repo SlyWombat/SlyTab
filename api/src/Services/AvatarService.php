@@ -102,15 +102,32 @@ final class AvatarService
             // Re-encoded as JPEG, which is also what removes the metadata: the
             // EXIF block, including any GPS fix, does not survive the round
             // trip. Nothing here needs the location of someone's face.
-            $rel = "avatars/{$userId}.jpg";
+            // A token in the filename, so replacing a photo changes its URL.
+            //
+            // The endpoint is /users/<id>/avatar, which is stable, and the
+            // reply is cacheable — so with a fixed filename a new photo was
+            // invisible until the cache expired. Reported by the owner on
+            // 2026-08-03: uploaded a new picture, navigated away and back, and
+            // still saw the old one. Making the URL change is what fixes that
+            // without giving up caching; the alternative, revalidating every
+            // time, costs a round trip per badge and a group screen draws
+            // dozens.
+            $token = bin2hex(random_bytes(4));
+            $rel = "avatars/{$userId}-{$token}.jpg";
             $ok = imagejpeg($dst, self::dataDir() . '/' . $rel, 88);
             imagedestroy($dst);
             if (!$ok) {
                 throw new \RuntimeException('could not write the resized photo');
             }
 
+            // The one it replaces, or every change leaves a file behind for
+            // good on a disk with about a gigabyte free.
+            $prev = $this->pathOf($userId);
             $this->pdo->prepare('UPDATE users SET avatar_path = ? WHERE id = ?')
                 ->execute([$rel, $userId]);
+            if ($prev !== null && $prev !== $rel) {
+                @unlink(self::dataDir() . '/' . $prev);
+            }
             return ['avatarPath' => $rel];
         } finally {
             @unlink($tmp);
@@ -154,6 +171,30 @@ final class AvatarService
         }
         imagedestroy($img);
         return $rotated;
+    }
+
+    /** The stored path for a user, or null when they have no photo. */
+    private function pathOf(string $userId): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT avatar_path FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $rel = $stmt->fetchColumn();
+        return is_string($rel) && $rel !== '' ? $rel : null;
+    }
+
+    /**
+     * The version a client puts on the URL as ?v=… (#112).
+     *
+     * Taken from the stored filename rather than kept in its own column: the
+     * filename already changes on every upload, so a second source of truth
+     * could only ever disagree with it.
+     */
+    public static function versionOf(?string $path): ?string
+    {
+        if ($path === null || $path === '') {
+            return null;
+        }
+        return preg_match('/-([0-9a-f]{8})\.jpg$/', $path, $m) === 1 ? $m[1] : null;
     }
 
     /** Remove the photo and fall back to initials. */

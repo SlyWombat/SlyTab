@@ -377,7 +377,7 @@ export function GroupScreen({ groupId, user, onBack }: {
         <>
           {group.members.map((m) => (
             <div className="row" key={m.id}>
-              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} />
+              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} />
               <div className="grow"><div className="name">{m.id === user.id ? 'You' : m.displayName}</div></div>
               <div className="right">
                 {(balances.net[m.id] ?? 0) === 0
@@ -402,7 +402,7 @@ export function GroupScreen({ groupId, user, onBack }: {
                   <div className="sect">{cur} — as spent, not converted</div>
                   {group.members.filter((m) => (rows[m.id] ?? 0) !== 0).map((m) => (
                     <div className="row" key={`${cur}-${m.id}`}>
-                      <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} sm />
+                      <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} sm />
                       <div className="grow"><div className="name">
                         {m.id === user.id ? 'You' : m.displayName}</div></div>
                       <div className="right">
@@ -938,7 +938,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
               </div>
               {group.members.map((m) => (
                 <div className="checkrow" key={m.id}>
-                  <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} sm />
+                  <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} sm />
                   {m.id === user.id ? 'You' : m.displayName}
                   <label className="field amt-in" style={{ margin: 0 }}>
                     <input className="amt" inputMode="decimal" placeholder="0.00"
@@ -1020,7 +1020,7 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
                   setIncluded(next);
                 }} />
             )}
-            <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} sm />
+            <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} sm />
             {m.id === user.id ? 'You' : m.displayName}
             {method === 'equal' && (
               <span className="amount muted" style={{ marginLeft: 'auto', fontSize: '0.8125rem' }}>
@@ -1304,7 +1304,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
                     aria-pressed={on}
                     style={{ background: 'none', border: 'none', padding: 2, opacity: on ? 1 : 0.35,
                       outline: on ? '2px solid var(--ss-brand)' : 'none', borderRadius: '50%' }}>
-                    <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} sm />
+                    <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} sm />
                   </button>
                 );
               })}
