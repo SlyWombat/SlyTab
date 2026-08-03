@@ -1396,8 +1396,18 @@ function GroupsScreen({ user, onOpenGroup, active }: {
         }
         renderItem={({ item }) => {
           const members = item.group.members;
+          // An explicit label below because iOS merges a Pressable's children
+          // into one accessibility element: without it VoiceOver reads the
+          // emoji, the name, every member initial and the amount as a single
+          // run-on string, and anything driving the app sees only that
+          // concatenation rather than the group's name.
           return (
-            <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}>
+            <Pressable style={s.row} onPress={() => onOpenGroup(item.group.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.group.name}${item.group.archivedAt ? ' (archived)' : ''}, `
+                + (item.netMinor === 0 ? 'settled'
+                  : `${item.netMinor > 0 ? 'you are owed' : 'you owe'} `
+                    + minorToAmountString(Math.abs(item.netMinor), item.currency))}>
               <View style={s.tile}>
                 {item.group.emoji
                   ? <Text maxFontSizeMultiplier={1.4} style={{ fontSize: 22 }}>{item.group.emoji}</Text>

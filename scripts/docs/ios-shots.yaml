@@ -64,14 +64,17 @@ appId: ca.electricrv.slytab
 
 # --- 2. A group's expenses --------------------------------------------------
 - tapOn: "Groups"
+# Matched as a regex, not exact text. A group row is one merged accessibility
+# element on iOS, so its name is only ever a SUBSTRING of the label — which is
+# why an exact match failed against a screen that plainly showed the group.
 # 40s, not 15: the API here is PHP's built-in server, which handles one request
 # at a time, and the group list fans out several at once. The list was on
 # screen in the failure capture — this timed out waiting for it, it was never
 # missing.
 - extendedWaitUntil:
-    visible: "Cottage Trip"
+    visible: ".*Cottage Trip.*"
     timeout: 40000
-- tapOn: "Cottage Trip"
+- tapOn: ".*Cottage Trip.*"
 - extendedWaitUntil:
     visible: "Balances"
     timeout: 15000
