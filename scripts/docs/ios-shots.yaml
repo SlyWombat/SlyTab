@@ -67,6 +67,13 @@ appId: ca.electricrv.slytab
     timeout: 30000
 
 # --- 1. Home: what you are owed, across every group -------------------------
+# Wait for the home data, not just the shell. "Groups" is a tab label and is
+# on screen before anything has loaded, so asserting it proves only that the
+# app started — run 21 photographed a spinner and an empty page. A group name
+# cannot appear until the balances have actually arrived.
+- extendedWaitUntil:
+    visible: ".*Cottage Trip.*"
+    timeout: 20000
 - takeScreenshot: 01-home
 
 # --- 2. A group's expenses --------------------------------------------------
@@ -113,11 +120,13 @@ appId: ca.electricrv.slytab
 - tapOn:
     id: "Amount.*"
 - inputText: "84.20"
-# Not hideKeyboard: the amount field raises a decimal pad, which has no return
-# key and no dismiss action, so Maestro cannot close it and the run dies there.
-# Tapping the sheet's own title does close it, and does nothing else.
+# Dismiss the decimal pad by tapping inert content INSIDE the scroll view. It
+# has no return key, so hideKeyboard cannot close it (run 20), and the sheet
+# title sits outside the ScrollView so tapping that did nothing (run 21) —
+# leaving the keyboard over the split rows and the save button. A plain Text
+# inside is not "handled" by a child, which is what dismisses it.
 - tapOn:
-    text: "New expense"
+    text: "Split equally.*"
 - takeScreenshot: 05-add-expense
 - tapOn: "Close"
 

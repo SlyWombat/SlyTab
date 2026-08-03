@@ -210,7 +210,13 @@ function SheetModal({ title, onClose, children }: {
               <Icon name="close" size={16} color={c.text2} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* on-drag because the keyboard otherwise stays up while you scroll,
+              and in the new-expense sheet it covers the split rows and the save
+              button — so the way out of it is to scroll to a control you cannot
+              see. The sign-in screen has always done this; the sheet did not,
+              which is how the App Store screenshot run found it. */}
+          <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+            contentContainerStyle={{ paddingBottom: 24 }}>
             {children}
           </ScrollView>
         </View>
