@@ -21,6 +21,10 @@ on:
         description: Simulator device (must be a 6.9-inch class iPhone)
         default: iPhone 16 Pro Max
         type: string
+      rebuild:
+        description: Build the app again (only needed when the APP changed — costs an EAS build)
+        default: false
+        type: boolean
 
 jobs:
   screenshots:
@@ -124,10 +128,30 @@ jobs:
             echo "::error::No EXPO_TOKEN secret. Create one at expo.dev (Account Settings -> Access Tokens) and add it under Settings -> Secrets -> Actions."
             exit 1
           fi
-          npx eas-cli@latest build \
-            --platform ios --profile ios-simulator \
-            --non-interactive --wait --json > /tmp/build.json
-          echo "--- build json ---"; head -c 2000 /tmp/build.json; echo
+
+          # Reuse the last simulator build unless the app itself changed.
+          #
+          # Every run used to build from scratch, and most runs changed only
+          # the Maestro flow — the app was identical. That burned the whole
+          # free-plan iOS allowance for the month on rebuilding the same
+          # binary, and the quota does not reset for 28 days. Iterating on a
+          # flow should cost nothing.
+          #
+          # Rebuild deliberately with the `rebuild` input when the app has
+          # actually changed. The build being used is always printed with its
+          # date, so which binary is under test is never a guess.
+          if [ "${{ inputs.rebuild }}" = "true" ]; then
+            echo "rebuild requested — this consumes an EAS build"
+            npx eas-cli@latest build \
+              --platform ios --profile ios-simulator \
+              --non-interactive --wait --json > /tmp/build.json
+          else
+            echo "reusing the most recent finished simulator build"
+            npx eas-cli@latest build:list \
+              --platform ios --profile ios-simulator --status finished \
+              --limit 1 --json --non-interactive > /tmp/build.json
+          fi
+          echo "--- build json ---"; head -c 1200 /tmp/build.json; echo
           URL=$(python3 - <<'PY'
           import json
           d = json.load(open('/tmp/build.json'))
@@ -136,6 +160,12 @@ jobs:
                 or b.get('applicationArchiveUrl') or '')
           PY
           )
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/build.json'))
+          b = d[0] if isinstance(d, list) else d
+          print(f"using build {b.get('id')} completed {b.get('completedAt')}")
+          PY
           [ -n "$URL" ] || { echo "::error::No artifact URL in the build output above"; exit 1; }
           echo "artifact: $URL"
           curl -sSL -o /tmp/app.tar.gz "$URL"
