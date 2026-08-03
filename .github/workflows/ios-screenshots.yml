@@ -231,17 +231,37 @@ jobs:
           # its own output folder, so a relative name lands beside the flow
           # file and an absolute one is refused outright. Both were tried.
           # Let it write where it wants, then collect.
+          # Retried because Maestro's XCUITest driver sometimes fails to start
+          # at all — LocalXCTestInstaller.start throwing before a single step
+          # runs. That is the runner having a bad moment, not the flow being
+          # wrong, and it is indistinguishable from a real failure in the exit
+          # code. A whole run costs fifteen minutes; a retry costs one.
           set +e
-          maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
-            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
-            --debug-output /tmp/maestro-debug
-          RC=$?
+          RC=1
+          for attempt in 1 2 3; do
+            echo "--- maestro attempt $attempt ---"
+            maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
+              -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
+              --debug-output "/tmp/maestro-debug-$attempt"
+            RC=$?
+            [ $RC -eq 0 ] && break
+            # Only retry a driver startup failure. A flow that ran and failed
+            # on an assertion will fail again, and burning two more attempts
+            # just delays the diagnosis.
+            if ! grep -rqs "LocalXCTestInstaller\|restartXCTestRunner" "/tmp/maestro-debug-$attempt" 2>/dev/null \
+               && [ $attempt -ge 1 ]; then
+              echo "flow ran and failed on its own terms — not retrying"
+              break
+            fi
+            echo "driver failed to start; retrying"
+            sleep 10
+          done
           set -e
 
           # Collected even when the flow failed part way, so a run that gets
           # three screenshots in still hands over three screenshots.
           echo "--- collecting captures ---"
-          find /tmp/maestro-debug ~/.maestro "$HOME/.maestro" scripts/docs \
+          find /tmp/maestro-debug* ~/.maestro "$HOME/.maestro" scripts/docs \
             -name '*.png' -newermt '-30 minutes' 2>/dev/null \
             | grep -viE 'failure|hierarchy' \
             | while read -r f; do
@@ -280,7 +300,7 @@ jobs:
           path: |
             build/ios-shots/
             scripts/docs/build/
-            /tmp/maestro-debug/
+            /tmp/maestro-debug*/
             /tmp/php-server.log
             /tmp/build.json
           if-no-files-found: warn
