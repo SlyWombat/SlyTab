@@ -212,6 +212,12 @@ jobs:
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+          # bootstatus returns as soon as the device reports booted, which is
+          # earlier than the point at which it will reliably accept an
+          # XCUITest runner — run 17 lost all three attempts to
+          # LocalXCTestInstaller failing to start. A few seconds of settling
+          # costs nothing against a fifteen-minute run.
+          sleep 15
           # Deterministic status bar: 9:41, full bars, full battery — the same
           # convention Apple's own marketing uses, and it stops the clock in
           # the corner changing between runs.
