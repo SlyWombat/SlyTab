@@ -362,16 +362,20 @@ final class Api
                     // Generous — a busy session batches every 20s — but bounded.
                     $limiter->guard('timings', $userId, 300, 3600);
                     $body = $rq->getParsedBody() ?? [];
-                    // Deliberately NOT $userId. The published privacy policy says
-                    // "no analytics, no telemetry" and promises we do not run
-                    // analytics on anyone's data; storing per-person timings for
-                    // 45 days made that untrue the moment this shipped. Nothing
-                    // reads the column — summary() groups by name alone — so
-                    // the personal link bought nothing and cost a promise.
-                    // If a future change needs to know WHICH person is slow,
-                    // that is a policy decision, not a code one.
+                    // Per-person timings, kept deliberately (owner, 2026-08-03):
+                    // SlyTab is in family-and-friends beta, not public release,
+                    // and knowing WHICH device is slow is most of the value
+                    // while the testers are people who can be asked about it.
+                    //
+                    // BEFORE GOING LIVE this must change, because the published
+                    // privacy policy says "No analytics, no telemetry" and
+                    // promises we never run analytics on anyone's data. Either
+                    // pass null here — nothing reads the column, summary()
+                    // groups by endpoint name alone, so the percentiles do not
+                    // care — or disclose it honestly on the policy page. It is
+                    // also the same page the App Store listing points at.
                     $kept = (new \SlyTab\Services\ClientTimingService($pdo))->record(
-                        null,
+                        $userId,
                         is_array($body['items'] ?? null) ? $body['items'] : [],
                         (string) ($body['platform'] ?? ''),
                         (string) ($body['appVersion'] ?? ''),
