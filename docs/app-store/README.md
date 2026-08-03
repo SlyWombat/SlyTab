@@ -17,14 +17,34 @@ Apple reshuffles these paths. If one 404s, go to
 **SlyTab**; App Privacy is in the left sidebar under General, and the version
 is the **Prepare for Submission** entry.
 
-## App Privacy — the answers
+## When the API says a version "cannot be reviewed"
 
-**This cannot be done from here.** The App Store Connect API does not expose it
-at all: `appPrivacyDetails`, `appDataUsages` and `appDataUsagePublishState` all
-return `404 PATH_ERROR`. It is web UI only, and it is mandatory before a first
-submission — an unanswered questionnaire is the most likely cause of
-`409 STATE_ERROR.ENTITY_STATE_INVALID` when adding a version to a review
-submission, which is the opaque error Apple gives instead of naming the item.
+Adding a version to a review submission can fail with:
+
+    409 STATE_ERROR.ENTITY_STATE_INVALID
+    This resource cannot be reviewed, please check associated errors to see why.
+
+**Apple never names the missing item, and the API cannot always find it.** On
+2026-08-03 this was the **pricing section**, incomplete in the web UI. It was
+diagnosed as App Privacy by elimination, and that was wrong: `appPriceSchedule`
+returned a record, which was read as "pricing is set" when it only meant a
+schedule row existed. Existence is not completeness, and no read available here
+distinguished the two.
+
+**So do not debug this over the API.** Open the version page in the web UI —
+it lists the blocking items explicitly, at the top, by name. That is a
+thirty-second answer to a question that took an hour from the outside.
+
+The two candidates worth checking first, both web-UI only:
+
+- **Pricing and Availability** — the price tier must actually be selected, not
+  merely have a schedule record.
+- **App Privacy** — the data-collection questionnaire, mandatory before a first
+  submission, and genuinely not exposed by the API: `appPrivacyDetails`,
+  `appDataUsages` and `appDataUsagePublishState` all return `404 PATH_ERROR`.
+  Remember to press **Publish**; saving alone does not clear the block.
+
+## App Privacy — the answers
 
 What SlyTab collects, all **linked to identity**, all for **App Functionality**
 only, and **none of it used for tracking**:
@@ -51,8 +71,10 @@ Verified against the API on 2026-08-03, so do not redo it by hand:
 - Age rating **4+**, including `socialMediaAgeRestricted`
 - Review contact and the demo account (App Review must sign in — every expense
   belongs to a group of real people, so there is nothing to see signed out)
-- Price schedule, **101 territories**, `availableInNewTerritories: false`
+- Pricing (free) and **101 territories**, `availableInNewTerritories: false`
 - `releaseType: AFTER_APPROVAL` — it goes live by itself once review passes
+
+**1.1 was submitted on 2026-08-03** and is `READY_FOR_REVIEW`.
 
 ## Finishing the submission
 
