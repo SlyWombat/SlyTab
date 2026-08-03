@@ -200,10 +200,17 @@ jobs:
           #
           # Turning it off at the device is better than fighting it in the
           # flow, and better than weakening the app's AutoFill to suit a test.
+          # Reported rather than swallowed: these were '|| true' and so it was
+          # invisible that they were not reliably taking effect. The flow has a
+          # guarded fallback either way.
           xcrun simctl spawn "$UDID" defaults write \
-            com.apple.security.AutoFillPasswords AutoFillPasswordsEnabled -bool false || true
+            com.apple.security.AutoFillPasswords AutoFillPasswordsEnabled -bool false \
+            && echo "autofill suppressed via com.apple.security.AutoFillPasswords" \
+            || echo "note: could not set com.apple.security.AutoFillPasswords"
           xcrun simctl spawn "$UDID" defaults write \
-            com.apple.Preferences AutoFillPasswordsEnabled -bool false || true
+            com.apple.Preferences AutoFillPasswordsEnabled -bool false \
+            && echo "autofill suppressed via com.apple.Preferences" \
+            || echo "note: could not set com.apple.Preferences"
         env:
           WANT: ${{ inputs.device }}
 

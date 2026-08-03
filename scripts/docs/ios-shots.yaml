@@ -34,14 +34,27 @@ appId: ca.electricrv.slytab
 # invites it by design: textContentType/autoComplete on the password field is
 # what makes AutoFill work (#99), so the prompt is correct behaviour and the
 # flow simply has to dismiss it.
-# The device setting suppresses the save-password prompt, confirmed: the tab
-# bar was already reachable here before any dismissal was attempted.
+# Dismiss the save-password alert, but only when it is actually in the way.
 #
-# The fallback taps are gone deliberately. "Not Now" was not found (correctly —
-# no prompt), but "Not now" then reported COMPLETED, which means it matched
-# something else on screen. An optional tap that matches whatever happens to be
-# nearby is worse than no tap at all: it can navigate somewhere unintended and
-# every screenshot after it is then of the wrong thing, silently.
+# It is a system alert drawn by another process, so it never appears in the
+# app's hierarchy and cannot be tapped by name — "Not Now" is not there to
+# find. The device setting that should suppress it is unreliable: it worked on
+# one run and not the next, with nothing changed.
+#
+# So this taps where the button is, guarded by `notVisible: Groups`. The guard
+# is what makes a coordinate tap acceptable: when no alert is up the tab bar is
+# visible, the block is skipped entirely, and there is no blind tap landing on
+# whatever happens to sit at those coordinates. When the alert IS up, Groups is
+# exactly what it is covering.
+#
+# Percentages rather than pixels so this does not silently become wrong on a
+# different device size.
+- runFlow:
+    when:
+      notVisible: "Groups"
+    commands:
+      - tapOn:
+          point: "33%,61%"
 - extendedWaitUntil:
     visible: "Groups"
     timeout: 30000
