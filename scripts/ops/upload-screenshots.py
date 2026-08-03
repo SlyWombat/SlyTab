@@ -19,6 +19,13 @@ Apple's upload is a reservation protocol, not a POST of bytes:
 
 Order matters on the store listing and is taken from the filenames, so
 01-home.png comes first.
+
+The display type for a 6.9-inch iPhone is APP_IPHONE_67, not APP_IPHONE_69 —
+there is no APP_IPHONE_69 in the API's enum at all. Apple kept one slot for the
+largest iPhone and it takes both 1290x2796 and 1320x2868; the marketing name
+moved on and the constant did not. Guessing the obvious name gets a 409 whose
+message lists thirty valid values and is truncated by most tools before it
+reaches the one you need.
 """
 import argparse
 import hashlib
@@ -71,8 +78,8 @@ def die(msg, res=None):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("directory")
-    ap.add_argument("--display", default="APP_IPHONE_69",
-                    help="Apple display type; 6.9-inch iPhone by default")
+    ap.add_argument("--display", default="APP_IPHONE_67",
+                    help="Apple display type; the largest iPhone slot by default")
     ap.add_argument("--replace", action="store_true",
                     help="delete screenshots already in the set first")
     ap.add_argument("--dry-run", action="store_true",
