@@ -35,8 +35,12 @@ ENVFILE="${EASYDNS_ENV_FILE:-$REPO/.env}"
 if [ ! -f "$ENVFILE" ]; then echo "no credentials file at $ENVFILE" >&2; exit 1; fi
 set -a; source "$ENVFILE"; set +a
 
-if [ -z "${EASYDNS_TOKEN:-}" ] || [ -z "${EASYDNS_API_KEY:-}" ]; then
-  echo "EASYDNS_TOKEN and EASYDNS_API_KEY must be set in .env" >&2
+# Either name for the key. easyDNS itself calls it "Key", their own MCP server
+# calls it EASYDNS_API_KEY, and being strict about which would only mean
+# failing on a file that is perfectly correct.
+KEY="${EASYDNS_API_KEY:-${EASYDNS_KEY:-}}"
+if [ -z "${EASYDNS_TOKEN:-}" ] || [ -z "$KEY" ]; then
+  echo "EASYDNS_TOKEN and EASYDNS_KEY (or EASYDNS_API_KEY) must be set in $ENVFILE" >&2
   exit 1
 fi
 
@@ -72,5 +76,5 @@ fi
 # Credentials arrive on stdin rather than in the argument list, so they never
 # appear in `ps` output on a shared host.
 curl "${ARGS[@]}" --config - "https://${HOST}${PORT}${APIPATH}" <<CONFIG
-user = "${EASYDNS_TOKEN}:${EASYDNS_API_KEY}"
+user = "${EASYDNS_TOKEN}:${KEY}"
 CONFIG

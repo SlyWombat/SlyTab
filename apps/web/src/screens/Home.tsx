@@ -411,7 +411,16 @@ function deviceName(label: string): string {
  */
 function ConnectAppSection() {
   const base = `${location.origin}${import.meta.env.BASE_URL}api/v1`;
-  if (base === 'https://electricrv.ca/slytab/api/v1') return null;
+  // Both addresses are the same machine: slytab.com serves the app and
+  // electricrv.ca/slytab keeps serving the API for phones that have it
+  // compiled in. Neither is "another server", so neither should offer itself
+  // as one — that prompt is for somebody running their own copy.
+  const OURS = [
+    'https://slytab.com/api/v1',
+    'https://www.slytab.com/api/v1',
+    'https://electricrv.ca/slytab/api/v1',
+  ];
+  if (OURS.includes(base)) return null;
   return (
     <>
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
