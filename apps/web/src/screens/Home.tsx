@@ -392,6 +392,39 @@ function deviceName(label: string): string {
 }
 
 /** Report a bug (profile page): comment + optional screenshot. */
+/**
+ * How to point the phone app at THIS server (#113).
+ *
+ * Only shown when this is not the server the app ships pointing at — someone
+ * using electricrv.ca has nothing to do here, and an instruction that never
+ * applies is noise on the one screen people go to when something is confusing.
+ *
+ * Two ways, because there are two situations. Reading this on the phone, the
+ * link goes straight into the app; reading it on a computer, the address is
+ * there to type. No QR code: it would mean a dependency and a canvas for
+ * something a person can read aloud.
+ *
+ * The link only ever OFFERS the server. The app names the host and asks before
+ * it moves — a link that could repoint an app silently is a way to phish a
+ * password, so the confirmation lives at the end that has something to lose.
+ */
+function ConnectAppSection() {
+  const base = `${location.origin}${import.meta.env.BASE_URL}api/v1`;
+  if (base === 'https://electricrv.ca/slytab/api/v1') return null;
+  return (
+    <>
+      <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}
+        href={`slytab://connect?base=${encodeURIComponent(base)}`}>
+        <Icon name="home" size={16} /> Use this server in the SlyTab app
+      </a>
+      <p className="muted" style={{ padding: '6px 4px 0', textAlign: 'center' }}>
+        On a computer? In the app, open Profile → Add another server and enter{' '}
+        <code style={{ wordBreak: 'break-all' }}>{location.origin}{import.meta.env.BASE_URL}</code>
+      </p>
+    </>
+  );
+}
+
 function BugReportSection() {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -642,6 +675,7 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
         installing unknown apps. <a href={`${import.meta.env.BASE_URL}marketing/apps/`}
           target="_blank" rel="noreferrer" style={{ color: 'var(--ss-brand)' }}>Other ways to install</a>
       </p>
+      <ConnectAppSection />
       <BugReportSection />
       <button className="btn block" style={{ marginTop: 8 }} onClick={onSignOut}>Sign out</button>
       {!deleting ? (

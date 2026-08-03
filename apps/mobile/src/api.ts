@@ -9,19 +9,34 @@ import Constants from 'expo-constants';
 
 import type { CategoryOverride } from '@slytab/core';
 import { record, setTimingSender } from './timing';
+import { DEFAULT_BASE } from './backends';
 
 /**
- * Production by default. Overridable via `extra.apiBase` in the Expo config so
- * a build can be pointed at a dev server — without this the documentation
- * pipeline can only ever photograph production data, which is both a privacy
- * problem and a determinism one (#104).
+ * The server this app is talking to, and the session it holds there — one
+ * value, always replaced as a whole (#113).
  *
- * Deliberately read once at module load: the base cannot change mid-session,
- * and re-reading it per request would invite someone to make it do so.
+ * It used to be a constant base read once at load, plus a separate mutable
+ * token. That was safe only while there was exactly one server. With several,
+ * two independent variables can disagree for as long as it takes to set the
+ * second, and the failure that lets in is one server's bearer token being sent
+ * to another — which is handing over the account.
+ *
+ * So they move together or not at all. Every request reads this object once,
+ * at the top, and uses that snapshot throughout: a request already in flight
+ * when someone switches servers finishes against the server it started on,
+ * with the token that belongs there. Nothing is ever read from the new server
+ * and paired with the old one's credential.
+ *
+ * `extra.apiBase` still wins at startup, because the documentation pipeline
+ * needs a build that can only ever see its own throwaway API (#104).
  */
-const BASE: string =
-  (Constants.expoConfig?.extra as { apiBase?: string } | undefined)?.apiBase
-  ?? 'https://electricrv.ca/slytab/api/v1';
+interface Conn { base: string; token: string | null }
+
+let conn: Conn = {
+  base: (Constants.expoConfig?.extra as { apiBase?: string } | undefined)?.apiBase
+    ?? DEFAULT_BASE,
+  token: null,
+};
 
 /**
  * Debug breadcrumbs for in-app bug reports: being inside the app, we can
@@ -79,9 +94,28 @@ export function debugContext(): string {
   return `mobile ${Platform.OS} ${Platform.Version} app v${version}(${build})${errs}`.slice(0, 500);
 }
 
-let token: string | null = null;
 export function setToken(t: string | null): void {
-  token = t;
+  conn = { base: conn.base, token: t };
+}
+
+/** Which server is in use — for anything that has to name it to a person. */
+export function currentBase(): string {
+  return conn.base;
+}
+
+/**
+ * Point the app at another server, with the session that belongs there (#113).
+ *
+ * The in-flight map has to go with it. It is keyed by path alone, so a GET
+ * still running against the old server would otherwise be handed to the next
+ * caller as though it were the new server's answer — one account's data
+ * rendered under another's, which is the exact confusion this whole design is
+ * built to prevent. They are only ever dropped from the map here; the requests
+ * themselves finish against the server they started on.
+ */
+export function setBackend(base: string, token: string | null): void {
+  conn = { base, token };
+  inFlight.clear();
 }
 
 export interface ApiError { code: string; message: string }
@@ -231,6 +265,9 @@ async function timedReq<T>(method: string, path: string, body?: unknown): Promis
 async function reqInner<T>(
   method: string, path: string, body: unknown, onStatus: (s: number) => void,
 ): Promise<T> {
+  // One snapshot for the whole request: see Conn. Read twice, this could send
+  // one server's token to another mid-switch.
+  const { base, token } = conn;
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -238,7 +275,7 @@ async function reqInner<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       method, headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -312,8 +349,9 @@ export interface ReceiptResult {
  * being allowed to see someone's face.
  */
 export function avatarSource(userId: string): { uri: string; headers: Record<string, string> } {
+  const { base, token } = conn;
   return {
-    uri: `${BASE}/users/${userId}/avatar`,
+    uri: `${base}/users/${userId}/avatar`,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   };
 }
@@ -335,7 +373,8 @@ export async function uploadAvatar(uri: string): Promise<void> {
     name,
     type: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg',
   } as unknown as Blob);
-  const res = await fetch(`${BASE}/me/avatar`, {
+  const { base, token } = conn;
+  const res = await fetch(`${base}/me/avatar`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
@@ -347,8 +386,9 @@ export async function uploadAvatar(uri: string): Promise<void> {
 }
 
 export function receiptImageSource(receiptId: string): { uri: string; headers: Record<string, string> } {
+  const { base, token } = conn;
   return {
-    uri: `${BASE}/receipts/${receiptId}/image`,
+    uri: `${base}/receipts/${receiptId}/image`,
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   };
 }
@@ -371,11 +411,12 @@ export interface UploadHandle {
  */
 export function uploadReceipt(groupId: string, uri: string, mime: string, hooks: UploadHooks = {}, currencyHint?: string): UploadHandle {
   const FileSystem = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
+  const { base, token } = conn;
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   let uploadDone = false;
   const task = FileSystem.createUploadTask(
-    `${BASE}/groups/${groupId}/receipts`,
+    `${base}/groups/${groupId}/receipts`,
     uri,
     {
       httpMethod: 'POST',
@@ -550,9 +591,10 @@ export const api = {
         type: image.mime,
       } as unknown as Blob);
     }
+    const { base, token } = conn;
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${BASE}/bugs`, { method: 'POST', headers, body: fd });
+    const res = await fetch(`${base}/bugs`, { method: 'POST', headers, body: fd });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new ApiFailure(

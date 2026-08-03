@@ -18,8 +18,12 @@ import {
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
-  avatarSource, uploadAvatar,
+  avatarSource, uploadAvatar, currentBase, setBackend,
 } from './src/api';
+import {
+  addBackend, DEFAULT_BASE, hostOf, loadActive, loadBackends, normaliseBase,
+  rememberToken, removeBackend, setActive, type Backend,
+} from './src/backends';
 import { Icon } from './src/Icon';
 import { cacheClear, cacheKey, swr } from './src/cache';
 
@@ -245,7 +249,32 @@ function inviteTokenFrom(url: string | null): string | null {
   return m?.[1] ?? null;
 }
 
-const TOKEN_KEY = 'slytab.session';
+/**
+ * A server being offered by a link: slytab://connect?base=<url> (#113).
+ *
+ * The custom scheme rather than a universal link, and not by accident. An
+ * `applinks:` domain is listed in the app entitlements and Apple verifies each
+ * one against a file on that domain, so a universal link can only ever come
+ * from a domain compiled into the build — which a self-hosted server is not,
+ * and can never be without a new build. The custom scheme works from anywhere,
+ * which is the whole point here and also exactly why the confirmation below is
+ * not optional.
+ */
+function connectBaseFrom(url: string | null): string | null {
+  if (!url) return null;
+  const m = /^slytab:\/\/connect\?(.*)$/.exec(url);
+  if (!m?.[1]) return null;
+  const raw = new URLSearchParams(m[1]).get('base');
+  if (raw === null) return null;
+  try {
+    return normaliseBase(raw);
+  } catch {
+    // A malformed or http:// base is not worth a dialogue; it is not an offer
+    // a person can meaningfully accept.
+    return null;
+  }
+}
+
 /** System / Dark / Light (#92). 'system' follows the device and keeps doing so. */
 const THEME_KEY = 'slytab.theme';
 type ThemePref = 'system' | 'dark' | 'light';
@@ -343,17 +372,21 @@ function AppShell({ themePref, onThemeChange, scheme }: {
   const [nav, setNav] = useState<Nav>({ screen: 'home' });
   const [tab, setTab] = useState<Tab>('home');
 
-  // Stay signed in: the session token lives in the device keystore.
+  // Which server, and the session held there — restored together, because
+  // apart they can disagree (#113). loadActive falls back to the shipped
+  // server if the stored one has since been removed.
+  const [base, setBase] = useState(currentBase());
   useEffect(() => {
-    SecureStore.getItemAsync(TOKEN_KEY)
-      .then(async (stored) => {
+    loadActive()
+      .then(async ({ base: b, token: stored }) => {
+        setBackend(b, stored);
+        setBase(b);
         if (stored === null) return;
-        setToken(stored);
         try {
           setUser(await api.me());
         } catch {
           setToken(null);
-          await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+          await rememberToken(b, null);
         }
       })
       .catch(() => {})
@@ -363,7 +396,36 @@ function AppShell({ themePref, onThemeChange, scheme }: {
   function signedIn(t: string, u: User) {
     setToken(t);
     setUser(u);
-    SecureStore.setItemAsync(TOKEN_KEY, t).catch(() => {});
+    // Filed under the server it belongs to, never under a single "the token".
+    rememberToken(currentBase(), t).catch(() => {});
+  }
+
+  /**
+   * Move to another server (#113).
+   *
+   * Signed out first, so nothing rendered from the old account survives into
+   * the new one: the screens read from `user`, and leaving it set would show
+   * one server's name and balances while talking to another.
+   */
+  async function switchTo(next: string) {
+    setUser(null);
+    setRestoring(true);
+    try {
+      const t = await setActive(next);
+      setBackend(next, t);
+      setBase(next);
+      if (t !== null) {
+        try {
+          setUser(await api.me());
+        } catch {
+          // The session there has expired; the sign-in screen is the answer.
+          setToken(null);
+          await rememberToken(next, null);
+        }
+      }
+    } finally {
+      setRestoring(false);
+    }
   }
 
   // Issue #3: register for push once signed in (best-effort).
@@ -404,14 +466,67 @@ function AppShell({ themePref, onThemeChange, scheme }: {
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
   useEffect(() => {
     Linking.getInitialURL()
-      .then((url) => { const t = inviteTokenFrom(url); if (t) setPendingInvite(t); })
+      .then((url) => {
+        const t = inviteTokenFrom(url);
+        if (t) setPendingInvite(t);
+        const b = connectBaseFrom(url);
+        if (b) setOfferedServer(b);
+      })
       .catch(() => {});
     const sub = Linking.addEventListener('url', ({ url }) => {
       const t = inviteTokenFrom(url);
       if (t) setPendingInvite(t);
+      const b = connectBaseFrom(url);
+      if (b) setOfferedServer(b);
     });
     return () => sub.remove();
   }, []);
+
+  /**
+   * A link asked the app to use a different server (#113).
+   *
+   * The confirmation is the security boundary, not a courtesy. A link that
+   * could silently repoint the app is a phishing primitive: send someone a
+   * link, become the server they sign in to, collect the password. So the
+   * dialogue names the host — the thing being trusted — and nothing happens
+   * without a deliberate tap. Adding a server is also not the same as using
+   * it: this only offers, and the person chooses.
+   */
+  const [offeredServer, setOfferedServer] = useState<string | null>(null);
+  useEffect(() => {
+    if (offeredServer === null) return;
+    const offered = offeredServer;
+    setOfferedServer(null);
+    void (async () => {
+      const known = await loadBackends().catch(() => [] as Backend[]);
+      if (known.some((b) => b.base === offered)) {
+        if (offered !== base) await switchTo(offered);
+        return;
+      }
+      Alert.alert(
+        'Use a different server?',
+        `This link wants SlyTab on this phone to connect to ${hostOf(offered)}.`
+        + '\n\nYou will sign in there separately. Only continue if you know who runs it —'
+        + ' whoever does will see what you put in.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: `Use ${hostOf(offered)}`,
+            onPress: () => {
+              void (async () => {
+                try {
+                  await addBackend(offered);
+                  await switchTo(offered);
+                } catch (e) {
+                  Alert.alert('Could not connect', (e as Error).message);
+                }
+              })();
+            },
+          },
+        ],
+      );
+    })();
+  }, [offeredServer, base]);
 
   useEffect(() => {
     if (user === null || pendingInvite === null) return;
@@ -481,11 +596,14 @@ function AppShell({ themePref, onThemeChange, scheme }: {
           <View style={{ flex: 1, display: tab === 'profile' ? 'flex' : 'none' }}>
             <ProfileScreen active={tab === 'profile'} user={user} onSaved={setUser}
               themePref={themePref} onThemeChange={onThemeChange}
+              base={base} onSwitchServer={switchTo}
               onSignOut={() => {
                 api.logout().catch(() => {});
                 setToken(null);
                 setUser(null);
-                SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+                // The session for THIS server, not a single global one: signing
+                // out of one must not sign you out of the others (#113).
+                rememberToken(currentBase(), null).catch(() => {});
                 // Cached balances and expenses must not outlive the session
                 // that fetched them — including on a shared or handed-on phone.
                 void cacheClear();
@@ -1192,9 +1310,13 @@ function BugReportSection() {
   );
 }
 
-function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeChange }: {
+function ProfileScreen({
+  user, onSaved, onSignOut, active, themePref, onThemeChange, base, onSwitchServer,
+}: {
   themePref: ThemePref; onThemeChange: (t: ThemePref) => void;
   user: User; onSaved: (u: User) => void; onSignOut: () => void; active: boolean;
+  /** #113: which server this is, and how to move to another. */
+  base: string; onSwitchServer: (base: string) => void | Promise<void>;
 }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currency, setCurrency] = useState(user.defaultCurrency);
@@ -1202,6 +1324,55 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
   const [confirmEmail, setConfirmEmail] = useState('');
   const [notifyLevel, setNotifyLevel] = useState<'all' | 'important' | 'none'>(user.notifyLevel ?? 'all');
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [servers, setServers] = useState<Backend[]>([]);
+  const [addingServer, setAddingServer] = useState(false);
+  const [serverInput, setServerInput] = useState('');
+  const [serverBusy, setServerBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  // Only worth loading when the screen is actually on (#113): the list lives
+  // in the keystore, and reading it on every render of a hidden tab is work
+  // nobody asked for.
+  useEffect(() => {
+    if (!active) return;
+    loadBackends().then(setServers).catch(() => {});
+  }, [active]);
+
+  async function onAddServer() {
+    setServerBusy(true);
+    setServerError(null);
+    try {
+      setServers(await addBackend(serverInput));
+      setServerInput('');
+      setAddingServer(false);
+    } catch (e) {
+      setServerError((e as Error).message);
+    } finally {
+      setServerBusy(false);
+    }
+  }
+
+  function onRemoveServer(b: Backend) {
+    Alert.alert(
+      `Forget ${b.label}?`,
+      'You will be signed out of that server on this phone. Nothing on the server itself is deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const next = await removeBackend(b.base).catch(() => null);
+              if (next === null) return;
+              setServers(next);
+              if (b.base === base) await onSwitchServer(DEFAULT_BASE);
+            })();
+          },
+        },
+      ],
+    );
+  }
 
   /** #112. Square crop up front, so what you choose is what you get. */
   async function pickAvatar(): Promise<void> {
@@ -1292,11 +1463,6 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
       <Field label="Display name" value={displayName} onChangeText={setDisplayName} />
       <CurrencySingleField label="Home currency — your overall balance shows in this"
         value={currency} onChange={setCurrency} />
-      {/* #92: the light palette shipped with the design tokens and nothing
-          ever selected it, so the app was hard-dark by accident rather than by
-          choice. "Match my device" follows the system and keeps following it. */}
-      {/* #104: the manual, reachable from inside the app rather than only from
-          a page nobody visits. */}
       {/* #112: a photo instead of an initial, next to the name — the other
           thing that identifies you to everyone else. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -1308,8 +1474,13 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
           <Btn small label="Remove" disabled={avatarBusy} onPress={removeAvatar} />
         )}
       </View>
+      {/* #104: the manual, reachable from inside the app rather than only from
+          a page nobody visits. */}
       <Btn label="How SlyTab works"
         onPress={() => { void Linking.openURL('https://electricrv.ca/slytab/guide/'); }} />
+      {/* #92: the light palette shipped with the design tokens and nothing ever
+          selected it, so the app was hard-dark by accident rather than by
+          choice. "Match my device" follows the system and keeps following it. */}
       <Text style={s.fieldLabel}>Theme</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
         {([['system', 'Match my device'], ['dark', 'Dark'], ['light', 'Light']] as const).map(([v, label]) => (
@@ -1367,6 +1538,52 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
             </View>
           ))}
         </>
+      )}
+      {/* #113: SlyTab is meant to be self-hostable, so the app has to be able
+          to reach a server other than the one it shipped pointing at. Shown
+          only once there is a choice to make — someone using the SlyTab server
+          and nothing else should never have to think about this. */}
+      {(servers.length > 1 || addingServer) && (
+        <>
+          <Text style={s.fieldLabel}>Server</Text>
+          {servers.map((b) => (
+            <Pressable key={b.base} onPress={() => { if (b.base !== base) void onSwitchServer(b.base); }}
+              onLongPress={() => { if (b.base !== DEFAULT_BASE) onRemoveServer(b); }}
+              accessibilityRole="button"
+              accessibilityLabel={`${b.label}${b.base === base ? ', in use' : ''}`}
+              style={[s.row, { justifyContent: 'space-between' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: c.text, fontWeight: b.base === base ? '700' : '400' }}>{b.label}</Text>
+                <Text style={{ color: c.text3, fontSize: 12 }}>{hostOf(b.base)}</Text>
+              </View>
+              {b.base === base && <Text style={{ color: c.brand, fontSize: 12.5 }}>in use</Text>}
+            </Pressable>
+          ))}
+          {servers.length > 1 && (
+            <Text style={{ color: c.text3, fontSize: 12, paddingHorizontal: 2, marginBottom: 8 }}>
+              Each server keeps its own account and its own sign-in. Hold one to forget it.
+            </Text>
+          )}
+        </>
+      )}
+      {addingServer ? (
+        <>
+          <Field label="Server address" value={serverInput} onChangeText={setServerInput}
+            autoCapitalize="none" autoCorrect={false} keyboardType="url"
+            placeholder="https://example.org/slytab" />
+          {serverError !== null && (
+            <Text style={{ color: c.owe, fontSize: 12.5, padding: 4 }}>{serverError}</Text>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Btn small label={serverBusy ? 'Checking…' : 'Add server'}
+              disabled={serverBusy} onPress={() => { void onAddServer(); }} />
+            <Btn small label="Cancel" disabled={serverBusy}
+              onPress={() => { setAddingServer(false); setServerError(null); }} />
+          </View>
+          <View style={{ height: 8 }} />
+        </>
+      ) : (
+        <Btn label="Add another server" onPress={() => setAddingServer(true)} />
       )}
       <View style={{ height: 8 }} />
       <Btn label="Sign out" onPress={onSignOut} />

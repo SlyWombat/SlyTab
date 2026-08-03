@@ -5,6 +5,7 @@ export * from './exif-gps.js';
 export * from './geo-currency.js';
 export * from './receipt-assign.js';
 export * from './receipt-summary.js';
+export * from './backend-url.js';
 export * from './split.js';
 export * from './balance.js';
 export * from './simplify.js';

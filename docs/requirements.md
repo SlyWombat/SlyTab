@@ -272,6 +272,42 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
     use a composite `<amount>:<id>` cursor — an id-only cursor silently
     repeats and skips rows once the order is not the ULID order.
 
+### 2.12 Profile photo (#112)
+
+- A person may set a photo, which replaces their coloured initial everywhere a
+  badge is drawn. Most people will not, so the initial stays the normal case
+  and the photo is the addition.
+- Stored square at 256px, re-encoded as JPEG — which is also what strips EXIF,
+  so no location rides along with a face. The original is not kept.
+- Served by `GET /api/v1/users/<id>/avatar`, authorised by who is asking: the
+  person themselves, or anyone who shares a group with them. A ULID appears in
+  ordinary API responses, so knowing an id must never amount to permission.
+- `POST /api/v1/me/avatar` (multipart) sets it, `DELETE` removes it.
+
+### 2.13 Connecting to a self-hosted server (#113)
+
+- The phone app can hold a list of servers and move between them. The list
+  always contains the one the build shipped pointing at, which cannot be
+  removed; anything else is added by the person using it.
+- **Each server's session is stored under its own key and is never in scope
+  while another is active.** A session token is a bearer credential, so one
+  server receiving another's would be one server receiving the account. The
+  base URL and token are a single value in the client, replaced as a whole, so
+  a request in flight during a switch completes against the server it started
+  on and no request can ever pair a new base with an old token.
+- An address is normalised before use (`example.org` → `https://example.org/api/v1`)
+  and probed at `/health`, which must answer as `slytab-api`. Plain http is
+  refused except on the local network, where the wire belongs to the owner.
+- A server can offer itself with `slytab://connect?base=<url>`. The custom
+  scheme, not a universal link: `applinks:` domains are fixed in the app
+  entitlements and verified by Apple against that domain, so a self-hosted
+  server could never have one without a new build.
+- **The app names the host and requires an explicit tap before it moves.** A
+  link that could repoint the app silently is a way to phish a password; the
+  confirmation is the security boundary, not a courtesy.
+- The web app shows the connect link and its own address, but only when it is
+  not the server the app already ships pointing at.
+
 ## 3. Non-functional requirements
 
 - **NFR-1 Privacy.** No analytics/telemetry SDKs anywhere (family
