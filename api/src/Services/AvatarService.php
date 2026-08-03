@@ -72,6 +72,17 @@ final class AvatarService
                 throw new ApiException('VALIDATION', 'that file is not an image we can read');
             }
 
+            // Stand the photo up before doing anything else.
+            //
+            // A phone camera writes portrait pixels in landscape order and
+            // records the rotation as an EXIF tag; imagecreatefromstring reads
+            // the pixels and ignores the tag. So a portrait photo arrived
+            // sideways, was centre-cropped sideways, and every badge showed a
+            // face on its side. The web client made it likelier still: it only
+            // re-encodes files over 500 KB, so anything smaller reached here
+            // with the tag intact and untouched.
+            $src = self::uprightByExif($src, $tmp);
+
             // Centre square crop, then one resample to the final side. Cropping
             // first means the shrink never has to think about aspect ratio, and
             // a badge is a circle — anything outside the square is cut off by
@@ -104,6 +115,45 @@ final class AvatarService
         } finally {
             @unlink($tmp);
         }
+    }
+
+    /**
+     * Rotate an image to match its EXIF Orientation tag.
+     *
+     * Only the three rotations matter in practice — 3, 6 and 8 are what
+     * cameras write. The mirrored orientations (2, 4, 5, 7) come from
+     * deliberate flips rather than from how a phone was held, and treating
+     * them as rotations would make those photos worse, not better.
+     *
+     * Returns the original image untouched when there is no tag, when the
+     * exif extension is absent, or when anything about reading it fails: an
+     * unrotated photo is a much smaller problem than no photo.
+     */
+    private static function uprightByExif(\GdImage $img, string $path): \GdImage
+    {
+        if (!function_exists('exif_read_data')) {
+            return $img;
+        }
+        // Read from the temp file, which is still on disk at this point: the
+        // data:// wrapper would work too, but only if it stays registered,
+        // and a path cannot be turned off by configuration.
+        $exif = @exif_read_data($path);
+        $orientation = is_array($exif) ? ($exif['Orientation'] ?? null) : null;
+        $angle = match ((int) $orientation) {
+            3 => 180,
+            6 => -90,
+            8 => 90,
+            default => 0,
+        };
+        if ($angle === 0) {
+            return $img;
+        }
+        $rotated = @imagerotate($img, $angle, 0);
+        if ($rotated === false) {
+            return $img;
+        }
+        imagedestroy($img);
+        return $rotated;
     }
 
     /** Remove the photo and fall back to initials. */

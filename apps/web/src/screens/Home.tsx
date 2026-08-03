@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent, useRef } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
-import { api, type Group, type HomeBalances, type Session, type User, shrinkImage } from '../api';
+import { api, type Group, type HomeBalances, type Session, type User } from '../api';
 import { GetTheApp, TESTFLIGHT_URL } from '../GetTheApp';
 import { Icon } from '../Icon';
 import { setPref, storedPref, type ThemePref } from '../theme';
 import { AddExpenseSheet } from './Group';
 import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet } from '../ui';
+import { AvatarCropper } from '../AvatarCropper';
 
 // Quick-add remembers where you last added an expense (per device) so the
 // picker defaults to the group you're living in right now (issue #20).
@@ -493,17 +494,25 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
   const avatarInput = useRef<HTMLInputElement>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  /** The photo being cropped; null when the cropper is closed. */
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
-  async function onPickAvatar(file: File) {
+  /**
+   * Upload the square chosen in the cropper.
+   *
+   * No shrinkImage here any more. It scaled the longest edge and left the
+   * server to guess the square, which is the guess this whole flow exists to
+   * remove; and being under its 500 KB threshold meant a photo could pass
+   * through untouched, EXIF and all. The cropper already produces exactly what
+   * should be stored: 512px, square, upright, re-encoded.
+   */
+  async function onCroppedAvatar(square: Blob) {
     setAvatarBusy(true);
     setAvatarError(null);
     try {
-      // Shrunk client-side first, exactly as receipts are: the server squares
-      // and resizes anyway, and there is no reason to push several megabytes
-      // over a slow link to draw a circle the size of a fingernail.
-      const { blob, name } = await shrinkImage(file, 512);
-      await api.setAvatar(blob, name);
+      await api.setAvatar(square, 'avatar.jpg');
       onSaved(await api.me());
+      setAvatarFile(null);
     } catch (e) {
       setAvatarError((e as Error).message);
     } finally {
@@ -626,8 +635,11 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
         <input ref={avatarInput} type="file" accept="image/*" hidden
           onChange={(e) => {
             const f = e.target.files?.[0];
+            // Cleared before anything else, so choosing the same file twice
+            // still fires a change event — otherwise cancelling the cropper
+            // and reopening it with that photo does nothing at all.
             e.target.value = '';
-            if (f) void onPickAvatar(f);
+            if (f) { setAvatarError(null); setAvatarFile(f); }
           }} />
         <button type="button" className="btn sm" disabled={avatarBusy}
           onClick={() => avatarInput.current?.click()}>
@@ -638,7 +650,17 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
             onClick={() => void onClearAvatar()}>Remove</button>
         )}
       </div>
-      {avatarError !== null && (
+      {avatarFile !== null && (
+        <Sheet title="Choose your photo" onClose={() => { if (!avatarBusy) setAvatarFile(null); }}>
+          <AvatarCropper file={avatarFile} busy={avatarBusy}
+            onCancel={() => setAvatarFile(null)}
+            onConfirm={(square) => { void onCroppedAvatar(square); }} />
+          {avatarError !== null && (
+            <p className="error" role="alert" style={{ marginTop: 8 }}>{avatarError}</p>
+          )}
+        </Sheet>
+      )}
+      {avatarError !== null && avatarFile === null && (
         <p className="muted" style={{ color: 'var(--ss-owe)', padding: '4px 2px' }}>{avatarError}</p>
       )}
 

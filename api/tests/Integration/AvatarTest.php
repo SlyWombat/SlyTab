@@ -83,6 +83,118 @@ final class AvatarTest extends TestCase
         return new UploadedFile($tmp, 'face.png', 'image/png', filesize($tmp), UPLOAD_ERR_OK);
     }
 
+    /**
+     * A JPEG whose pixels say one thing and whose EXIF tag says another —
+     * which is exactly what a phone camera produces.
+     *
+     * Built by hand because there is no way to ask GD for one: it writes
+     * pixels and no metadata. The APP1 segment is the smallest legal Exif
+     * block — a TIFF header, one IFD entry (Orientation), and a null next-IFD
+     * pointer.
+     *
+     * @param int $orientation EXIF Orientation value (3 = 180°, 6 = 90° CW, 8 = 90° CCW)
+     */
+    private function jpegWithOrientation(int $orientation, int $w, int $h): UploadedFile
+    {
+        $img = imagecreatetruecolor($w, $h);
+        // Two halves, so which way up it ended can be read off a single pixel.
+        imagefilledrectangle($img, 0, 0, $w - 1, intdiv($h, 2) - 1, imagecolorallocate($img, 255, 0, 0));
+        imagefilledrectangle($img, 0, intdiv($h, 2), $w - 1, $h - 1, imagecolorallocate($img, 0, 0, 255));
+        $plain = tempnam(sys_get_temp_dir(), 'av') . '.jpg';
+        imagejpeg($img, $plain, 100);
+        imagedestroy($img);
+
+        $tiff = "II\x2a\x00\x08\x00\x00\x00"          // little-endian, magic 42, IFD0 at byte 8
+            . "\x01\x00"                                  // one entry
+            . "\x12\x01"                                  // tag 0x0112 Orientation
+            . "\x03\x00"                                  // type SHORT
+            . "\x01\x00\x00\x00"                        // count 1
+            . chr($orientation) . "\x00\x00\x00"         // value, padded to 4 bytes
+            . "\x00\x00\x00\x00";                       // no next IFD
+        $app1 = "Exif\x00\x00" . $tiff;
+        $segment = "\xff\xe1" . pack('n', strlen($app1) + 2) . $app1;
+
+        $bytes = (string) file_get_contents($plain);
+        // Straight after SOI, before everything else.
+        $withExif = substr($bytes, 0, 2) . $segment . substr($bytes, 2);
+        $out = tempnam(sys_get_temp_dir(), 'av') . '.jpg';
+        file_put_contents($out, $withExif);
+        @unlink($plain);
+        return new UploadedFile($out, 'face.jpg', 'image/jpeg', filesize($out), UPLOAD_ERR_OK);
+    }
+
+    /** The colour at a point in the stored avatar, as [r, g, b]. */
+    private function pixelAt(string $jpeg, int $x, int $y): array
+    {
+        $img = imagecreatefromstring($jpeg);
+        self::assertNotFalse($img);
+        $rgb = imagecolorat($img, $x, $y);
+        imagedestroy($img);
+        return [($rgb >> 16) & 255, ($rgb >> 8) & 255, $rgb & 255];
+    }
+
+    /**
+     * A phone writes portrait pixels in landscape order and records the
+     * rotation as a tag. GD reads the pixels and ignores the tag, so before
+     * this was handled every photo taken in portrait was stored on its side —
+     * cropped sideways too, since the crop ran on the unrotated image.
+     */
+    public function testAPortraitPhotoIsStoodUpright(): void
+    {
+        $ann = $this->register('ann-exif@example.com', 'Ann');
+
+        // Orientation 3 is a half turn: red on top becomes blue on top.
+        $res = $this->request('POST', '/api/v1/me/avatar', null, $ann['token'], [
+            'image' => $this->jpegWithOrientation(3, 200, 200),
+        ]);
+        self::assertSame(200, $res->getStatusCode(), (string) $res->getBody());
+
+        $bytes = (string) $this->request('GET', "/api/v1/users/{$ann['id']}/avatar", null, $ann['token'])->getBody();
+        [$r, , $b] = $this->pixelAt($bytes, 128, 20);
+        self::assertGreaterThan(
+            $r,
+            $b,
+            'the top of a photo tagged as upside-down should be its blue half — the rotation was ignored',
+        );
+    }
+
+    /**
+     * A quarter turn moves the halves sideways, which is the whole point.
+     *
+     * The fixture is 300x100 with red above blue. Tagged 6, the picture as
+     * seen is 100 wide by 300 tall, and the half that was on top is now on the
+     * RIGHT — rotation swaps the axis the split runs along. Getting this
+     * backwards in the test was more instructive than the code: a 90 degree
+     * case that still reads red-above-blue has not been rotated at all.
+     *
+     * Note this fixture cannot tell rotate-then-crop from crop-then-rotate:
+     * its halves are symmetric about the centre, so both orders land the same
+     * pixels here. The order still matters for which part of a real frame is
+     * kept — cropping first takes the middle of the sideways image rather than
+     * the middle of what was framed — and the code rotates first for that
+     * reason.
+     */
+    public function testAQuarterTurnMovesTheHalvesSideways(): void
+    {
+        $ann = $this->register('ann-exif2@example.com', 'Ann');
+
+        $res = $this->request('POST', '/api/v1/me/avatar', null, $ann['token'], [
+            'image' => $this->jpegWithOrientation(6, 300, 100),
+        ]);
+        self::assertSame(200, $res->getStatusCode(), (string) $res->getBody());
+
+        $bytes = (string) $this->request('GET', "/api/v1/users/{$ann['id']}/avatar", null, $ann['token'])->getBody();
+        [$w, $h] = getimagesizefromstring($bytes);
+        self::assertSame(256, $w);
+        self::assertSame(256, $h);
+
+        [, , $bLeft] = $this->pixelAt($bytes, 20, 128);
+        [$rLeft] = $this->pixelAt($bytes, 20, 128);
+        [$rRight, , $bRight] = $this->pixelAt($bytes, 235, 128);
+        self::assertGreaterThan($rLeft, $bLeft, 'the lower half should have turned to the left');
+        self::assertGreaterThan($bRight, $rRight, 'the upper half should have turned to the right');
+    }
+
     public function testUploadThenSeeItAndRemoveIt(): void
     {
         $ann = $this->register('ann-av@example.com', 'Ann');

@@ -1389,7 +1389,16 @@ function ProfileScreen({
     if (r.canceled || !asset) return;
     setAvatarBusy(true);
     try {
-      await uploadAvatar(asset.uri);
+      // Squared already by the native editor above, so this only scales. 512
+      // rather than the receipt path's 1600: the server stores 256, and a
+      // 12-megapixel photo is several megabytes to send over a phone
+      // connection to fill a circle the size of a fingernail. Same size the
+      // web cropper produces, so both platforms send the same thing.
+      const sized = await ImageManipulator.manipulateAsync(
+        asset.uri, [{ resize: { width: 512, height: 512 } }],
+        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+      ).catch(() => null);
+      await uploadAvatar(sized?.uri ?? asset.uri);
       onSaved(await api.me());
     } catch (e) {
       Alert.alert('Could not add that photo', (e as Error).message);
