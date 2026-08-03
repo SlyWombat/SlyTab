@@ -202,15 +202,33 @@ async function main() {
  *
  * Without the first, an amber "Confirm your email" banner sits across the top
  * of every Home screenshot — a real part of the product, but not one the
- * manual is trying to teach. Dev database only; devdb.sh refuses production.
+ * manual is trying to teach, and not one Apple should be shown either.
+ *
+ * Two ways in, because there are two callers. Locally, devdb.sh: it reads the
+ * repo config at runtime, reaches the dev database through docker, and refuses
+ * to run against production. On a CI runner there is neither that file nor
+ * docker, but the database credentials are already in the environment — so use
+ * them directly. This used to be devdb.sh only, so the CI path warned and
+ * carried on, and every screenshot it produced wore the banner.
  */
 function markVerified() {
   const like = `demo-%-${SEED_REV}@example.com`;
   const sql = `UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()), is_test = 1
                WHERE email LIKE '${like}';`;
-  const r = spawnSync('bash', [fileURLToPath(new URL('devdb.sh', import.meta.url))], {
-    input: sql, encoding: 'utf8',
-  });
+  const env = process.env;
+  const direct = env.DB_HOST && env.DB_USER && env.DB_PASS;
+  const r = direct
+    // Through the environment rather than an argument, so it stays out of argv.
+    ? spawnSync('mysql', [
+      `--host=${env.DB_HOST}`, `--port=${env.DB_PORT || '3306'}`,
+      `--user=${env.DB_USER}`, env.DB_NAME || 'slytab_dev',
+    ], {
+      input: sql, encoding: 'utf8',
+      env: { ...env, MYSQL_PWD: env.DB_PASS },
+    })
+    : spawnSync('bash', [fileURLToPath(new URL('devdb.sh', import.meta.url))], {
+      input: sql, encoding: 'utf8',
+    });
   if (r.status !== 0) {
     log(`WARNING: could not mark demo accounts verified (${(r.stderr || '').trim().split('\n').pop()})`);
     log('         screenshots will carry the "Confirm your email" banner');

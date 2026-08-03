@@ -106,6 +106,14 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "New expense"
     timeout: 15000
+# Type an amount, so the sheet is photographed mid-use. Left blank, the save
+# button is disabled and the screenshot reads as a broken screen.
+# Matched as a prefix: Field names its input after its label, and this one
+# carries the currency — "Amount (CAD)" — whose brackets are regex characters.
+- tapOn:
+    id: "Amount.*"
+- inputText: "84.20"
+- hideKeyboard
 - takeScreenshot: 05-add-expense
 - tapOn: "Close"
 
