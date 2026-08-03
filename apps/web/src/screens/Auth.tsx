@@ -157,7 +157,11 @@ function AppleButton({ onSignedIn, onError }: {
         window.AppleID.auth.init({
           clientId,
           scope: 'name email',
-          redirectURI: `${location.origin}/slytab/`,
+          // From BASE_URL, not a hardcoded /slytab/. The app is served at the
+          // root of slytab.com and under /slytab/ on electricrv.ca, and the
+          // literal path built https://slytab.com/slytab/ — an address that
+          // does not exist and that Apple would refuse anyway (#117).
+          redirectURI: `${location.origin}${import.meta.env.BASE_URL}`,
           usePopup: true,
         });
         setReady(true);
