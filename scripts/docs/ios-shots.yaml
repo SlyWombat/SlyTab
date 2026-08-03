@@ -18,9 +18,13 @@ appId: ca.electricrv.slytab
 # The app opens straight onto the form with both fields visible, so there is
 # nothing to tap first. Email and password sign-in exists on iOS — only the
 # social providers differ there (Apple yes, Google no).
-- tapOn: "Email"
+# By testID, not by text: the visible "Email" is a label sibling to the input,
+# so tapping the text focused nothing and the form was submitted empty.
+- tapOn:
+    id: "Email"
 - inputText: "${DEMO_EMAIL}"
-- tapOn: "Password"
+- tapOn:
+    id: "Password"
 - inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"

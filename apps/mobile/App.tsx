@@ -136,9 +136,19 @@ function Field({ label, ...input }: { label: string } & React.ComponentProps<typ
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={s.fieldLabel}>{label}</Text>
+      {/* The label is a sibling Text, so without this the input itself has no
+          accessible name: VoiceOver announced "text field" with no indication
+          of which one. It also makes the field addressable by name to
+          anything driving the app, which is how the App Store screenshot run
+          fills it — that run typed into the label and signed in with an empty
+          form, which is what surfaced this.
+          Both are set before the spread so a caller can still override. */}
       {/* keyboardAppearance: the UI is hard-dark, and a light iOS keyboard
           slammed up against it looked like a different app (issue #50). */}
-      <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme}
+      <TextInput
+        accessibilityLabel={label}
+        testID={label}
+        placeholderTextColor={c.text3} keyboardAppearance={activeScheme}
         {...input} style={[s.input, input.style]} />
     </View>
   );
