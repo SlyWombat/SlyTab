@@ -34,19 +34,14 @@ appId: ca.electricrv.slytab
 # invites it by design: textContentType/autoComplete on the password field is
 # what makes AutoFill work (#99), so the prompt is correct behaviour and the
 # flow simply has to dismiss it.
-# Belt and braces: the device setting above should stop the prompt appearing
-# at all, but if it still does, give it a moment and dismiss it. Both spellings
-# because the button has been labelled differently across iOS versions.
-- extendedWaitUntil:
-    visible: "Groups"
-    timeout: 30000
-    optional: true
-- tapOn:
-    text: "Not Now"
-    optional: true
-- tapOn:
-    text: "Not now"
-    optional: true
+# The device setting suppresses the save-password prompt, confirmed: the tab
+# bar was already reachable here before any dismissal was attempted.
+#
+# The fallback taps are gone deliberately. "Not Now" was not found (correctly —
+# no prompt), but "Not now" then reported COMPLETED, which means it matched
+# something else on screen. An optional tap that matches whatever happens to be
+# nearby is worse than no tap at all: it can navigate somewhere unintended and
+# every screenshot after it is then of the wrong thing, silently.
 - extendedWaitUntil:
     visible: "Groups"
     timeout: 30000
@@ -56,9 +51,13 @@ appId: ca.electricrv.slytab
 
 # --- 2. A group's expenses --------------------------------------------------
 - tapOn: "Groups"
+# 40s, not 15: the API here is PHP's built-in server, which handles one request
+# at a time, and the group list fans out several at once. The list was on
+# screen in the failure capture — this timed out waiting for it, it was never
+# missing.
 - extendedWaitUntil:
     visible: "Cottage Trip"
-    timeout: 15000
+    timeout: 40000
 - tapOn: "Cottage Trip"
 - extendedWaitUntil:
     visible: "Balances"

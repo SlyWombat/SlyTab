@@ -94,7 +94,11 @@ jobs:
         run: |
           composer install --no-interaction --prefer-dist
           php bin/migrate.php
-          nohup php -S 127.0.0.1:8100 -t public > /tmp/php-server.log 2>&1 &
+          # PHP's built-in server is single-threaded unless told otherwise, and
+          # the app opens a screen by firing five or six requests at once —
+          # which it then serves one after another. That is not how production
+          # behaves and it is not what these screenshots should be waiting on.
+          PHP_CLI_SERVER_WORKERS=6 nohup php -S 127.0.0.1:8100 -t public > /tmp/php-server.log 2>&1 &
           for i in $(seq 1 30); do
             curl -fsS -m 2 http://127.0.0.1:8100/api/v1/health && break
             sleep 1
