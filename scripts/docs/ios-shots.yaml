@@ -28,6 +28,21 @@ appId: ca.electricrv.slytab
 - inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"
+# Let the sign-in actually finish before the app is killed.
+#
+# Tapping Sign in only STARTS the request. Stopping the app immediately killed
+# it before the token reached the keychain, so the restart came back to an
+# empty sign-in form — which looked exactly like the restart trick not working,
+# when in fact it had never been given a session to restore.
+#
+# Optional, so it costs nothing when no alert appears: the tab bar shows up and
+# this returns at once. When the alert IS up it waits the timeout out, by which
+# point the request has completed either way.
+- extendedWaitUntil:
+    visible: "Groups"
+    timeout: 20000
+    optional: true
+
 # iOS offers to save the password to iCloud Keychain the moment a signed-in
 # form is submitted — a system alert, drawn above the app, which is why the
 # run reached Home and still could not see the tab bar behind it. The app
