@@ -141,6 +141,18 @@ jobs:
           [ -n "$APP" ] || { echo "::error::No .app inside the artifact — see the listing above"; exit 1; }
           echo "$APP" > /tmp/app-path.txt
           echo "app: $APP"
+          # Prove the build points at the throwaway API before anything runs
+          # it. EAS builds in the cloud and does NOT inherit this runner's
+          # environment, so SLYTAB_API_BASE has to come from eas.json — and
+          # when it did not, the app fell back to production and tried to sign
+          # in there with a demo account that only exists locally. That cost a
+          # full run to diagnose and, worse, pointed a screenshot build at real
+          # people's data.
+          if ! grep -rq "127.0.0.1:8100" "$APP" 2>/dev/null; then
+            echo "::error::The built app does not reference the local API. It is pointing at production — check build.ios-simulator.env in apps/mobile/eas.json."
+            exit 1
+          fi
+          echo "confirmed: the build targets the local API"
 
       - name: Boot the simulator
         run: |
