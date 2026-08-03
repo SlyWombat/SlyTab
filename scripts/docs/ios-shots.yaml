@@ -34,8 +34,18 @@ appId: ca.electricrv.slytab
 # invites it by design: textContentType/autoComplete on the password field is
 # what makes AutoFill work (#99), so the prompt is correct behaviour and the
 # flow simply has to dismiss it.
+# Belt and braces: the device setting above should stop the prompt appearing
+# at all, but if it still does, give it a moment and dismiss it. Both spellings
+# because the button has been labelled differently across iOS versions.
+- extendedWaitUntil:
+    visible: "Groups"
+    timeout: 30000
+    optional: true
 - tapOn:
     text: "Not Now"
+    optional: true
+- tapOn:
+    text: "Not now"
     optional: true
 - extendedWaitUntil:
     visible: "Groups"

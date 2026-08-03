@@ -184,6 +184,22 @@ jobs:
           xcrun simctl status_bar "$UDID" override \
             --time "9:41" --cellularMode active --cellularBars 4 \
             --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100 || true
+          # Stop iOS offering to save the password to iCloud Keychain.
+          #
+          # The app asks for that prompt on purpose — textContentType and
+          # autoComplete on the password field are what make AutoFill work
+          # (#99) — but it is a SYSTEM alert, drawn by another process, so
+          # while it is up the app is no longer the frontmost accessibility
+          # tree and Maestro can see nothing behind it. Tapping "Not Now"
+          # therefore warned rather than worked: there was nothing of that name
+          # in the hierarchy it could reach.
+          #
+          # Turning it off at the device is better than fighting it in the
+          # flow, and better than weakening the app's AutoFill to suit a test.
+          xcrun simctl spawn "$UDID" defaults write \
+            com.apple.security.AutoFillPasswords AutoFillPasswordsEnabled -bool false || true
+          xcrun simctl spawn "$UDID" defaults write \
+            com.apple.Preferences AutoFillPasswordsEnabled -bool false || true
         env:
           WANT: ${{ inputs.device }}
 
