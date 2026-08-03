@@ -242,19 +242,22 @@ jobs:
             echo "--- maestro attempt $attempt ---"
             maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
               -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
-              --debug-output "/tmp/maestro-debug-$attempt"
-            RC=$?
+              --debug-output "/tmp/maestro-debug-$attempt" 2>&1 \
+              | tee "/tmp/maestro-out-$attempt.log"
+            RC=${PIPESTATUS[0]}
             [ $RC -eq 0 ] && break
-            # Only retry a driver startup failure. A flow that ran and failed
-            # on an assertion will fail again, and burning two more attempts
-            # just delays the diagnosis.
-            if ! grep -rqs "LocalXCTestInstaller\|restartXCTestRunner" "/tmp/maestro-debug-$attempt" 2>/dev/null \
-               && [ $attempt -ge 1 ]; then
-              echo "flow ran and failed on its own terms — not retrying"
-              break
+            # Retry ONLY when the driver never started. Retrying a flow that
+            # ran and failed is actively harmful: clearState does not clear the
+            # keychain, so the second attempt finds the app already signed in,
+            # dies at the sign-in form, and buries the real failure under two
+            # misleading ones. That happened on run 13.
+            if grep -q "LocalXCTestInstaller\|restartXCTestRunner" "/tmp/maestro-out-$attempt.log"; then
+              echo "driver failed to start; retrying"
+              sleep 10
+              continue
             fi
-            echo "driver failed to start; retrying"
-            sleep 10
+            echo "the flow ran and failed on its own terms — not retrying"
+            break
           done
           set -e
 

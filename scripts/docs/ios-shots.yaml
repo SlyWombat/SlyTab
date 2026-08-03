@@ -63,7 +63,10 @@ appId: ca.electricrv.slytab
 - takeScreenshot: 01-home
 
 # --- 2. A group's expenses --------------------------------------------------
-- tapOn: "Groups"
+# By testID: "Groups" also names a section heading on Home, so matching the
+# tab by its text alone is ambiguous.
+- tapOn:
+    id: "tab-groups"
 # Matched as a regex, not exact text. A group row is one merged accessibility
 # element on iOS, so its name is only ever a SUBSTRING of the label — which is
 # why an exact match failed against a screen that plainly showed the group.
@@ -108,7 +111,8 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "Groups"
     timeout: 15000
-- tapOn: "Activity"
+- tapOn:
+    id: "tab-activity"
 - extendedWaitUntil:
     visible: "Activity"
     timeout: 15000

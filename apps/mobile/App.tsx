@@ -493,6 +493,7 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
     <View style={[s.tabbar, { paddingBottom: insets.bottom }]}>
       {items.map((it) => (
         <Pressable key={it.key} style={s.tabItem} onPress={() => onTab(it.key)}
+          testID={`tab-${it.key}`}
           accessibilityRole="tab" accessibilityLabel={it.label}
           accessibilityState={{ selected: tab === it.key }}>
           {/* The avatar keeps the old dimming — it is a photo-like badge, not
