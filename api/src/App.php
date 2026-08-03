@@ -24,8 +24,22 @@ final class App
         Env::bootstrap();
 
         $app = AppFactory::create();
+
+        // One codebase, reachable at two paths.
+        //
+        // The same directory is served as https://slytab.com/ and as
+        // https://electricrv.ca/slytab/, and it has to stay that way: every
+        // installed phone app has electricrv.ca/slytab/api/v1 compiled in and
+        // cannot be changed without a store release, while the browser app now
+        // lives at the apex.
+        //
+        // So the prefix is applied only when the request actually arrived
+        // under it. Applied unconditionally it strips /slytab from a URI that
+        // never had it, and every route on the apex 404s — which is exactly
+        // what happened the first time slytab.com served the app.
         $basePath = Env::get('API_BASE_PATH');
-        if ($basePath !== '') {
+        $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+        if ($basePath !== '' && str_starts_with($uri, $basePath . '/')) {
             $app->setBasePath($basePath);
         }
 
