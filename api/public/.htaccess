@@ -5,8 +5,22 @@
 CGIPassAuth On
 SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
 
+# Force HTTPS before anything else runs.
+#
+# A security review on 2026-08-02 found this path answering 200 in cleartext:
+# http://electricrv.ca/slytab/api/v1/health. The apex redirects, but switching
+# RewriteEngine on in a directory REPLACES the inherited rules instead of
+# adding to them, so the redirect never reached here. Every request carries a
+# long-lived bearer token, so this was the whole session handed over in clear.
+#
+# X-Forwarded-Proto is checked as well: %{HTTPS} is not reliably set behind a
+# terminating proxy, and without that condition this rule can loop.
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteRule ^ index.php [QSA,L]
 </IfModule>
@@ -14,4 +28,8 @@ SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
 # Nothing here is cacheable by intermediaries.
 <IfModule mod_headers.c>
   Header set Cache-Control "no-store"
+  # No includeSubDomains and no preload on purpose: the domain hosts other
+  # projects, a subdomain still on http would break, and preload is
+  # effectively irreversible.
+  Header always set Strict-Transport-Security "max-age=31536000"
 </IfModule>

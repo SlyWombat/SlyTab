@@ -47,7 +47,7 @@ appId: ca.electricrv.slytab
     timeout: 30000
 
 # --- 1. Home: what you are owed, across every group -------------------------
-- takeScreenshot: build/ios-shots/01-home
+- takeScreenshot: ${SHOTS_DIR}/01-home
 
 # --- 2. A group's expenses --------------------------------------------------
 - tapOn: "Groups"
@@ -62,17 +62,17 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "Balances"
     timeout: 15000
-- takeScreenshot: build/ios-shots/02-group-expenses
+- takeScreenshot: ${SHOTS_DIR}/02-group-expenses
 
 # --- 3. Balances and the settle-up plan -------------------------------------
 - tapOn: "Balances"
-- takeScreenshot: build/ios-shots/03-balances
+- takeScreenshot: ${SHOTS_DIR}/03-balances
 
 # --- 4. Totals --------------------------------------------------------------
 - tapOn:
     text: "Totals"
     optional: true
-- takeScreenshot: build/ios-shots/04-totals
+- takeScreenshot: ${SHOTS_DIR}/04-totals
 
 # --- 5. Adding an expense, with the split controls on screen ----------------
 - tapOn: "Expenses"
@@ -80,7 +80,7 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "New expense"
     timeout: 15000
-- takeScreenshot: build/ios-shots/05-add-expense
+- takeScreenshot: ${SHOTS_DIR}/05-add-expense
 - tapOn: "Close"
 
 # --- 6. The activity feed ---------------------------------------------------
@@ -96,4 +96,4 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "Activity"
     timeout: 15000
-- takeScreenshot: build/ios-shots/06-activity
+- takeScreenshot: ${SHOTS_DIR}/06-activity

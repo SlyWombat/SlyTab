@@ -220,8 +220,12 @@ jobs:
           export PATH="$PATH:$HOME/.maestro/bin"
           maestro --version
           mkdir -p build/ios-shots
+          # Absolute: Maestro resolves a relative takeScreenshot against the
+          # flow file's directory, so "build/ios-shots/01-home" landed under
+          # scripts/docs/ and never reached the artifact.
           maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
-            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" --debug-output /tmp/maestro-debug
+            -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
+            -e SHOTS_DIR="$PWD/build/ios-shots" --debug-output /tmp/maestro-debug
 
       - name: What the app actually showed
         # The whole point of this step: when a tap fails it is because the label
@@ -252,6 +256,7 @@ jobs:
           name: ios-screenshots
           path: |
             build/ios-shots/
+            scripts/docs/build/
             /tmp/maestro-debug/
             /tmp/php-server.log
             /tmp/build.json
