@@ -272,9 +272,20 @@ jobs:
           # runs. That is the runner having a bad moment, not the flow being
           # wrong, and it is indistinguishable from a real failure in the exit
           # code. A whole run costs fifteen minutes; a retry costs one.
+          #
+          # Run 19 lost all three attempts to the driver alone, on a flow that
+          # had just worked: it builds and installs an XCUITest runner into the
+          # simulator, and on a loaded runner that does not always finish
+          # inside Maestro's default wait. The error says so itself. Ten
+          # minutes is far longer than it needs when the machine is healthy,
+          # and costs nothing then — the wait ends when the driver is ready,
+          # not when the clock runs out. Five attempts rather than three for
+          # the same reason: this failure is transient, and a whole run is
+          # fifteen minutes of a free runner.
+          export MAESTRO_DRIVER_STARTUP_TIMEOUT=600000
           set +e
           RC=1
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             echo "--- maestro attempt $attempt ---"
             maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
               -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
@@ -289,7 +300,11 @@ jobs:
             # misleading ones. That happened on run 13.
             if grep -q "LocalXCTestInstaller\|restartXCTestRunner" "/tmp/maestro-out-$attempt.log"; then
               echo "driver failed to start; retrying"
-              sleep 10
+              # Shut the runner down before trying again. A half-started one
+              # left behind is part of why the next attempt fails the same way.
+              xcrun simctl terminate "$UDID" dev.mobile.maestro-driver-iosUITests.xctrunner 2>/dev/null || true
+              pkill -f maestro-driver-ios 2>/dev/null || true
+              sleep 15
               continue
             fi
             echo "the flow ran and failed on its own terms — not retrying"
