@@ -220,12 +220,28 @@ jobs:
           export PATH="$PATH:$HOME/.maestro/bin"
           maestro --version
           mkdir -p build/ios-shots
-          # Absolute: Maestro resolves a relative takeScreenshot against the
-          # flow file's directory, so "build/ios-shots/01-home" landed under
-          # scripts/docs/ and never reached the artifact.
+          # Maestro owns where screenshots go: it sandboxes takeScreenshot to
+          # its own output folder, so a relative name lands beside the flow
+          # file and an absolute one is refused outright. Both were tried.
+          # Let it write where it wants, then collect.
+          set +e
           maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
             -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
-            -e SHOTS_DIR="$PWD/build/ios-shots" --debug-output /tmp/maestro-debug
+            --debug-output /tmp/maestro-debug
+          RC=$?
+          set -e
+
+          # Collected even when the flow failed part way, so a run that gets
+          # three screenshots in still hands over three screenshots.
+          echo "--- collecting captures ---"
+          find /tmp/maestro-debug ~/.maestro "$HOME/.maestro" scripts/docs \
+            -name '*.png' -newermt '-30 minutes' 2>/dev/null \
+            | grep -viE 'failure|hierarchy' \
+            | while read -r f; do
+                cp -n "$f" build/ios-shots/ 2>/dev/null || true
+              done
+          ls -la build/ios-shots || true
+          exit $RC
 
       - name: What the app actually showed
         # The whole point of this step: when a tap fails it is because the label
