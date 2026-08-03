@@ -94,6 +94,8 @@ export class ApiFailure extends Error {
 export interface User {
   id: string; email: string; emailVerifiedAt: string | null;
   displayName: string; avatar: string;
+  /** #112: whether to fetch a photo for this person, not the photo itself. */
+  hasAvatar?: boolean;
   notifyLevel?: 'all' | 'important' | 'none';
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
@@ -102,6 +104,7 @@ export interface User {
 }
 export interface Member {
   id: string; displayName: string; avatar: string;
+  hasAvatar?: boolean;
   paymentHandles: User['paymentHandles'];
 }
 export interface Group {
@@ -301,6 +304,48 @@ export interface ReceiptResult {
 }
 
 /** Receipt image needs the Bearer token — RN <Image> supports headers. */
+/**
+ * A person's photo, for <Image source={...}> (#112).
+ *
+ * Headers rather than a bare URL: the endpoint checks who is asking, since a
+ * ULID appears in ordinary responses and knowing one must not be the same as
+ * being allowed to see someone's face.
+ */
+export function avatarSource(userId: string): { uri: string; headers: Record<string, string> } {
+  return {
+    uri: `${BASE}/users/${userId}/avatar`,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  };
+}
+
+/**
+ * Send a chosen photo (#112).
+ *
+ * Multipart by hand rather than through the receipt uploader: that one carries
+ * progress and cancellation for a 25 MB photograph over a slow link, and none
+ * of that earns its place for an avatar the server is about to shrink to
+ * 256px anyway.
+ */
+export async function uploadAvatar(uri: string): Promise<void> {
+  const form = new FormData();
+  const name = uri.split('/').pop() || 'avatar.jpg';
+  const ext = (name.split('.').pop() || 'jpg').toLowerCase();
+  form.append('image', {
+    uri,
+    name,
+    type: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg',
+  } as unknown as Blob);
+  const res = await fetch(`${BASE}/me/avatar`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(j?.error?.message ?? 'could not upload that photo');
+  }
+}
+
 export function receiptImageSource(receiptId: string): { uri: string; headers: Record<string, string> } {
   return {
     uri: `${BASE}/receipts/${receiptId}/image`,
@@ -445,6 +490,7 @@ export const api = {
   /** Add someone you already share a group with (issue #24). */
   addKnownMember: (groupId: string, userId: string) =>
     req<Group>('POST', `/groups/${groupId}/members`, { userId }),
+  clearAvatar: () => req<{ ok: true }>('DELETE', '/me/avatar'),
   archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
   // Only for a group that never held money — the server refuses with
   // GROUP_NOT_EMPTY otherwise, and archiving stays the answer for the rest.

@@ -18,6 +18,7 @@ import {
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
   type ParsedReceipt, type User,
+  avatarSource, uploadAvatar,
 } from './src/api';
 import { Icon } from './src/Icon';
 import { cacheClear, cacheKey, swr } from './src/cache';
@@ -45,11 +46,36 @@ function badgeColor(id: string): string {
   return BADGE_HUES[h % BADGE_HUES.length]!;
 }
 
-function Badge({ id, name, size = 30 }: { id: string; name: string; size?: number }) {
+/**
+ * A person, as a circle: their photo if they have one, their initial if not
+ * (#112).
+ *
+ * `hasAvatar` has to be passed rather than guessed. A group screen draws
+ * dozens of these, and without it every one would request a photo that most
+ * people do not have — over a link that is already the slowest thing about
+ * the app.
+ */
+function Badge({ id, name, size = 30, hasAvatar = false }: {
+  id: string; name: string; size?: number; hasAvatar?: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  const showPhoto = hasAvatar && !failed;
   return (
     <View accessible={false} importantForAccessibility="no-hide-descendants"
-      style={[s.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: badgeColor(id) }]}>
-      <Text style={s.badgeText} maxFontSizeMultiplier={1.1}>{name.slice(0, 1).toUpperCase()}</Text>
+      style={[s.badge, {
+        width: size, height: size, borderRadius: size / 2,
+        backgroundColor: showPhoto ? 'transparent' : badgeColor(id),
+        overflow: 'hidden',
+      }]}>
+      {showPhoto
+        ? (
+          <Image source={avatarSource(id)} resizeMode="cover"
+            style={{ width: size, height: size }}
+            // A photo that will not load falls back to the initial rather
+            // than leaving a hole where a person should be.
+            onError={() => setFailed(true)} />
+        )
+        : <Text style={s.badgeText} maxFontSizeMultiplier={1.1}>{name.slice(0, 1).toUpperCase()}</Text>}
     </View>
   );
 }
@@ -487,7 +513,7 @@ function TabBar({ tab, onTab, user }: { tab: Tab; onTab: (t: Tab) => void; user:
     { key: 'groups', label: 'Groups', icon: (a) => <Icon name="group" size={22} color={a ? c.brand : c.text3} /> },
     { key: 'activity', label: 'Activity', icon: (a) => <Icon name="clock" size={22} color={a ? c.brand : c.text3} /> },
     // The Profile tab is the user's avatar badge (UI spec §1 / issue #40).
-    { key: 'profile', label: 'Profile', icon: () => <Badge id={user.id} name={user.displayName} size={22} /> },
+    { key: 'profile', label: 'Profile', icon: () => <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} size={22} /> },
   ];
   return (
     <View style={[s.tabbar, { paddingBottom: insets.bottom }]}>
@@ -1175,6 +1201,37 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
   const [deleting, setDeleting] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
   const [notifyLevel, setNotifyLevel] = useState<'all' | 'important' | 'none'>(user.notifyLevel ?? 'all');
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  /** #112. Square crop up front, so what you choose is what you get. */
+  async function pickAvatar(): Promise<void> {
+    const r = await ImagePicker.launchImageLibraryAsync({
+      quality: 0.9, allowsEditing: true, aspect: [1, 1],
+    });
+    const asset = r.assets?.[0];
+    if (r.canceled || !asset) return;
+    setAvatarBusy(true);
+    try {
+      await uploadAvatar(asset.uri);
+      onSaved(await api.me());
+    } catch (e) {
+      Alert.alert('Could not add that photo', (e as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar(): Promise<void> {
+    setAvatarBusy(true);
+    try {
+      await api.clearAvatar();
+      onSaved(await api.me());
+    } catch (e) {
+      Alert.alert('Could not remove the photo', (e as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [interac, setInterac] = useState(user.paymentHandles.interacEmail ?? '');
   const [paypal, setPaypal] = useState(user.paymentHandles.paypalMe ?? '');
@@ -1222,7 +1279,7 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
   return (
     <View style={s.screen}>
       <View style={s.header}>
-        <Badge id={user.id} name={user.displayName} size={34} />
+        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} size={34} />
         <Text style={s.h1}>Profile</Text>
       </View>
       {/* This screen has fields near the bottom (payment handles, the
@@ -1240,6 +1297,17 @@ function ProfileScreen({ user, onSaved, onSignOut, active, themePref, onThemeCha
           choice. "Match my device" follows the system and keeps following it. */}
       {/* #104: the manual, reachable from inside the app rather than only from
           a page nobody visits. */}
+      {/* #112: a photo instead of an initial, next to the name — the other
+          thing that identifies you to everyone else. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <Badge id={user.id} name={user.displayName} size={44} hasAvatar={user.hasAvatar} />
+        <Btn small disabled={avatarBusy}
+          label={avatarBusy ? 'Uploading…' : user.hasAvatar ? 'Change photo' : 'Add a photo'}
+          onPress={pickAvatar} />
+        {user.hasAvatar && (
+          <Btn small label="Remove" disabled={avatarBusy} onPress={removeAvatar} />
+        )}
+      </View>
       <Btn label="How SlyTab works"
         onPress={() => { void Linking.openURL('https://electricrv.ca/slytab/guide/'); }} />
       <Text style={s.fieldLabel}>Theme</Text>
@@ -2165,7 +2233,7 @@ function GroupScreen({ groupId, user, onBack }: {
           {chrome}
           {group.members.map((m) => (
             <View style={s.row} key={m.id}>
-              <Badge id={m.id} name={m.displayName} />
+              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} />
               <Text style={[s.rowName, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
               {(balances?.net[m.id] ?? 0) === 0 ? <Text maxFontSizeMultiplier={1.5} style={s.meta}>settled ✓</Text>
                 : <Amount minor={balances?.net[m.id] ?? 0} currency={group.homeCurrency} signed />}
@@ -3189,7 +3257,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
             <>
               {group.members.map((m) => (
                 <View key={m.id} style={s.checkRow}>
-                  <Badge id={m.id} name={m.displayName} size={22} />
+                  <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
                   <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
                   <TextInput placeholderTextColor={c.text3} keyboardAppearance={activeScheme} placeholder="0.00" keyboardType="decimal-pad"
                     value={payerAmounts[m.id] ?? ''}
@@ -3278,7 +3346,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               <Icon name={on ? 'checkboxOn' : 'checkboxOff'} size={20}
                 color={on ? c.brand : c.text3} />
             )}
-            <Badge id={m.id} name={m.displayName} size={22} />
+            <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
             <Text style={[s.body, { flex: 1 }]}>{m.id === user.id ? 'You' : m.displayName}</Text>
             {method !== 'exact' && (
               <Text style={s.meta}>
@@ -3579,7 +3647,7 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
                     style={{ opacity: on ? 1 : 0.35, padding: 2, borderRadius: 14,
                       minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center',
                       borderWidth: 2, borderColor: on ? c.brand : 'transparent' }}>
-                    <Badge id={m.id} name={m.displayName} size={22} />
+                    <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size={22} />
                   </Pressable>
                 );
               })}
