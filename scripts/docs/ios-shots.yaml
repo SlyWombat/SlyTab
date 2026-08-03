@@ -34,27 +34,19 @@ appId: ca.electricrv.slytab
 # invites it by design: textContentType/autoComplete on the password field is
 # what makes AutoFill work (#99), so the prompt is correct behaviour and the
 # flow simply has to dismiss it.
-# Dismiss the save-password alert, but only when it is actually in the way.
+# Sidestep the save-password alert instead of fighting it.
 #
-# It is a system alert drawn by another process, so it never appears in the
-# app's hierarchy and cannot be tapped by name — "Not Now" is not there to
-# find. The device setting that should suppress it is unreliable: it worked on
-# one run and not the next, with nothing changed.
+# It is a system alert drawn by another process: it never appears in the app's
+# hierarchy, so it cannot be tapped by name, and tapping its coordinates
+# worked on one run and not the next. Both were tried.
 #
-# So this taps where the button is, guarded by `notVisible: Groups`. The guard
-# is what makes a coordinate tap acceptable: when no alert is up the tab bar is
-# visible, the block is skipped entirely, and there is no blind tap landing on
-# whatever happens to sit at those coordinates. When the alert IS up, Groups is
-# exactly what it is covering.
-#
-# Percentages rather than pixels so this does not silently become wrong on a
-# different device size.
-- runFlow:
-    when:
-      notVisible: "Groups"
-    commands:
-      - tapOn:
-          point: "33%,61%"
+# The sign-in itself already succeeded before the alert appears — it is offering
+# to remember a password that has been accepted. So: stop the app and start it
+# again. The session is in the keychain, the app comes back signed in, and
+# there is no password field and therefore no alert. Deterministic, and it
+# needs nothing from the app that real use does not already do.
+- stopApp
+- launchApp
 - extendedWaitUntil:
     visible: "Groups"
     timeout: 30000

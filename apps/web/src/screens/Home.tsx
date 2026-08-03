@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, useRef } from 'react';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, GROUP_EMOJI } from '@slytab/core';
-import { api, type Group, type HomeBalances, type Session, type User } from '../api';
+import { api, type Group, type HomeBalances, type Session, type User, shrinkImage } from '../api';
 import { GetTheApp, TESTFLIGHT_URL } from '../GetTheApp';
 import { Icon } from '../Icon';
 import { setPref, storedPref, type ThemePref } from '../theme';
@@ -96,7 +96,7 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated, onMyExpenses
         <div className="spacer" />
         <button className="btn sm" onClick={() => setProfileOpen(true)}
           style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Badge id={user.id} name={user.displayName} sm /> Profile
+          <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} sm /> Profile
         </button>
       </div>
 
@@ -457,6 +457,39 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
 }) {
   const [theme, setTheme] = useState<ThemePref>(() => storedPref());
   const [deleting, setDeleting] = useState(false);
+  const avatarInput = useRef<HTMLInputElement>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  async function onPickAvatar(file: File) {
+    setAvatarBusy(true);
+    setAvatarError(null);
+    try {
+      // Shrunk client-side first, exactly as receipts are: the server squares
+      // and resizes anyway, and there is no reason to push several megabytes
+      // over a slow link to draw a circle the size of a fingernail.
+      const { blob, name } = await shrinkImage(file, 512);
+      await api.setAvatar(blob, name);
+      onSaved(await api.me());
+    } catch (e) {
+      setAvatarError((e as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function onClearAvatar() {
+    setAvatarBusy(true);
+    setAvatarError(null);
+    try {
+      await api.clearAvatar();
+      onSaved(await api.me());
+    } catch (e) {
+      setAvatarError((e as Error).message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
   const [confirmEmail, setConfirmEmail] = useState('');
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [displayName, setDisplayName] = useState(user.displayName);
@@ -553,6 +586,29 @@ export function ProfileSheet({ user, onClose, onSaved, onSignOut, onMyExpenses, 
       </form>
       {/* #101: the cross-group view of your own spending. Profile is where
           people look for "my stuff", so it lives beside the account rows. */}
+      {/* #112: a photo instead of an initial. Kept next to the name, which is
+          the other thing that identifies you to everyone else. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+        <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} />
+        <input ref={avatarInput} type="file" accept="image/*" hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void onPickAvatar(f);
+          }} />
+        <button type="button" className="btn sm" disabled={avatarBusy}
+          onClick={() => avatarInput.current?.click()}>
+          {avatarBusy ? 'Uploading…' : user.hasAvatar ? 'Change photo' : 'Add a photo'}
+        </button>
+        {user.hasAvatar && (
+          <button type="button" className="btn sm" disabled={avatarBusy}
+            onClick={() => void onClearAvatar()}>Remove</button>
+        )}
+      </div>
+      {avatarError !== null && (
+        <p className="muted" style={{ color: 'var(--ss-owe)', padding: '4px 2px' }}>{avatarError}</p>
+      )}
+
       {/* #104: the manual, reachable from inside the app rather than only from
           a marketing page nobody visits. */}
       <a className="btn block" style={{ marginTop: 8, textAlign: 'center', textDecoration: 'none' }}

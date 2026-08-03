@@ -48,7 +48,7 @@ export function Shell({ dest, onDest, user, children }: {
             onClick={() => onDest(d.key)}
           >
             {d.key === 'profile'
-              ? <Badge id={user.id} name={user.displayName} sm />
+              ? <Badge id={user.id} name={user.displayName} hasAvatar={user.hasAvatar} sm />
               : <Icon name={d.icon} size={20} />}
             <span className="raillabel">{d.label}</span>
           </button>

@@ -173,3 +173,11 @@ button.row:hover { background: var(--ss-surface-2); }
 @media (prefers-reduced-motion: reduce) {
   .row.skeleton .badge, .row.skeleton .bar { animation: none; }
 }
+
+/* #112: a photo fills the badge circle. object-fit so a non-square source is
+   cropped rather than squashed — the server already squares them, but a
+   stretched face is a bad way to find out something slipped through. */
+.badge-img {
+  width: 100%; height: 100%; border-radius: 50%;
+  object-fit: cover; display: block;
+}

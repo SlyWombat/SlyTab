@@ -96,6 +96,7 @@ final class Api
         $categories = new CategoryService($pdo, $groups);
         $settlements = new SettlementService($pdo, $groups, $activity);
         $receipts = new ReceiptService($pdo);
+        $avatars = new \SlyTab\Services\AvatarService($pdo);
         $limiter = new RateLimiter($pdo);
         $resets = new PasswordResetService($pdo, new Mailer());
         $importer = new ImportService($pdo, $groups, $expenses, $activity);
@@ -240,6 +241,7 @@ final class Api
             $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts,
             $emailNotify,
             $limiter, $resets, $ip, $importer, $verifier, $google, $apple, $handoff, $swApi, $pdo, $notify, $bugs,
+            $avatars,
         ): void {
             // /health is registered above, outside this group, so that it
             // answers without a database connection.
@@ -350,6 +352,7 @@ final class Api
             // ---- authenticated ----
             $g->group('', function (RouteCollectorProxy $p) use (
                 $auth, $activity, $groups, $fx, $expenses, $balances, $categories, $settlements, $receipts, $limiter, $importer, $verifier, $swApi, $pdo, $notify, $bugs,
+                $avatars,
             ): void {
                 // Report a bug (profile page): comment + optional screenshot.
                 // #111: how long things actually take on the device. Two
@@ -357,6 +360,30 @@ final class Api
                 // any of it, so the first diagnosis was made by reading code
                 // and was wrong. Fire-and-forget by design: a phone must never
                 // be shown an error because a measurement failed to send.
+                // #112: a profile photo, so a badge is more than a first
+                // initial when two people in a group share one.
+                $p->post('/me/avatar', function (Request $rq, Response $rs) use ($avatars, $limiter): Response {
+                    $userId = Http::user($rq)['id'];
+                    $limiter->guard('avatar', $userId, 20, 86400);
+                    $file = $rq->getUploadedFiles()['image'] ?? null;
+                    if ($file === null) {
+                        throw new ApiException('VALIDATION', 'no photo was attached');
+                    }
+                    return Http::json($rs, $avatars->set($userId, $file));
+                });
+                $p->delete('/me/avatar', function (Request $rq, Response $rs) use ($avatars): Response {
+                    $avatars->clear(Http::user($rq)['id']);
+                    return Http::json($rs, ['ok' => true]);
+                });
+                // Guarded by who is asking, not by knowing the id: a photo is
+                // more personal than a balance, and the people who may see it
+                // are the ones who already share a group.
+                $p->get('/users/{id}/avatar', function (Request $rq, Response $rs, array $a) use ($avatars): Response {
+                    $img = $avatars->fileFor(Http::user($rq)['id'], $a['id']);
+                    $rs->getBody()->write((string) file_get_contents($img['path']));
+                    return $rs->withHeader('Content-Type', $img['mime'])
+                        ->withHeader('Cache-Control', 'private, max-age=300');
+                });
                 $p->post('/timings', function (Request $rq, Response $rs) use ($pdo, $limiter): Response {
                     $userId = Http::user($rq)['id'];
                     // Generous — a busy session batches every 20s — but bounded.

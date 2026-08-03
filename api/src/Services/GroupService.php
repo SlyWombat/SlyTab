@@ -119,7 +119,7 @@ final class GroupService
             throw new ApiException('NOT_FOUND', 'group not found', 404);
         }
         $m = $this->pdo->prepare(
-            'SELECT u.id, u.display_name, u.avatar, u.payment_handles
+            'SELECT u.id, u.display_name, u.avatar, u.avatar_path, u.payment_handles
              FROM memberships m JOIN users u ON u.id = m.user_id
              WHERE m.group_id = ? AND m.left_at IS NULL ORDER BY m.joined_at',
         );
@@ -136,6 +136,7 @@ final class GroupService
                 'id' => $u['id'],
                 'displayName' => $u['display_name'],
                 'avatar' => $u['avatar'],
+                'hasAvatar' => ($u['avatar_path'] ?? null) !== null && $u['avatar_path'] !== '',
                 'paymentHandles' => json_decode($u['payment_handles'] ?: '{}', true),
             ], $m->fetchAll()),
         ];

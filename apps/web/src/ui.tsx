@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { api } from './api';
 import { CURRENCIES, CURRENCY_NAMES, formatMinor, type Currency } from '@slytab/core';
 
 const BADGE_HUES = ['#79aaff', '#6ee0d2', '#f5a05e', '#ff8fb2', '#b78cff', '#6fc2ff'];
@@ -9,10 +10,34 @@ export function badgeColor(id: string): string {
   return BADGE_HUES[h % BADGE_HUES.length]!;
 }
 
-export function Badge({ id, name, sm = false }: { id: string; name: string; sm?: boolean }) {
+/**
+ * A person, as a circle.
+ *
+ * Shows their photo when they have one and their initial otherwise (#112).
+ * The initial is not a failure state: most people will never set a photo, so
+ * it stays the normal case and the photo is the addition.
+ *
+ * `hasAvatar` is required to opt in rather than the component guessing. Without
+ * it every badge on a busy screen would fire a request for a photo that
+ * usually does not exist, and a group screen draws dozens of them.
+ */
+export function Badge({ id, name, sm = false, hasAvatar = false }: {
+  id: string; name: string; sm?: boolean; hasAvatar?: boolean;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hasAvatar) { setSrc(null); return; }
+    let alive = true;
+    void api.avatarUrl(id).then((u) => { if (alive) setSrc(u); });
+    return () => { alive = false; };
+  }, [id, hasAvatar]);
+
   return (
-    <span className={`badge${sm ? ' sm' : ''}`} style={{ background: badgeColor(id) }} aria-hidden>
-      {name.slice(0, 1).toUpperCase()}
+    <span className={`badge${sm ? ' sm' : ''}`}
+      style={{ background: src === null ? badgeColor(id) : undefined }} aria-hidden>
+      {src === null
+        ? name.slice(0, 1).toUpperCase()
+        : <img src={src} alt="" className="badge-img" />}
     </span>
   );
 }

@@ -28,6 +28,7 @@ export interface User {
   displayName: string;
   notifyLevel?: 'all' | 'important' | 'none';
   avatar: string;
+  hasAvatar?: boolean;
   defaultCurrency: string;
   paymentHandles: { interacEmail?: string; paypalMe?: string; venmo?: string };
   /** null until the first-run welcome flow is completed (issue #36). */
@@ -40,6 +41,8 @@ export interface Member {
   id: string;
   displayName: string;
   avatar: string;
+  /** #112: whether to fetch a photo for this person, rather than the photo itself. */
+  hasAvatar?: boolean;
   paymentHandles: User['paymentHandles'];
 }
 
@@ -410,6 +413,10 @@ export const api = {
     return uploadWithProgress<ReceiptResult>(`/groups/${groupId}/receipts`, 'image', blob, name, hooks,
       currencyHint ? { currencyHint } : {});
   },
+  /** #112. Multipart, because it is a file; the response only says it worked. */
+  setAvatar: (blob: Blob, name = 'avatar.jpg') =>
+    uploadWithProgress<{ avatarPath: string }>('/me/avatar', 'image', blob, name, {}),
+  clearAvatar: () => req<{ ok: true }>('DELETE', '/me/avatar'),
   receiptEta: () => req<{ samples: number; typicalMs: number; slowMs: number }>('GET', '/receipts/eta'),
   /** Report a bug from the profile page: comment + optional screenshot. */
   archiveGroup: (groupId: string) => req<{ ok: true }>('POST', `/groups/${groupId}/archive`),
@@ -438,7 +445,32 @@ export const api = {
   rescanReceipt: (receiptId: string, currencyHint?: string) =>
     req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,
       currencyHint ? { currencyHint } : {}),
-  /** Receipt image needs the Bearer token — fetch to an object URL. */
+  /**
+   * A person's photo as an object URL, or null if they have none (#112).
+   *
+   * Cached per user for the life of the page: a badge is drawn dozens of times
+   * on a busy group screen, and each one is the same handful of bytes. The
+   * cache holds the PROMISE, so twenty badges rendering at once share a single
+   * request rather than racing.
+   */
+  avatarUrl: (() => {
+    const cache = new Map<string, Promise<string | null>>();
+    return (userId: string): Promise<string | null> => {
+      const hit = cache.get(userId);
+      if (hit) return hit;
+      const headers: Record<string, string> = {};
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const p = fetch(`${BASE}/users/${userId}/avatar`, { headers })
+        .then(async (res) => (res.ok ? URL.createObjectURL(await res.blob()) : null))
+        // A missing or forbidden photo is not an error worth surfacing — the
+        // initials badge is a perfectly good answer.
+        .catch(() => null);
+      cache.set(userId, p);
+      return p;
+    };
+  })(),
+  /** Drop a cached photo after it changes, so the new one is fetched. */
   receiptImageUrl: async (receiptId: string): Promise<string> => {
     const headers: Record<string, string> = {};
     const token = getToken();

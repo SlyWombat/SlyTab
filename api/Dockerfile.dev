@@ -1,4 +1,12 @@
 # Local dev/test image — php:8.2-cli plus the extensions the API needs.
 # Built once via `npm run php:image`; used by dev:api, test:php, db:migrate.
 FROM php:8.2-cli
-RUN docker-php-ext-install pdo_mysql
+# gd is not optional: receipt normalisation and profile photos both go through
+# it, and production has it (see the setup-php step in CI). Without it here,
+# every image path silently took the "cannot process images" branch and the
+# tests covering them could not run at all.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev \
+ && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
+ && docker-php-ext-install pdo_mysql gd exif \
+ && rm -rf /var/lib/apt/lists/*

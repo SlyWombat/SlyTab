@@ -103,7 +103,7 @@ final class AuthService
     {
         $stmt = $this->pdo->prepare(
             'SELECT s.id AS session_id, s.expires_at, s.revoked_at, u.id, u.email, u.email_verified_at, u.display_name,
-                    u.avatar, u.default_currency, u.payment_handles, u.notify_level, u.onboarded_at, u.deleted_at,
+                    u.avatar, u.avatar_path, u.default_currency, u.payment_handles, u.notify_level, u.onboarded_at, u.deleted_at,
                     (SELECT GROUP_CONCAT(o.provider) FROM oauth_identities o WHERE o.user_id = u.id) AS providers
              FROM sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = ?',
@@ -163,7 +163,7 @@ final class AuthService
     public function userById(string $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, email, email_verified_at, display_name, avatar, default_currency, payment_handles,
+            'SELECT id, email, email_verified_at, display_name, avatar, avatar_path, default_currency, payment_handles,
                     notify_level, onboarded_at,
                     (SELECT GROUP_CONCAT(o.provider) FROM oauth_identities o WHERE o.user_id = users.id) AS providers
              FROM users WHERE id = ? AND deleted_at IS NULL',
@@ -359,6 +359,11 @@ final class AuthService
             'emailVerifiedAt' => $row['email_verified_at'] ?? null,
             'displayName' => $row['display_name'],
             'avatar' => $row['avatar'],
+            // A boolean, not the path: clients fetch the image from
+            // /users/{id}/avatar, which checks who is asking. Handing out the
+            // storage path would make the photo reachable to anyone who could
+            // guess it (#112).
+            'hasAvatar' => ($row['avatar_path'] ?? null) !== null && $row['avatar_path'] !== '',
             'defaultCurrency' => $row['default_currency'],
             'paymentHandles' => json_decode($row['payment_handles'] ?: '{}', true),
             'notifyLevel' => $row['notify_level'] ?? 'all',
