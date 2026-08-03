@@ -40,7 +40,13 @@ jobs:
       MAIL_DISABLE: '1'
       FX_OFFLINE: '1'
       APP_URL: http://127.0.0.1:8100
+      # Every Env::require() in api/src, so a missing one cannot surface as a
+      # 500 four steps into the run. Confirmed against the list rather than
+      # guessed: DB_*, INVITE_HMAC_KEY, MIGRATE_TOKEN, SESSION_PEPPER.
+      # Throwaway values for a throwaway database on a throwaway runner.
       INVITE_HMAC_KEY: screenshots-only-not-a-secret
+      SESSION_PEPPER: screenshots-only-not-a-secret
+      MIGRATE_TOKEN: screenshots-only-not-a-secret
       JWT_SECRET: screenshots-only-not-a-secret
 
     steps:
@@ -97,7 +103,12 @@ jobs:
             || { echo "::error::API never answered"; cat /tmp/php-server.log; exit 1; }
 
       - name: Seed the demo world
-        run: node scripts/docs/seed-demo.mjs --base http://127.0.0.1:8100
+        run: |
+          node scripts/docs/seed-demo.mjs --base http://127.0.0.1:8100 || {
+            echo "::error::Seeding failed — the API log follows"
+            tail -60 /tmp/php-server.log
+            exit 1
+          }
 
       # --- the app itself ----------------------------------------------------
       - name: Build for the simulator

@@ -116,7 +116,7 @@ final class Api
             (string) ($rq->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
 
         // ---- admin (cron + deploy hooks, guarded by MIGRATE_TOKEN) ----
-        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs, $emailNotify, $balances): void {
+        $app->group('/api/internal', function (RouteCollectorProxy $g) use ($pdo, $fx, $bugs, $emailNotify, $balances, $receipts): void {
             // Bug-report review (profile-page reports): comment + screenshot together.
             $g->get('/bugs', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, ['items' => $bugs->listRecent()]));
@@ -143,7 +143,7 @@ final class Api
             // working on the existing 10-minute cron instead of needing a new
             // crontab entry on the host, which is a step nobody would notice
             // was missing until a digest never arrived.
-            $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify, $pdo, $balances): Response {
+            $g->post('/bug-sync', function (Request $rq, Response $rs) use ($bugs, $emailNotify, $pdo, $balances, $receipts): Response {
                 // Three independent jobs share this cron. They must not share
                 // a fate: bolting the digest and the reminders onto the report
                 // pipeline meant one throwing took the other two down with it,
@@ -156,6 +156,9 @@ final class Api
                     'reminders' => fn(): array => (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep(),
                     // #111: diagnostics should not become an archive.
                     'timingsPruned' => fn(): int => (new \SlyTab\Services\ClientTimingService($pdo))->prune(),
+                    // Owner's rule (2026-08-02): once a group has settled, the
+                    // compressed image is enough — drop the unresized original.
+                    'originalsPruned' => fn(): array => $receipts->pruneSettledOriginals($balances),
                 ] as $name => $job) {
                     try {
                         $result[$name] = $job();
@@ -195,6 +198,10 @@ final class Api
             });
             $g->post('/fetch-rates', fn(Request $rq, Response $rs): Response =>
                 Http::json($rs, $fx->refresh()));
+            // What the settled-originals sweep WOULD remove. Deleting a
+            // person's uploads is not something to discover after the fact.
+            $g->get('/receipts/prunable', fn(Request $rq, Response $rs): Response =>
+                Http::json($rs, $receipts->pruneSettledOriginals($balances, true)));
             // #111: p50/p95 per endpoint and per screen, as measured on real
             // devices. p95 rather than a mean — an average hides the tail, and
             // the tail is what people mean by "laggy".

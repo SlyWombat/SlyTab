@@ -655,6 +655,56 @@ final class ReceiptService
     }
 
     /**
+     * Drop the unresized originals for groups that have settled up.
+     *
+     * normalizeImage() keeps a `.orig.*` alongside every downscaled upload for
+     * the issue-#10 repeat-parse corpus. Measured on production: 331 KB each,
+     * about a quarter of all receipt bytes, against 1,018 MB of remaining disk
+     * quota — roughly 2,300 uploads of headroom in total.
+     *
+     * Owner's rule (2026-08-02): once a group has settled, the compressed
+     * image is enough. The corpus only needs originals while a parse might
+     * still be argued about, and nobody argues about a bill that is paid.
+     *
+     * "Settled" means every net balance in the group is zero — the same
+     * question the app answers on the Balances tab, not a proxy for it. A
+     * group with no expenses at all is not settled, it is empty, and its
+     * receipts are left alone.
+     *
+     * The served image is never touched. Losing an original costs the test
+     * corpus one sample; losing the served image would take a receipt away
+     * from the person who photographed it.
+     *
+     * @return array{groups:int, files:int, bytes:int, dryRun:bool}
+     */
+    public function pruneSettledOriginals(BalanceService $balances, bool $dryRun = false): array
+    {
+        $groups = $this->pdo->query(
+            'SELECT DISTINCT r.group_id FROM receipts r'
+        )->fetchAll(PDO::FETCH_COLUMN);
+
+        $settled = 0;
+        $files = 0;
+        $bytes = 0;
+        foreach ($groups as $groupId) {
+            $net = $balances->forGroup((string) $groupId)['net'] ?? [];
+            if ($net === [] || array_filter($net, static fn(int $v): bool => $v !== 0) !== []) {
+                continue;
+            }
+            $settled++;
+            $dir = self::dataDir() . "/receipts/{$groupId}";
+            foreach (glob("{$dir}/*.orig.*") ?: [] as $path) {
+                $size = (int) (@filesize($path) ?: 0);
+                if ($dryRun || @unlink($path)) {
+                    $files++;
+                    $bytes += $size;
+                }
+            }
+        }
+        return ['groups' => $settled, 'files' => $files, 'bytes' => $bytes, 'dryRun' => $dryRun];
+    }
+
+    /**
      * Try to take the global parse lock without waiting.
      *
      * flock is the right primitive here precisely because the kernel releases
