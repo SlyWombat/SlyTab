@@ -266,10 +266,20 @@ ${PRIMARY_HOST ? `# One directory, two hostnames.
 
 ` : ''}# SPA fallback — /api is real (the PHP front controller), everything else
 # that isn't a file resolves to index.html.
+#
+# .well-known is excluded, and that is not housekeeping. Apple verifies a
+# domain by fetching /.well-known/apple-developer-domain-association.txt; with
+# the fallback catching it, that request got 200 and a page of HTML instead of
+# a 404 or the token. Apple reads that as a failed verification and then
+# silently refuses to save the domain — which presents as settings that will
+# not stick, with nothing anywhere saying why (#117). The same applies to every
+# other well-known probe: an SPA should not be answering for paths reserved by
+# RFC 8615.
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase ${DEPLOY_BASE}
   RewriteCond %{REQUEST_URI} !${DEPLOY_BASE}api/
+  RewriteCond %{REQUEST_URI} !/\.well-known/
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ index.html [L]
