@@ -1,0 +1,14 @@
+{
+  "version": "1.1.0",
+  "reports": [],
+  "ios": {
+    "build": "",
+    "buildNumber": "16",
+    "stage": "error",
+    "retries": 2
+  },
+  "android": {
+    "build": "28b01fe7-42a0-473a-8ec1-cc0ba5eb3909",
+    "stage": "building"
+  }
+}
