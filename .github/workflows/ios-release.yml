@@ -44,10 +44,12 @@ jobs:
       - name: Pin Xcode
         # Version heuristics pick wrong — every release exists under multiple
         # names. Pin the exact path; the listing is printed so a missing
-        # version is a one-look fix.
+        # version is a one-look fix. 26.3 and not 16.4 because Apple now
+        # rejects anything built with an SDK older than iOS 26 at validation
+        # ("SDK version issue", the first run's failure).
         run: |
           ls /Applications | grep -i '^xcode' || true
-          sudo xcode-select -s /Applications/Xcode_16.4.app
+          sudo xcode-select -s /Applications/Xcode_26.3.app
           xcodebuild -version
 
       - name: Install JS deps
