@@ -47,9 +47,9 @@ jobs:
         working-directory: apps/mobile
         run: npx expo prebuild --platform android --no-install
 
-      - name: Gradle assembleRelease
+      - name: Gradle assembleRelease and bundleRelease
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
 
       - name: Re-sign with the upload keystore
         env:
@@ -75,8 +75,45 @@ jobs:
           "$BT/apksigner" verify --print-certs "$OUT"
           echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
 
+      - name: Sign the AAB with the upload key
+        # Play wants an AAB signed by the upload key. The prebuild template
+        # signed it with the debug keystore; jarsigner cannot replace a
+        # signature, only add one, so the debug signature is stripped first.
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          src = 'apps/mobile/android/app/build/outputs/bundle/release/app-release.aab'
+          with zipfile.ZipFile(src) as zin, \
+               zipfile.ZipFile('unsigned.aab', 'w', zipfile.ZIP_DEFLATED) as zout:
+              for i in zin.infolist():
+                  ext = i.filename.rsplit('.', 1)[-1]
+                  if i.filename.startswith('META-INF/') and ext in ('SF', 'RSA', 'DSA', 'EC', 'MF'):
+                      continue
+                  zout.writestr(i, zin.read(i.filename))
+          PY
+          VER=$(python3 -c "import json;d=json.load(open('apps/mobile/versions.json'));print(d['android']['version'])")
+          CODE=$(python3 -c "import json;d=json.load(open('apps/mobile/versions.json'));print(d['android']['versionCode'])")
+          AAB="slytab-$VER-$CODE.aab"
+          jarsigner -keystore "$RUNNER_TEMP/upload.jks" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            unsigned.aab "$ANDROID_KEY_ALIAS"
+          mv unsigned.aab "$AAB"
+          jarsigner -verify "$AAB"
+          echo "AAB_NAME=$AAB" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
           name: slytab-release-apk
           path: ${{ env.APK_NAME }}
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slytab-release-aab
+          path: ${{ env.AAB_NAME }}
           retention-days: 30
