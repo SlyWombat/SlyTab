@@ -1,0 +1,82 @@
+# Android release APK on a GitHub runner, signed with the real upload key.
+#
+# The older android.yml builds a DEBUG-signed APK — Android refuses to
+# install that over the upload-key-signed builds people already have, so it
+# is useless as an update path. This one re-signs `assembleRelease` output
+# with slytab-upload.jks (from repo secrets), producing the same signature
+# as every EAS build so existing installs update cleanly.
+#
+# Publishing stays local: download the artifact and run
+# scripts/ops/upload-apk.sh — the cPanel token has no business living in
+# GitHub secrets on a public repo.
+name: Android release
+
+on:
+  push:
+    tags: ["android-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  build-sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # app.config.js keys the version injection off this — without it the
+      # APK would carry the iOS version line from versions.json.
+      EAS_BUILD_PLATFORM: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install JS deps
+        run: npm install --no-audit --no-fund
+
+      - name: Expo prebuild (android)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Gradle assembleRelease
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Re-sign with the upload keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          VER=$(python3 -c "import json;d=json.load(open('apps/mobile/versions.json'));print(d['android']['version'])")
+          CODE=$(python3 -c "import json;d=json.load(open('apps/mobile/versions.json'));print(d['android']['versionCode'])")
+          OUT="slytab-$VER-$CODE.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/upload.jks" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$OUT" \
+            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          # Fails the run if the signature is broken; the cert digest it
+          # prints is public information (any phone can read it off the APK).
+          "$BT/apksigner" verify --print-certs "$OUT"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slytab-release-apk
+          path: ${{ env.APK_NAME }}
+          retention-days: 30

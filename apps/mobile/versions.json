@@ -2,10 +2,10 @@
   "_comment": "Per-platform release versions \u2014 iOS and Android version independently (owner, 2026-07-25). Bump only the platform you are releasing. app.config.js injects these based on EAS_BUILD_PLATFORM.",
   "ios": {
     "version": "1.1.0",
-    "buildNumber": "16"
+    "buildNumber": "17"
   },
   "android": {
     "version": "1.1.0",
-    "versionCode": 18
+    "versionCode": 19
   }
 }
