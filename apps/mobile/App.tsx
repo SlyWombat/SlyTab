@@ -2598,8 +2598,10 @@ function GroupScreen({ groupId, user, onBack }: {
             return m.id === user.id || group.archivedAt !== null || balances === null
               ? <View style={s.row} key={m.id}>{inner}</View>
               : (
+                // No accessibilityLabel: React Native composes the name from
+                // the child Text nodes, which say the name AND the balance —
+                // "settle up with Alice" would drop the number.
                 <Pressable style={s.row} key={m.id} accessibilityRole="button"
-                  accessibilityLabel={`Settle up with ${m.displayName}`}
                   onPress={() => setMemberSheet(m)}>
                   {inner}
                 </Pressable>

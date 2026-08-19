@@ -437,12 +437,18 @@ owner-directed work.
 existing marketing page shell and writes:
 
 ```
-apps/web/public/marketing/help/index.html      hub: manual · FAQ · why SlyTab
-apps/web/public/marketing/help/manual/index.html
-apps/web/public/marketing/help/faq/index.html
-apps/web/public/marketing/help/why/index.html
-apps/web/public/marketing/help/img/**          copied from docs/user-guide/img
+apps/web/public/guide/index.html               the manual itself (the hub)
+apps/web/public/guide/faq/index.html
+apps/web/public/guide/why/index.html
+apps/web/public/guide/guide.css
+apps/web/public/guide/img/**                   copied from docs/user-guide/img
 ```
+
+The path is `public/guide/`, not `public/marketing/help/` as this section
+originally specified: the manual is what the in-app "How SlyTab works" link
+opens, so it reads better as `/slytab/guide/` than as a page filed under
+marketing. `apps/web/src/screens/Home.tsx` and the mobile Profile both link
+there, and `marketing/support/` points at it too.
 
 Requirements on it, so it does not become a second style system:
 
@@ -459,11 +465,9 @@ Requirements on it, so it does not become a second style system:
 - Emit nothing that is not generated from `docs/user-guide/`. If a page needs
   hand-written HTML, it belongs in `marketing/` as its own page, not here.
 
-**This script is the one piece deliberately not yet written.** A renderer with
-nothing to render cannot be verified, and shipping unverified code into a
-"cannot go stale" pipeline would be the wrong kind of thorough. It lands with
-the first draft of `manual.md`. Everything it depends on — the images, the
-metadata, the gate — exists and is proven.
+**Written and in use since the first draft of `manual.md`.** It also injects
+the comparison table from `why-slytab.md` into `marketing/welcome/`, so the
+two cannot drift.
 
 ---
 
