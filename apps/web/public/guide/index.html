@@ -42,7 +42,7 @@
 <h2 id="signing-in">Signing in</h2>
 <figure class="shot"><img src="img/web/welcome.png" alt="The sign-in screen" loading="lazy" decoding="async"><figcaption>The sign-in screen</figcaption></figure>
 <p>You can create an account with an email and password, or sign in with Apple or Google.</p>
-<p>There is nothing to install: SlyTab runs in any browser, and there are iPhone and Android apps if you would rather have one on your phone. The same account works everywhere.</p>
+<p>There is nothing to install: SlyTab runs in any browser, and there are iPhone and Android apps if you would rather have one on your phone. The same account works everywhere. In a browser it lives at <strong>slytab.com</strong> as well as at electricrv.ca/slytab — the same app either way, so use whichever you remember.</p>
 <p>If someone has invited you to a group, sign in first and the invitation is applied automatically — you land in the group.</p>
 <hr>
 <h2 id="home">Home — where you stand</h2>
@@ -51,14 +51,16 @@
 <p>Home answers one question: <strong>across everything, who owes whom?</strong></p>
 <p>Each row is a person, not a group. If you and Alice share a household <em>and</em> a ski trip, you see one number for Alice — because when you settle up, you settle one number, not two.</p>
 <p>Green means you are owed. Amber means you owe. "Settled" means exactly that.</p>
-<p>The <strong>Add expense</strong> button is always in the bottom corner, on every screen where adding one makes sense.</p>
+<p>The <strong>Add expense</strong> button is always in the bottom corner, on every screen where adding one makes sense. It asks which group the expense belongs to when you have more than one — skipping any that has been archived or locked for settling up, since neither takes new expenses.</p>
+<p>People show up as their photo if they have set one, and as their initials if they have not.</p>
+<p>If you are using one of the phone apps and a newer build has been released, Home says so and points at the download. Nothing updates itself behind your back.</p>
 <p>On a narrow window the navigation moves to the bottom, the way it is on a phone.</p>
 <hr>
 <h2 id="groups">Groups</h2>
 <figure class="shot"><img src="img/web/groups.png" alt="Groups" loading="lazy" decoding="async"><figcaption>Groups</figcaption></figure>
 <p>A group is a set of people and the expenses they share. A ski trip, a flat, a recurring dinner.</p>
 <p>Each card shows the group's emoji, its members, and where you stand in that group specifically.</p>
-<p>Groups you have finished with can be archived: they collapse out of the way but keep their history, so old balances stay honest.</p>
+<p>Groups you have finished with can be archived: they collapse out of the way but keep their history, so old balances stay honest. Before that — while people are still paying each other — a group can be <strong>locked for settling up</strong> instead, which stops new expenses without stopping payments.</p>
 <p><strong>One-to-one splitting needs no group at all</strong> — you can split directly with one person.</p>
 <hr>
 <h2 id="group-expenses">A group's expenses</h2>
@@ -66,12 +68,16 @@
 <p>Every expense in the group, newest first, with what it was, who paid, and your share.</p>
 <p>Search narrows the list. So do the category chips.</p>
 <p>Tap any expense to edit it. Delete asks first, and can be undone straight afterwards.</p>
+<p>In a group that has been locked for settling up, or archived, the add button is gone and the list is read-only — the numbers are being squared up and are meant to hold still.</p>
 <hr>
 <h2 id="group-balances">Balances, and how to settle</h2>
 <figure class="shot"><img src="img/web/group-balances.png" alt="Balances and the settle-up plan" loading="lazy" decoding="async"><figcaption>Balances and the settle-up plan</figcaption></figure>
 <p>Balances shows what each person owes within this group, and — more usefully —</p>
 <p><strong>the shortest set of payments that clears everyone</strong>.</p>
 <p>If Alice owes Ben, and Ben owes you, SlyTab does not make Alice pay Ben so Ben can pay you. It tells Alice to pay you directly. Fewer payments, same result.</p>
+<p><strong>Tap anyone's balance</strong> to act on it. If you owe them, that is where you pay. If they owe you, that is where you write down what they have handed you — including a part of it, which is how money on a trip usually arrives.</p>
+<p>When the spending is over, <strong>lock the group for settling up</strong> (group settings, the gear). Nobody can add expenses to a locked group, so the numbers stop moving while everyone pays up — but payments still go in, and you can remind someone what they owe. Anyone in the group can unlock it again when the receipt everybody forgot turns up.</p>
+<p>If the group has spent in more than one currency, <strong>Show balances per currency</strong> breaks the same numbers down as they were actually spent, unconverted, for anyone who would rather settle each currency in its own.</p>
 <hr>
 <h2 id="group-totals">Totals</h2>
 <figure class="shot"><img src="img/web/group-totals.png" alt="Totals by person and category" loading="lazy" decoding="async"><figcaption>Totals by person and category</figcaption></figure>
@@ -107,12 +113,15 @@
 <hr>
 <h2 id="settling-up">Settling up</h2>
 <figure class="shot"><img src="img/web/settle.png" alt="Settling up with someone" loading="lazy" decoding="async"><figcaption>Settling up with someone</figcaption></figure>
-<p>When someone pays you back, record it. They are asked to confirm, and once they do the balance between you clears.</p>
+<p>Either side can record a payment.</p>
+<p>When you pay someone, record it and they are asked to confirm; the balance between you clears once they do. When someone pays <strong>you</strong> — cash at the table, an e-transfer that has landed — record it from their row on Balances, and it counts straight away.</p>
+<p>!<a href="img/web/member-received.png">Recording money someone handed you</a> There is nobody left to confirm it to: you are the person who would have. If you fumble the amount, either of you can delete it and put it in again.</p>
+<p>Once a group is locked for settling up, the same sheet can <strong>remind</strong> someone what they owe: one email, saying what it is for. It will not send the same reminder twice in a few days, and it respects whatever that person has chosen to hear about — so the button sometimes tells you it did not send, and why.</p>
 <p>SlyTab does not move money. It records that money moved. Your payment handles — Interac e-Transfer, PayPal.Me, Venmo — live on your profile so the other person can find them without asking.</p>
 <hr>
 <h2 id="activity">Activity</h2>
 <figure class="shot"><img src="img/web/activity.png" alt="Activity" loading="lazy" decoding="async"><figcaption>Activity</figcaption></figure>
-<p>Everything that has happened across all your groups, newest first, grouped by day. Who added what, who confirmed a payment, who joined.</p>
+<p>Everything that has happened across all your groups, newest first, grouped by day. Who added what, who paid whom, who confirmed a payment, who joined, and who locked a group for settling up.</p>
 <p>Useful when you open the app after a week away and want to know what changed.</p>
 <hr>
 <h2 id="my-expenses">Everything you have spent</h2>
@@ -128,6 +137,7 @@
 <h2 id="profile">Profile and settings</h2>
 <figure class="shot"><img src="img/web/profile.png" alt="Profile and settings" loading="lazy" decoding="async"><figcaption>Profile and settings</figcaption></figure>
 <ul>
+<li><strong>Your photo</strong> — set one instead of the initials badge. You choose the crop, and it is stored the right way up regardless of how your phone recorded it. People who share a group with you can see it; nobody else can.</li>
 <li><strong>Theme</strong> — match your device, or force dark or light.</li>
 <li><strong>Default currency</strong> — what your balances are shown in.</li>
 <li><strong>Notifications</strong> — everything, important only, or nothing.</li>
@@ -135,6 +145,7 @@
 <li><strong>Devices</strong> — every signed-in session, with the ability to revoke any of them.</li>
 <li><strong>How SlyTab works</strong> — this manual, from inside the app.</li>
 <li><strong>Get the phone apps</strong> — the iPhone app through TestFlight, or the Android app as a direct download. Android will ask you to allow installing it the first time; that is your phone being careful about an app that did not come from the Play Store, not a warning about SlyTab.</li>
+<li><strong>Your own server</strong> (phone apps) — SlyTab is self-hosted, and the apps can be pointed at a different SlyTab server than ours. Most people never touch this; it is here because "run it yourself" should mean it.</li>
 <li><strong>Report a bug</strong> — goes straight to us with your app version attached, and you get an email when it is fixed.</li>
 <li><strong>Delete my account</strong> — really deletes it. Your share of shared history is anonymised so nobody else's balances change.</li>
 </ul>

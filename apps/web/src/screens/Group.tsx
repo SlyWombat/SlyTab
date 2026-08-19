@@ -409,8 +409,10 @@ export function GroupScreen({ groupId, user, onBack }: {
             return m.id === user.id || group.archivedAt !== null
               ? <div className="row" key={m.id}>{row}</div>
               : (
-                <button className="row" key={m.id} onClick={() => setMemberSheet(m)}
-                  aria-label={`Settle up with ${m.displayName}`}>
+                // No aria-label: the row's own content (name + balance) is a
+                // better accessible name than "settle up with Alice", which
+                // drops the number a screen-reader user came for.
+                <button className="row" key={m.id} onClick={() => setMemberSheet(m)}>
                   {row}
                 </button>
               );

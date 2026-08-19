@@ -80,7 +80,9 @@ export const SHOTS = [
       await openGroup('Household');
       await page.getByRole('tab', { name: 'Balances' }).click();
       await settle();
-      await page.getByRole('button', { name: 'Settle' }).first().click();
+      // exact: the member rows above the plan are buttons too now (#120),
+      // and a substring match on "Settle" reaches those first.
+      await page.getByRole('button', { name: 'Settle', exact: true }).first().click();
       await settle();
     },
   },
@@ -135,6 +137,25 @@ export const SHOTS = [
     steps: async ({ openGroup, page, settle }) => {
       await openGroup('Cottage Trip');
       await page.getByRole('tab', { name: 'Balances' }).click();
+      await settle();
+    },
+  },
+  {
+    id: 'member-received',
+    screen: '2.7 Settle up',
+    title: 'Recording money someone handed you',
+    device: 'desktop',
+    sources: ['apps/web/src/screens/Group.tsx', ...WEB_SHELL],
+    doc: { file: 'docs/user-guide/manual.md', anchor: 'settling-up' },
+    expect: ['Record money received'],
+    // Cottage Trip is the group where the reader is OWED (see
+    // demo-world.mjs), which is the seat this sheet exists for (#120): the
+    // person holding the phone is the one being handed the cash.
+    steps: async ({ openGroup, page, settle }) => {
+      await openGroup('Cottage Trip');
+      await page.getByRole('tab', { name: 'Balances' }).click();
+      await settle();
+      await page.getByRole('button', { name: 'Alice' }).first().click();
       await settle();
     },
   },

@@ -50,6 +50,18 @@ No. It records that money moved. You pay each other however you already do —
 your Interac, PayPal.Me and Venmo handles sit on your profile so people can
 find them.
 
+**Someone handed me twenty dollars towards what they owe. Can I record that?**
+Yes. Tap their balance and record what you were actually given — part of a
+debt is fine, and the rest stays on their tab. A payment you record as the
+person who *received* it counts straight away; there is nobody left to
+confirm it to. If you get the amount wrong, either of you can delete it.
+
+**Can I ask someone for what they owe?**
+Once the group is locked for settling up, yes — tap their balance and
+**Remind**. It sends one email. It will not send another for a few days, and
+it will not send at all to someone who has turned off SlyTab emails, in which
+case it tells you so rather than pretending.
+
 ---
 
 ## Several currencies
@@ -108,9 +120,24 @@ Yes — open it, tap its name, then Leave this group. You are asked to settle
 up first if you still owe or are owed. Your past expenses stay so nobody
 else's balance moves.
 
+**We have stopped spending but not finished paying each other. Now what?**
+Lock the group for settling up, from group settings. A locked group takes no
+new expenses, so the balances hold still while everyone pays — payments,
+reminders and someone finally accepting an old invitation all still work.
+Anyone in the group can unlock it when the forgotten receipt turns up.
+
 **What happens to a group we have finished with?**
-Archive it. It becomes read-only and collapses out of the way, keeping its
-history so old balances stay honest.
+Archive it, once everyone is square. It becomes read-only — payments included
+— and collapses out of the way, keeping its history so old balances stay
+honest.
+
+**Can I use a photo instead of my initials?**
+Yes, in Profile. You pick the crop, and it is shown to the people you share a
+group with.
+
+**Can I point the apps at my own server?**
+Yes. SlyTab is self-hosted software, and the phone apps have a setting for
+which server to talk to. Most people will never need it.
 
 ---
 

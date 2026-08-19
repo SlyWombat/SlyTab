@@ -1,82 +1,88 @@
 {
   "screens": {
     "welcome": {
-      "uiHash": "d5197fc6208b0135",
-      "srcHash": "cfbf050740873c66",
-      "proseHash": "c0bb288590dfed9a",
-      "acceptedAt": "2026-07-31"
+      "uiHash": "9d6ce8dae30a2bc7",
+      "srcHash": "91107e37ee71a424",
+      "proseHash": "ba23f753b10d040e",
+      "acceptedAt": "2026-08-19"
     },
     "settle": {
-      "uiHash": "feaab6fc4b1a0faa",
-      "srcHash": "a6d2b0f6db1a4585",
-      "proseHash": "d23b092aad1bfeba",
+      "uiHash": "d5c5585f5177e9b4",
+      "srcHash": "ebb162159ae74127",
+      "proseHash": "cf72d12e90721909",
       "acceptedAt": "2026-08-19"
     },
     "home": {
       "uiHash": "df3809cf434e81f4",
-      "srcHash": "7fcb3f23a9ec4a0b",
-      "proseHash": "3a068e938b825548",
-      "acceptedAt": "2026-08-01"
+      "srcHash": "935c082df157d547",
+      "proseHash": "55b7beec89ea1376",
+      "acceptedAt": "2026-08-19"
     },
     "home-narrow": {
       "uiHash": "e8a8f0ff64680c64",
-      "srcHash": "7fcb3f23a9ec4a0b",
-      "proseHash": "3a068e938b825548",
-      "acceptedAt": "2026-08-01"
+      "srcHash": "935c082df157d547",
+      "proseHash": "55b7beec89ea1376",
+      "acceptedAt": "2026-08-19"
     },
     "groups": {
       "uiHash": "5c97516e30fe33d4",
-      "srcHash": "c5a9d28c721e1d61",
-      "proseHash": "eed1fccb2d2390b1",
-      "acceptedAt": "2026-07-31"
+      "srcHash": "f0b26d7ee1c1b5f2",
+      "proseHash": "2b5318698db68150",
+      "acceptedAt": "2026-08-19"
     },
     "group-expenses": {
       "uiHash": "1726acf5d9ed8538",
-      "srcHash": "7cafb34621676c54",
-      "proseHash": "3afa00b53d1a0bcc",
-      "acceptedAt": "2026-08-02"
+      "srcHash": "ebb162159ae74127",
+      "proseHash": "26709b8bd37219d5",
+      "acceptedAt": "2026-08-19"
     },
     "group-balances": {
-      "uiHash": "e7d000084f6a73e0",
-      "srcHash": "a6d2b0f6db1a4585",
-      "proseHash": "9458001fa4c55d8b",
+      "uiHash": "767f5d4a1574c18a",
+      "srcHash": "ebb162159ae74127",
+      "proseHash": "593013071d51993b",
       "acceptedAt": "2026-08-19"
     },
     "group-totals": {
       "uiHash": "6a284a718939b0b9",
-      "srcHash": "7cafb34621676c54",
+      "srcHash": "ebb162159ae74127",
       "proseHash": "faa7dddf0a63d8cf",
-      "acceptedAt": "2026-08-02"
+      "acceptedAt": "2026-08-19"
     },
     "add-expense": {
       "uiHash": "62de1b4eb391fa62",
-      "srcHash": "0f65729eaec8d112",
+      "srcHash": "4ea9d6781b1eca81",
       "proseHash": "221a931e41262fe2",
-      "acceptedAt": "2026-08-02"
+      "acceptedAt": "2026-08-19"
     },
     "expense-foreign-currency": {
       "uiHash": "e14085d736946a39",
-      "srcHash": "31055a673b8af43f",
+      "srcHash": "65ced3e86b040e7e",
       "proseHash": "db9adfd47c943345",
-      "acceptedAt": "2026-08-02"
+      "acceptedAt": "2026-08-19"
     },
     "activity": {
       "uiHash": "2dd534dbdab3f081",
-      "srcHash": "d3e3ae44ea6feee7",
-      "proseHash": "20a69b3b0933871f",
-      "acceptedAt": "2026-07-31"
+      "srcHash": "ba05eb821f5703ee",
+      "proseHash": "bcb9dff4a7eb51d2",
+      "acceptedAt": "2026-08-19"
     },
     "profile": {
-      "uiHash": "b005889bc4ee874e",
-      "srcHash": "9b47db40d33f8d95",
-      "proseHash": "4bfe08cae2c3cb17",
-      "acceptedAt": "2026-08-01"
+      "uiHash": "b1dce1d5a02be6b3",
+      "srcHash": "b51214b52edb015e",
+      "proseHash": "47f8c826fe6706d6",
+      "acceptedAt": "2026-08-19"
     },
     "my-expenses": {
       "uiHash": "5ce3d047d9c93659",
-      "srcHash": "4e9a7594eb4585b9",
+      "srcHash": "3813177bb0e175da",
       "proseHash": "c8b8c56fc819828f",
-      "acceptedAt": "2026-07-31"
+      "acceptedAt": "2026-08-19"
+    },
+    "member-received": {
+      "uiHash": "7d95b5029b4e07d7",
+      "srcHash": "ebb162159ae74127",
+      "proseHash": "cf72d12e90721909",
+      "acceptedAt": "2026-08-19"
     }
   }
 }

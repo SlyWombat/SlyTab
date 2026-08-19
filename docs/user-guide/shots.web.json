@@ -23,7 +23,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "signing-in"
       },
-      "uiHash": "d5197fc6208b0135"
+      "uiHash": "9d6ce8dae30a2bc7"
     },
     {
       "id": "settle",
@@ -43,7 +43,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "settling-up"
       },
-      "uiHash": "feaab6fc4b1a0faa"
+      "uiHash": "d5c5585f5177e9b4"
     },
     {
       "id": "home",
@@ -143,7 +143,27 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "group-balances"
       },
-      "uiHash": "e7d000084f6a73e0"
+      "uiHash": "767f5d4a1574c18a"
+    },
+    {
+      "id": "member-received",
+      "screen": "2.7 Settle up",
+      "title": "Recording money someone handed you",
+      "device": "desktop",
+      "theme": "dark",
+      "image": "img/web/member-received.png",
+      "sources": [
+        "apps/web/src/screens/Group.tsx",
+        "apps/web/src/Shell.tsx",
+        "apps/web/src/ui.tsx",
+        "apps/web/src/Icon.tsx",
+        "apps/web/src/styles/**"
+      ],
+      "doc": {
+        "file": "docs/user-guide/manual.md",
+        "anchor": "settling-up"
+      },
+      "uiHash": "7d95b5029b4e07d7"
     },
     {
       "id": "group-totals",
@@ -245,7 +265,7 @@
         "file": "docs/user-guide/manual.md",
         "anchor": "profile"
       },
-      "uiHash": "b005889bc4ee874e"
+      "uiHash": "b1dce1d5a02be6b3"
     },
     {
       "id": "my-expenses",

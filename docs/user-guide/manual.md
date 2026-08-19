@@ -19,7 +19,9 @@ or Google.
 
 There is nothing to install: SlyTab runs in any browser, and there are iPhone
 and Android apps if you would rather have one on your phone. The same account
-works everywhere.
+works everywhere. In a browser it lives at **slytab.com** as well as at
+electricrv.ca/slytab — the same app either way, so use whichever you
+remember.
 
 If someone has invited you to a group, sign in first and the invitation is
 applied automatically — you land in the group.
@@ -41,7 +43,16 @@ settle one number, not two.
 Green means you are owed. Amber means you owe. "Settled" means exactly that.
 
 The **Add expense** button is always in the bottom corner, on every screen
-where adding one makes sense.
+where adding one makes sense. It asks which group the expense belongs to when
+you have more than one — skipping any that has been archived or locked for
+settling up, since neither takes new expenses.
+
+People show up as their photo if they have set one, and as their initials if
+they have not.
+
+If you are using one of the phone apps and a newer build has been released,
+Home says so and points at the download. Nothing updates itself behind your
+back.
 
 On a narrow window the navigation moves to the bottom, the way it is on a
 phone.
@@ -59,7 +70,9 @@ Each card shows the group's emoji, its members, and where you stand in that
 group specifically.
 
 Groups you have finished with can be archived: they collapse out of the way
-but keep their history, so old balances stay honest.
+but keep their history, so old balances stay honest. Before that — while
+people are still paying each other — a group can be **locked for settling up**
+instead, which stops new expenses without stopping payments.
 
 **One-to-one splitting needs no group at all** — you can split directly with
 one person.
@@ -77,6 +90,10 @@ Search narrows the list. So do the category chips.
 
 Tap any expense to edit it. Delete asks first, and can be undone straight
 afterwards.
+
+In a group that has been locked for settling up, or archived, the add button
+is gone and the list is read-only — the numbers are being squared up and are
+meant to hold still.
 
 ---
 
@@ -100,6 +117,10 @@ the gear). Nobody can add expenses to a locked group, so the numbers stop
 moving while everyone pays up — but payments still go in, and you can remind
 someone what they owe. Anyone in the group can unlock it again when the
 receipt everybody forgot turns up.
+
+If the group has spent in more than one currency, **Show balances per
+currency** breaks the same numbers down as they were actually spent,
+unconverted, for anyone who would rather settle each currency in its own.
 
 ---
 
@@ -187,9 +208,16 @@ Either side can record a payment.
 When you pay someone, record it and they are asked to confirm; the balance
 between you clears once they do. When someone pays **you** — cash at the
 table, an e-transfer that has landed — record it from their row on Balances,
-and it counts straight away. There is nobody left to confirm it to: you are
+and it counts straight away.
+
+![Recording money someone handed you](img/web/member-received.png) There is nobody left to confirm it to: you are
 the person who would have. If you fumble the amount, either of you can delete
 it and put it in again.
+
+Once a group is locked for settling up, the same sheet can **remind** someone
+what they owe: one email, saying what it is for. It will not send the same
+reminder twice in a few days, and it respects whatever that person has chosen
+to hear about — so the button sometimes tells you it did not send, and why.
 
 SlyTab does not move money. It records that money moved. Your payment handles
 — Interac e-Transfer, PayPal.Me, Venmo — live on your profile so the other
@@ -202,7 +230,8 @@ person can find them without asking.
 ![Activity](img/web/activity.png)
 
 Everything that has happened across all your groups, newest first, grouped by
-day. Who added what, who confirmed a payment, who joined.
+day. Who added what, who paid whom, who confirmed a payment, who joined, and
+who locked a group for settling up.
 
 Useful when you open the app after a week away and want to know what changed.
 
@@ -231,6 +260,9 @@ number.
 
 ![Profile and settings](img/web/profile.png)
 
+- **Your photo** — set one instead of the initials badge. You choose the crop,
+  and it is stored the right way up regardless of how your phone recorded it.
+  People who share a group with you can see it; nobody else can.
 - **Theme** — match your device, or force dark or light.
 - **Default currency** — what your balances are shown in.
 - **Notifications** — everything, important only, or nothing.
@@ -242,6 +274,9 @@ number.
   app as a direct download. Android will ask you to allow installing it the
   first time; that is your phone being careful about an app that did not come
   from the Play Store, not a warning about SlyTab.
+- **Your own server** (phone apps) — SlyTab is self-hosted, and the apps can
+  be pointed at a different SlyTab server than ours. Most people never touch
+  this; it is here because "run it yourself" should mean it.
 - **Report a bug** — goes straight to us with your app version attached, and
   you get an email when it is fixed.
 - **Delete my account** — really deletes it. Your share of shared history is

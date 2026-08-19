@@ -14,7 +14,7 @@ twice.
 | **Deleting your account** | In the app, in two taps. Your share of shared history is anonymised so nobody else's balance moves, and Apple is told to revoke the sign-in. | Often a web form or an email request. |
 | **Money handling** | Integer minor units with per-currency scale everywhere, so zero-decimal currencies like CLP and JPY are never a rounding accident. | Varies; floating-point money bugs are a common complaint. |
 | **Price** | Free. No premium tier holding a feature hostage. | Currency conversion, receipt scanning and charts are common paid upgrades. |
-| **Where they are ahead** | Smaller and younger. No per-currency balance view, no recurring expenses, no web-wide integrations. | Mature, large user base, and most people you invite will already have an account. |
+| **Where they are ahead** | Smaller and younger. No recurring expenses, no spending charts, no web-wide integrations. | Mature, large user base, and most people you invite will already have an account. |
 
 <!--/COMPARISON-->
 
