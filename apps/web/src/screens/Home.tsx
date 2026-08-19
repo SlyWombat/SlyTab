@@ -51,8 +51,11 @@ export function Home({ user, onOpenGroup, onSignOut, onUserUpdated, onMyExpenses
     onOpenGroup(id);
   }
 
-  // Archived groups are read-only, so they can't take new expenses.
-  const activeItems = (data?.items ?? []).filter((i) => !i.group.archivedAt);
+  // Archived groups are read-only, and a group locked for settling up (#120)
+  // has deliberately stopped taking expenses — neither belongs in a picker
+  // whose only purpose is adding one.
+  const activeItems = (data?.items ?? [])
+    .filter((i) => !i.group.archivedAt && !i.group.lockedAt);
   const lastGroupId = (() => {
     try { return localStorage.getItem(LAST_GROUP_KEY); } catch { return null; }
   })();

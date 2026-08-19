@@ -599,6 +599,39 @@ final class Api
                     $groups->archive($a['id'], Http::user($rq)['id']);
                     return Http::json($rs, ['ok' => true]);
                 });
+                // #120: lock a trip for settlement. Not archive — archived is
+                // read-only, and the whole point of a lock is that the paying
+                // carries on after the spending stops.
+                $p->post('/groups/{id}/lock', function (Request $rq, Response $rs, array $a) use ($groups, $notify): Response {
+                    $me = Http::user($rq);
+                    $groups->assertMember($a['id'], $me['id']);
+                    $groups->lock($a['id'], $me['id']);
+                    $g = $groups->get($a['id']);
+                    $notify->notifyGroup($a['id'], $me['id'], 'group_locked',
+                        "{$me['displayName']} locked " . ($g['name'] !== '' ? $g['name'] : 'your shared expenses'),
+                        'No more expenses — time to settle up.');
+                    return Http::json($rs, $g);
+                });
+                $p->post('/groups/{id}/unlock', function (Request $rq, Response $rs, array $a) use ($groups): Response {
+                    $me = Http::user($rq);
+                    $groups->assertMember($a['id'], $me['id']);
+                    $groups->unlock($a['id'], $me['id']);
+                    return Http::json($rs, $groups->get($a['id']));
+                });
+                // #120: "you still owe me". Deliberately not gated on the
+                // lock — which screen offers the button is the clients'
+                // business, and pinning that here would make a UI change an
+                // API change. ReminderService owns the rules that matter:
+                // the debt is real, the person is reachable, and it cools off.
+                $p->post('/groups/{id}/remind', function (Request $rq, Response $rs, array $a) use ($groups, $balances, $pdo): Response {
+                    $me = Http::user($rq);
+                    $groups->assertMember($a['id'], $me['id']);
+                    $target = Http::str(Http::body($rq), 'userId');
+                    $groups->assertMemberParticipant($a['id'], $target);
+                    $result = (new \SlyTab\Services\ReminderService($pdo, $balances))
+                        ->nudge($a['id'], $me['id'], $target);
+                    return Http::json($rs, $result);
+                });
                 // A group that never held money can be deleted outright.
                 // Archiving is for groups with a history worth keeping;
                 // making that the only exit meant a mistyped or accidental
@@ -704,9 +737,22 @@ final class Api
                     $me = Http::user($rq);
                     $groups->assertMember($a['id'], $me['id']);
                     $st = $settlements->create($a['id'], $me['id'], Http::body($rq));
-                    $notify->notifyGroup($a['id'], $me['id'], 'settlement_in',
-                        "{$me['displayName']} sent you a payment",
-                        'Confirm it in SlyTab when it arrives.', [$st['toUserId']]);
+                    if ($st['recordedBy'] === $st['toUserId']) {
+                        // #120: the payee wrote it down, so it is already on
+                        // the books. The payer is told rather than asked —
+                        // and told the amount, because this is the one
+                        // direction where the other person never typed it.
+                        $scale = \SlyTab\Support\Money::scale($st['currency']);
+                        $amountText = number_format($st['amountMinor'] / $scale, $scale === 1 ? 0 : 2)
+                            . ' ' . $st['currency'];
+                        $notify->notifyGroup($a['id'], $me['id'], 'settlement_recorded',
+                            "{$me['displayName']} recorded your payment",
+                            "{$amountText} — your balance is up to date.", [$st['fromUserId']]);
+                    } else {
+                        $notify->notifyGroup($a['id'], $me['id'], 'settlement_in',
+                            "{$me['displayName']} sent you a payment",
+                            'Confirm it in SlyTab when it arrives.', [$st['toUserId']]);
+                    }
                     return Http::json($rs->withStatus(201), $st);
                 });
                 $p->post('/settlements/{id}/confirm', function (Request $rq, Response $rs, array $a) use ($settlements, $notify): Response {

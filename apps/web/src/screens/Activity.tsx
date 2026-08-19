@@ -33,6 +33,9 @@ function activityText(ev: ActivityItem): string {
     case 'deleted': return `deleted ${what}`;
     case 'restored': return `restored ${what}`;
     case 'settled': return 'recorded a payment';
+    case 'received': return 'recorded a payment they were given';
+    case 'locked': return 'locked the group for settling up';
+    case 'unlocked': return 'unlocked the group';
     case 'confirmed': return 'confirmed a payment';
     case 'declined': return "couldn't find a payment (declined)";
     case 'imported': return 'imported from Splitwise';

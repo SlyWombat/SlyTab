@@ -27,10 +27,12 @@ use SlyTab\Support\Ulid;
 class EmailNotificationService
 {
     /** Sent the moment they happen; everything else waits for the sweep. */
-    private const IMMEDIATE = ['settlement_in', 'settlement_confirmed', 'settlement_declined', 'joined'];
+    private const IMMEDIATE = ['settlement_in', 'settlement_confirmed', 'settlement_declined',
+                               'settlement_recorded', 'joined'];
 
     /** Mirrors NotificationService::IMPORTANT — 'important' means these. */
-    private const IMPORTANT = ['settlement_in', 'settlement_confirmed', 'settlement_declined', 'joined'];
+    private const IMPORTANT = ['settlement_in', 'settlement_confirmed', 'settlement_declined',
+                               'settlement_recorded', 'joined'];
 
     public function __construct(
         private readonly PDO $pdo,

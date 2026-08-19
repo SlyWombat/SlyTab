@@ -16,7 +16,8 @@ use SlyTab\Support\Env;
 class NotificationService
 {
     private const EXPO_URL = 'https://exp.host/--/api/v2/push/send';
-    private const IMPORTANT = ['settlement_in', 'settlement_confirmed', 'settlement_declined', 'joined'];
+    private const IMPORTANT = ['settlement_in', 'settlement_confirmed', 'settlement_declined',
+                               'settlement_recorded', 'joined'];
 
     private readonly EmailNotificationService $email;
 

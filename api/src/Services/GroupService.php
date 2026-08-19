@@ -119,7 +119,7 @@ final class GroupService
             throw new ApiException('NOT_FOUND', 'group not found', 404);
         }
         $m = $this->pdo->prepare(
-            'SELECT u.id, u.display_name, u.avatar, u.avatar_path, u.payment_handles
+            'SELECT u.id, u.display_name, u.avatar, u.avatar_path, u.payment_handles, u.placeholder_at
              FROM memberships m JOIN users u ON u.id = m.user_id
              WHERE m.group_id = ? AND m.left_at IS NULL ORDER BY m.joined_at',
         );
@@ -132,6 +132,7 @@ final class GroupService
             'currencies' => json_decode($g['currencies'] ?? '[]', true) ?: [],
             'isDirect' => (bool) $g['is_direct'],
             'archivedAt' => $g['archived_at'],
+            'lockedAt' => $g['locked_at'],
             'members' => array_map(static fn(array $u): array => [
                 'id' => $u['id'],
                 'displayName' => $u['display_name'],
@@ -139,6 +140,10 @@ final class GroupService
                 'hasAvatar' => ($u['avatar_path'] ?? null) !== null && $u['avatar_path'] !== '',
                 'avatarVersion' => \SlyTab\Services\AvatarService::versionOf($u['avatar_path'] ?? null),
                 'paymentHandles' => json_decode($u['payment_handles'] ?: '{}', true),
+                // A placeholder is someone's history waiting for them to
+                // register. Nothing can be sent to them, so the clients need
+                // to know not to offer a reminder (#120).
+                'isPlaceholder' => ($u['placeholder_at'] ?? null) !== null,
             ], $m->fetchAll()),
         ];
     }
@@ -176,7 +181,30 @@ final class GroupService
         }
     }
 
+    /**
+     * Can the money in this group still change? Expenses, imports, category
+     * overrides, renames and member changes all ask this.
+     *
+     * Two states say no, for opposite reasons: an archived group is finished
+     * with, and a locked one is mid-settlement — its balances have to hold
+     * still while people pay each other (#120). Settlements themselves ask
+     * `assertSettleable` instead, which is the whole point of the lock.
+     */
     public function assertWritable(string $groupId): void
+    {
+        $this->assertSettleable($groupId);
+        $stmt = $this->pdo->prepare('SELECT locked_at FROM `groups` WHERE id = ?');
+        $stmt->execute([$groupId]);
+        if ($stmt->fetchColumn() !== null) {
+            throw new ApiException('GROUP_LOCKED', 'this trip is locked for settlement', 409);
+        }
+    }
+
+    /**
+     * Weaker than `assertWritable`: settling up, and getting into the group
+     * in order to settle up, survive a lock. Only archiving stops them.
+     */
+    public function assertSettleable(string $groupId): void
     {
         $stmt = $this->pdo->prepare('SELECT archived_at FROM `groups` WHERE id = ?');
         $stmt->execute([$groupId]);
@@ -386,7 +414,10 @@ final class GroupService
             throw new ApiException('INVITE_INVALID', 'this invite link has expired or been revoked', 410);
         }
         $groupId = $invite['group_id'];
-        $this->assertWritable($groupId);
+        // Deliberately the weaker check: someone who never accepted their
+        // invite may still owe money in a trip that has since been locked,
+        // and locking them out is how that debt becomes unsettleable.
+        $this->assertSettleable($groupId);
 
         $existing = $this->pdo->prepare('SELECT left_at FROM memberships WHERE group_id = ? AND user_id = ?');
         $existing->execute([$groupId, $userId]);
@@ -409,6 +440,32 @@ final class GroupService
         $this->pdo->prepare('UPDATE memberships SET left_at = ? WHERE group_id = ? AND user_id = ? AND left_at IS NULL')
             ->execute([Db::now(), $groupId, $userId]);
         $this->activity->record($groupId, $userId, 'left', 'group', $groupId);
+    }
+
+    /**
+     * Lock a trip for settlement (#120): the expenses stop, the paying
+     * starts. Any member can, exactly like archiving — SlyTab has no roles,
+     * and the activity feed records who did it. Reversible: a forgotten
+     * receipt turning up is a normal end-of-trip event, not a catastrophe.
+     */
+    public function lock(string $groupId, string $userId): void
+    {
+        $this->assertSettleable($groupId);
+        $done = $this->pdo->prepare('UPDATE `groups` SET locked_at = ? WHERE id = ? AND locked_at IS NULL');
+        $done->execute([Db::now(), $groupId]);
+        if ($done->rowCount() > 0) {
+            $this->activity->record($groupId, $userId, 'locked', 'group', $groupId);
+        }
+    }
+
+    public function unlock(string $groupId, string $userId): void
+    {
+        $this->assertSettleable($groupId);
+        $done = $this->pdo->prepare('UPDATE `groups` SET locked_at = NULL WHERE id = ? AND locked_at IS NOT NULL');
+        $done->execute([$groupId]);
+        if ($done->rowCount() > 0) {
+            $this->activity->record($groupId, $userId, 'unlocked', 'group', $groupId);
+        }
     }
 
     public function archive(string $groupId, string $userId): void

@@ -70,6 +70,14 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-2.4 (MUST)** A member can leave a group only when their net balance in
   it is zero; otherwise the app prompts to settle first.
 - **FR-2.5 (SHOULD)** Group archive (read-only) once a trip/household ends.
+- **FR-2.7 (MUST)** *Lock a trip for settlement* (#120). A locked group takes
+  no new expenses, edits, imports, renames or invitations — the balances hold
+  still — but settlements and reminders carry on, and someone who was invited
+  earlier can still join in order to settle. Any member can lock or unlock it,
+  as with archiving, and the activity feed records who did. Archive is the
+  wrong tool for this and always was: an archived group refuses settlements
+  too, so archiving to "close" a trip would freeze the very payments the
+  closing is for. Archive is what happens once everyone is square.
 
 ### 2.3 Expenses & splitting
 
@@ -187,6 +195,19 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-7.3 (MUST)** **No money custody, no payment processing, no stored
   banking credentials.** This is a hard product boundary, not a deferral.
 - **FR-7.4 (SHOULD)** Unconfirmed settlements nag the payee after 3 days.
+- **FR-7.5 (MUST)** *Either end can record a payment* (#120). The payer
+  records "I sent it" (pending, FR-7.2) and the payee records "they paid me"
+  — including a part payment, since money on a trip arrives in pieces. A
+  payment recorded by its payee lands **confirmed** immediately: the person
+  who would confirm receipt is the one recording it, and the record works
+  against their own interest. It stays deletable by either party, which is
+  the correction path a self-confirmed record needs; a settlement the two of
+  them agreed on (payer records, payee confirms) remains final.
+- **FR-7.6 (SHOULD)** *Reminders on request* (#120). Someone who is owed can
+  send one reminder to someone who owes them. The automatic sweep (FR-7.4)
+  deliberately never tells you to chase a friend; asked for by hand it is a
+  different act. The debt must be real, the person reachable and not opted
+  out, and it cools off for a few days before it can be sent again.
 
 ### 2.8 Activity & notifications
 

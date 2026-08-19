@@ -143,10 +143,15 @@ export interface Member {
   hasAvatar?: boolean;
   avatarVersion?: string | null;
   paymentHandles: User['paymentHandles'];
+  /** Someone's history waiting for them to register — nothing can be sent to them (#120). */
+  isPlaceholder?: boolean;
 }
 export interface Group {
   id: string; name: string; emoji: string; homeCurrency: string; currencies: string[];
-  isDirect: boolean; archivedAt: string | null; members: Member[];
+  isDirect: boolean; archivedAt: string | null;
+  /** #120: locked for settlement — expenses frozen, payments still flowing. */
+  lockedAt: string | null;
+  members: Member[];
 }
 export interface Participant { userId: string; amountMinor: number }
 export interface Expense {
@@ -169,6 +174,8 @@ export interface Balances {
 export interface Settlement {
   id: string; groupId: string; fromUserId: string; toUserId: string;
   amountMinor: number; currency: string; status: 'pending' | 'confirmed';
+  /** Who typed it in. When it is the payee, they recorded money they were handed (#120). */
+  recordedBy?: string | null;
 }
 export interface GroupTotals {
   totalMinor: number;
@@ -627,5 +634,16 @@ export const api = {
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),
   settle: (groupId: string, toUserId: string, amountMinor: number, method: string) =>
     req<Settlement>('POST', `/groups/${groupId}/settlements`, { toUserId, amountMinor, method }),
+  /**
+   * #120: the other direction — money that was handed to you. Lands
+   * confirmed, because the person confirming receipt is the one recording it.
+   */
+  recordReceived: (groupId: string, fromUserId: string, amountMinor: number, method: string) =>
+    req<Settlement>('POST', `/groups/${groupId}/settlements`, { fromUserId, amountMinor, method }),
+  lockGroup: (groupId: string) => req<Group>('POST', `/groups/${groupId}/lock`),
+  unlockGroup: (groupId: string) => req<Group>('POST', `/groups/${groupId}/unlock`),
+  /** Ask someone for what they owe. `sent: false` comes with a reason worth showing. */
+  remind: (groupId: string, userId: string) =>
+    req<{ sent: boolean; reason: string }>('POST', `/groups/${groupId}/remind`, { userId }),
   confirmSettlement: (id: string) => req<Settlement>('POST', `/settlements/${id}/confirm`),
 };

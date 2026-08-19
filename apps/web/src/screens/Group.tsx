@@ -77,6 +77,9 @@ function activityText(ev: ActivityItem): string {
     case 'deleted': return `deleted ${what}`;
     case 'restored': return `restored ${what}`;
     case 'settled': return 'recorded a payment';
+    case 'received': return 'recorded a payment they were given';
+    case 'locked': return 'locked the group for settling up';
+    case 'unlocked': return 'unlocked the group';
     case 'confirmed': return 'confirmed a payment';
     case 'declined': return "couldn't find a payment (declined)";
     case 'imported': return `imported from Splitwise${d.source === 'splitwise-api' ? '' : ' (CSV)'}`;
@@ -113,6 +116,8 @@ export function GroupScreen({ groupId, user, onBack }: {
   const [catOverrides, setCatOverrides] = useState<Record<string, CategoryOverride>>({});
   const [managingCategories, setManagingCategories] = useState(false);
   const [settling, setSettling] = useState<{ to: Member; suggested: number } | null>(null);
+  // #120: tapping someone's balance opens what you can do about it.
+  const [memberSheet, setMemberSheet] = useState<Member | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Today's group-home → user-home rate, for the fine print under each
   // expense (the user thinks in their own currency, not the group's).
@@ -212,6 +217,17 @@ export function GroupScreen({ groupId, user, onBack }: {
       </div>
 
       {error && <div className="error" role="alert">{error}</div>}
+
+      {/* #120: a locked trip looks different, because it behaves differently
+          — the spending is over, the paying is not. */}
+      {group.lockedAt && group.archivedAt === null && (
+        <div className="row" style={{ borderColor: 'var(--ss-brand)' }}>
+          <div className="grow" style={{ fontSize: '0.84375rem' }}>
+            <b>Locked for settling up.</b>
+            <div className="muted">No new expenses — record payments until everyone is square.</div>
+          </div>
+        </div>
+      )}
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'expenses'} className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
@@ -375,17 +391,30 @@ export function GroupScreen({ groupId, user, onBack }: {
 
       {tab === 'balances' && balances !== null && (
         <>
-          {group.members.map((m) => (
-            <div className="row" key={m.id}>
-              <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} />
-              <div className="grow"><div className="name">{m.id === user.id ? 'You' : m.displayName}</div></div>
-              <div className="right">
-                {(balances.net[m.id] ?? 0) === 0
-                  ? <span className="muted">settled ✓</span>
-                  : <Amount minor={balances.net[m.id] ?? 0} currency={group.homeCurrency} signed />}
-              </div>
-            </div>
-          ))}
+          {/* #120: the balance is the button. Someone saying "here is $20
+              toward my tab" happens at the table, not in a menu three taps
+              down, and the person owed is the one holding the phone. */}
+          {group.members.map((m) => {
+            const row = (
+              <>
+                <Badge id={m.id} name={m.displayName} hasAvatar={m.hasAvatar} avatarVersion={m.avatarVersion} />
+                <div className="grow"><div className="name">{m.id === user.id ? 'You' : m.displayName}</div></div>
+                <div className="right">
+                  {(balances.net[m.id] ?? 0) === 0
+                    ? <span className="muted">settled ✓</span>
+                    : <Amount minor={balances.net[m.id] ?? 0} currency={group.homeCurrency} signed />}
+                </div>
+              </>
+            );
+            return m.id === user.id || group.archivedAt !== null
+              ? <div className="row" key={m.id}>{row}</div>
+              : (
+                <button className="row" key={m.id} onClick={() => setMemberSheet(m)}
+                  aria-label={`Settle up with ${m.displayName}`}>
+                  {row}
+                </button>
+              );
+          })}
           {/* #106: what you owe in each currency, unconverted. Splitwise makes
               this the default and charges to convert; we convert by default,
               because one number to settle beats two — but someone who would
@@ -428,6 +457,13 @@ export function GroupScreen({ groupId, user, onBack }: {
                   Settle
                 </button>
               )}
+              {/* The other end of the same row: money owed to you is
+                  something you can act on too (#120). */}
+              {tr.to === user.id && memberById.get(tr.from) && group.archivedAt === null && (
+                <button className="btn sm" onClick={() => setMemberSheet(memberById.get(tr.from)!)}>
+                  {!group.lockedAt ? 'Received' : 'Settle up'}
+                </button>
+              )}
             </div>
           ))}
         </>
@@ -437,13 +473,13 @@ export function GroupScreen({ groupId, user, onBack }: {
         {!group.isDirect && <button className="btn sm" onClick={() => setInviting(true)}>Invite</button>}
         <a className="btn sm" style={{ textDecoration: 'none', lineHeight: '32px' }}
           href={`${import.meta.env.BASE_URL}api/v1/groups/${group.id}/export.csv`}>Export CSV</a>
-        {group.archivedAt === null && (
+        {group.archivedAt === null && !group.lockedAt && (
           <button className="btn sm" onClick={() => setImporting(true)}>Import from Splitwise</button>
         )}
         <button className="btn sm" onClick={() => setManagingCategories(true)}>Categories</button>
       </div>
 
-      {group.archivedAt === null && (
+      {group.archivedAt === null && !group.lockedAt && (
         <button className="fab" aria-label="Add expense" onClick={() => setAdding(true)}>+</button>
       )}
       {adding && (
@@ -474,6 +510,12 @@ export function GroupScreen({ groupId, user, onBack }: {
       {settling && (
         <SettleSheet group={group} to={settling.to} suggested={settling.suggested}
           onClose={() => setSettling(null)} onDone={() => { setSettling(null); reload(); }} />
+      )}
+      {memberSheet && balances !== null && (
+        <MemberSheet group={group} user={user} member={memberSheet} balances={balances}
+          onClose={() => setMemberSheet(null)}
+          onDone={() => { setMemberSheet(null); reload(); }}
+          onPay={(suggested) => { setSettling({ to: memberSheet, suggested }); setMemberSheet(null); }} />
       )}
     </div>
   );
@@ -1427,6 +1469,26 @@ function GroupSettingsSheet({ group, onClose, onSaved, looksEmpty = false, onDel
           Delete this group…
         </button>
       )}
+      {/* #120: the trip is over, the paying is not. Locking freezes the
+          expenses so the numbers hold still while everyone squares up —
+          which is exactly what archiving cannot do, since an archived group
+          refuses settlements too. */}
+      <button type="button" className="btn block" style={{ marginTop: 10 }}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          (!group.lockedAt ? api.lockGroup(group.id) : api.unlockGroup(group.id))
+            .then(onSaved)
+            .catch((err) => { setError((err as Error).message); setBusy(false); });
+        }}>
+        {!group.lockedAt ? 'Lock for settling up…' : 'Unlock — we are still spending'}
+      </button>
+      {!group.lockedAt && (
+        <p className="muted" style={{ padding: '6px 8px 0', fontSize: '0.75rem' }}>
+          Stops new expenses. Payments and reminders carry on, and anyone can unlock it.
+        </p>
+      )}
+
       {/* Issue #35: a group with a history archives rather than deletes —
           balances must stay honest — and collapses on the home page. */}
       <button type="button" className="btn block" style={{ marginTop: 10, color: 'var(--ss-owe)' }}
@@ -1850,6 +1912,142 @@ function ImportSheet({ group, user, onClose, onDone }: {
       )}
     </Sheet>
   );
+}
+
+/**
+ * What you can do about one person's balance (#120).
+ *
+ * The lock decides what this offers, because the lock is what changes the
+ * question. While the trip runs, money arrives in pieces — someone hands you
+ * $20 against a tab that is still growing — so the sheet records part
+ * payments and the amount is yours to type. Once the trip is locked the
+ * total has stopped moving, so what is left is closing it out, or asking.
+ *
+ * Recording money you were handed is the one direction that needs no
+ * confirmation: you are the person who would have confirmed it.
+ */
+function MemberSheet({ group, user, member, balances, onClose, onDone, onPay }: {
+  group: Group; user: User; member: Member; balances: Balances;
+  onClose: () => void; onDone: () => void; onPay: (suggestedMinor: number) => void;
+}) {
+  // Truthiness, not `!== null`: an API that predates the lock omits the
+  // field, and `undefined !== null` would report every group as locked.
+  const locked = Boolean(group.lockedAt);
+  // The plan is what both of you are looking at on this screen, so it is the
+  // first answer to "how much?". Simplify can route a debt through a third
+  // person and leave the plan silent about the two of you, though — and the
+  // money can still change hands directly — so the raw pairwise figure is
+  // the fallback rather than nothing.
+  const between = (from: string, to: string) =>
+    balances.plan.find((t) => t.from === from && t.to === to)?.amountMinor
+    ?? balances.pairwise.find((t) => t.from === from && t.to === to)?.amountMinor
+    ?? 0;
+  const owedToMe = between(member.id, user.id);
+  const iOwe = between(user.id, member.id);
+
+  const [amountStr, setAmountStr] = useState(minorToAmountString(owedToMe, group.homeCurrency));
+  const [method, setMethod] = useState('cash');
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const amountMinor = parseAmount(amountStr, group.homeCurrency);
+
+  async function recordReceived() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.recordReceived(group.id, member.id, amountMinor, method);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  async function remind() {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const r = await api.remind(group.id, member.id);
+      setNote(reminderNote(r, member.displayName));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet title={member.displayName} onClose={onClose}>
+      {error && <div className="error" role="alert">{error}</div>}
+      {note && <p className="muted" style={{ padding: '0 8px 8px' }}>{note}</p>}
+      <p style={{ padding: '0 8px 8px', fontSize: '0.9375rem' }}>
+        {owedToMe > 0
+          ? <>{member.displayName} owes you <b><Amount minor={owedToMe} currency={group.homeCurrency} /></b>.</>
+          : iOwe > 0
+            ? <>You owe {member.displayName} <b><Amount minor={iOwe} currency={group.homeCurrency} /></b>.</>
+            : <>You and {member.displayName} are settled up ✓</>}
+      </p>
+
+      {owedToMe > 0 && (
+        <>
+          <label className="field"><span>{locked ? 'Amount they paid' : 'Amount received'} ({group.homeCurrency})</span>
+            <input className="amt" inputMode="decimal" value={amountStr}
+              onChange={(e) => setAmountStr(e.target.value)} />
+          </label>
+          <label className="field"><span>How</span>
+            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="interac">Interac e-Transfer</option>
+              <option value="paypal">PayPal</option>
+              <option value="venmo">Venmo</option>
+              <option value="other">Something else</option>
+            </select>
+          </label>
+          <button className="btn primary block" disabled={busy || amountMinor <= 0} onClick={recordReceived}>
+            {locked ? 'Record their payment' : 'Record money received'}
+          </button>
+          {!locked && (
+            <p className="muted" style={{ padding: '8px 8px 0' }}>
+              Part payments are fine — put in what they actually handed you, and
+              the rest stays on their tab.
+            </p>
+          )}
+          {/* Asking belongs to the settling-up phase: mid-trip the tab is
+              still growing and there is nothing to chase yet (owner, #120). */}
+          {locked && !member.isPlaceholder && (
+            <button className="btn block" style={{ marginTop: 10 }} disabled={busy} onClick={remind}>
+              Remind {member.displayName}
+            </button>
+          )}
+          {locked && member.isPlaceholder && (
+            <p className="muted" style={{ padding: '10px 8px 0' }}>
+              {member.displayName} hasn't joined SlyTab yet, so there is nowhere to send a reminder.
+            </p>
+          )}
+        </>
+      )}
+
+      {iOwe > 0 && (
+        <button className="btn primary block" onClick={() => onPay(iOwe)}>
+          Settle up with {member.displayName}
+        </button>
+      )}
+    </Sheet>
+  );
+}
+
+/** What came back from a nudge, said out loud. */
+function reminderNote(r: { sent: boolean; reason: string }, name: string): string {
+  if (r.sent) return `Reminder sent to ${name}.`;
+  switch (r.reason) {
+    case 'too_soon': return `${name} was reminded in the last few days — give it a moment before asking again.`;
+    case 'muted': return `${name} has turned off SlyTab emails, so this one would not arrive.`;
+    case 'unreachable': return `${name} hasn't joined SlyTab yet, so there is nowhere to send it.`;
+    case 'no_debt': return `Nothing to remind ${name} about — you two are square.`;
+    default: return `Could not remind ${name} just now.`;
+  }
 }
 
 // ---- Settle up (FR-7.x — deep links, never holds money) ----

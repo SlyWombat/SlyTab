@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Settling up from either end** (#120): only the person who *owed* money
+  could record a payment, so anyone who was owed had no way to close a
+  balance — the app just told them to wait. Tapping someone's balance now
+  opens what you can do about it, including recording money they handed
+  you. A payment recorded by the person who received it counts immediately
+  (they are the one who would have confirmed it) and stays deletable by
+  either side, which is the correction path it needs. Part payments are
+  first-class: "here is $20 toward my tab" is a normal thing to say.
+- **Lock a trip for settling up** (#120): freezes expenses so the numbers
+  hold still while everyone pays up, while settlements, reminders and
+  late-arriving invitees carry on. Archiving could never do this — an
+  archived group refuses settlements too — so it stays what it always was,
+  the thing you do once everyone is square. Any member can lock or unlock.
+- **Remind someone what they owe** (#120): one tap from a locked trip's
+  member sheet. The automatic reminder sweep still never tells you to chase
+  a friend; this one you ask for. It cools off for a few days, respects
+  notification preferences, and says out loud when it did not send.
+
 ## [1.0.1] — 2026-07-27
 
 ### Fixed

@@ -36,6 +36,13 @@ final class ReminderService
     private const STALE_BALANCE_DAYS = 21;
     /** Don't email the same person about the same thing more often than this. */
     private const COOLDOWN_DAYS = 14;
+    /**
+     * A nudge someone sent by hand cools off faster than the automatic
+     * sweep — they know they are asking, and 14 days would make the button
+     * feel broken — but it still cools off, because "remind" tapped six
+     * times is six emails and the end of a friendship.
+     */
+    private const NUDGE_COOLDOWN_DAYS = 3;
     /** Below this, an email costs more attention than the debt is worth. */
     private const MIN_MINOR = 500;
 
@@ -157,6 +164,73 @@ final class ReminderService
         return $sent;
     }
 
+    /**
+     * A reminder one person sent on purpose (#120): "you still owe me".
+     *
+     * The automatic sweep deliberately never does this — an app that tells
+     * you to go and chase your friend is an app nobody keeps. Asked for by
+     * hand it is a different act, so this is a route, not a cron job. What
+     * survives from the sweep's rules: the debt has to be real, the person
+     * has to be reachable and willing to hear from us, and it cools off.
+     *
+     * @param string $creditorId the member who is owed — the one asking
+     * @param string $debtorId   the member who owes
+     * @return array{sent: bool, reason: string}
+     */
+    public function nudge(string $groupId, string $creditorId, string $debtorId): array
+    {
+        $g = $this->pdo->prepare('SELECT id, name, home_currency FROM `groups` WHERE id = ?');
+        $g->execute([$groupId]);
+        $group = $g->fetch();
+        if ($group === false) {
+            return ['sent' => false, 'reason' => 'no_group'];
+        }
+
+        // The plan, not the raw pairwise ledger: it is what both people are
+        // looking at on the balances screen, so it is what a reminder about
+        // "what you owe me" has to agree with.
+        $owed = 0;
+        foreach ($this->balances->forGroup($groupId)['plan'] ?? [] as $tr) {
+            if (($tr['from'] ?? '') === $debtorId && ($tr['to'] ?? '') === $creditorId) {
+                $owed = (int) ($tr['amountMinor'] ?? 0);
+            }
+        }
+        if ($owed <= 0) {
+            return ['sent' => false, 'reason' => 'no_debt'];
+        }
+
+        $debtor = $this->person($debtorId);
+        $creditor = $this->person($creditorId);
+        if ($creditor === null) {
+            return ['sent' => false, 'reason' => 'no_debt'];
+        }
+        // `person` filters out placeholders and deleted accounts: someone
+        // whose history is waiting for them to register has no inbox to
+        // reach. The clients hide the button for them (`isPlaceholder`);
+        // this is the backstop that makes the silence honest.
+        if ($debtor === null) {
+            return ['sent' => false, 'reason' => 'unreachable'];
+        }
+        if ($debtor['notify_level'] === 'none') {
+            return ['sent' => false, 'reason' => 'muted'];
+        }
+        if (!$this->shouldSend($debtorId, 'reminder_nudge', (string) $debtor['notify_level'])) {
+            return ['sent' => false, 'reason' => 'too_soon'];
+        }
+
+        $amount = self::money($owed, (string) $group['home_currency']);
+        $body = "{$creditor['display_name']} is squaring up \"{$group['name']}\" and there is "
+            . "still {$amount} outstanding: you owe {$creditor['display_name']}.\n\n"
+            . "Pay however the two of you normally do — SlyTab never touches the money. "
+            . "It just needs to know it happened, so record it in the app and "
+            . "{$creditor['display_name']} confirms it.\n\n"
+            . 'Open SlyTab: ' . self::appUrl() . "\n\n"
+            . self::footer($debtorId);
+        $this->send($debtorId, (string) $debtor['email'], $groupId, 'reminder_nudge',
+            "{$creditor['display_name']} is waiting on {$amount}", $body, (string) $group['name']);
+        return ['sent' => true, 'reason' => 'sent'];
+    }
+
     /** @return array{id:string,email:string,display_name:string,notify_level:string}|null */
     private function person(string $userId): ?array
     {
@@ -187,7 +261,8 @@ final class ReminderService
              WHERE user_id = ? AND kind = ?
                AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)',
         );
-        $stmt->execute([$userId, $kind, self::COOLDOWN_DAYS]);
+        $stmt->execute([$userId, $kind,
+            $kind === 'reminder_nudge' ? self::NUDGE_COOLDOWN_DAYS : self::COOLDOWN_DAYS]);
         if ((int) $stmt->fetchColumn() > 0) {
             $this->skipped++;
             return false;

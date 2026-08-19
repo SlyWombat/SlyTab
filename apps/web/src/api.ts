@@ -48,6 +48,8 @@ export interface Member {
   /** Changes whenever the photo does, so a replaced one is a new URL (#112). */
   avatarVersion?: string | null;
   paymentHandles: User['paymentHandles'];
+  /** Someone's history waiting for them to register — nothing can be sent to them (#120). */
+  isPlaceholder?: boolean;
 }
 
 export interface Group {
@@ -58,6 +60,8 @@ export interface Group {
   currencies: string[];
   isDirect: boolean;
   archivedAt: string | null;
+  /** #120: locked for settlement — expenses frozen, payments still flowing. */
+  lockedAt: string | null;
   members: Member[];
 }
 
@@ -115,6 +119,8 @@ export interface Settlement {
   amountMinor: number;
   currency: string;
   method: string;
+  /** Who typed it in. When it is the payee, they recorded money they were handed (#120). */
+  recordedBy?: string | null;
   status: 'pending' | 'confirmed';
 }
 
@@ -567,6 +573,17 @@ export const api = {
   balances: (groupId: string) => req<Balances>('GET', `/groups/${groupId}/balances`),
   settle: (groupId: string, toUserId: string, amountMinor: number, method: string) =>
     req<Settlement>('POST', `/groups/${groupId}/settlements`, { toUserId, amountMinor, method }),
+  /**
+   * #120: the other direction — money that was handed to you. Lands
+   * confirmed, because the person confirming receipt is the one recording it.
+   */
+  recordReceived: (groupId: string, fromUserId: string, amountMinor: number, method: string) =>
+    req<Settlement>('POST', `/groups/${groupId}/settlements`, { fromUserId, amountMinor, method }),
+  lockGroup: (groupId: string) => req<Group>('POST', `/groups/${groupId}/lock`),
+  unlockGroup: (groupId: string) => req<Group>('POST', `/groups/${groupId}/unlock`),
+  /** Ask someone for what they owe. `sent: false` comes with a reason worth showing. */
+  remind: (groupId: string, userId: string) =>
+    req<{ sent: boolean; reason: string }>('POST', `/groups/${groupId}/remind`, { userId }),
   confirmSettlement: (id: string) => req<Settlement>('POST', `/settlements/${id}/confirm`),
   declineSettlement: (id: string) => req<{ ok: true }>('DELETE', `/settlements/${id}`),
 };

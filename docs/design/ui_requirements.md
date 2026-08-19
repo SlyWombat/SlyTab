@@ -160,6 +160,17 @@ Infinite scroll (cursor pagination). Row tap → Expense detail.
 settlement plan** (FR-6.2): "Alice → Dave C$25.00" rows, each with a
 `Settle` button. A toggle reveals raw pairwise balances ("show all debts").
 
+Every member row except your own is **tappable** and opens the member sheet
+(§2.7) — the person who is owed is usually the one holding the phone when
+cash changes hands, so acting on a balance must not require being the one
+who owes it. Plan rows carry the same affordance from the other end:
+`Settle` when you are the payer, `Received` / `Settle up` when you are the
+payee.
+
+A **locked** group (FR-2.7) says so above the tabs — "Locked for settling
+up · no new expenses" — and hides the add-expense FAB and the import
+action. Payments and reminders stay exactly where they were.
+
 **Totals tab** — group total spent, per-member paid vs share, this
 month/all-time toggle, per-category totals as a simple horizontal bar list
 (no chart library; SplitBar-style bars). Category totals roll **subcategories
@@ -176,7 +187,8 @@ push content down rather than collapsing a list.
 
 Group settings (gear): rename, emoji, home currency (only while the group
 has no foreign-currency expenses), members list (with leave/remove per
-FR-2.4), invite, archive.
+FR-2.4), invite, **lock for settling up** (FR-2.7, reversible — the label
+becomes `Unlock` while locked), archive.
 
 ### 2.5 Add / edit expense (the money screen)
 
@@ -277,6 +289,25 @@ records a **pending** settlement (FR-7.2).
 Payee experience: pending settlements appear at the top of Home and in
 Activity with `Confirm received` / `Didn't get it`. Confirm plays the
 settled animation; decline notifies the payer with a note field.
+
+**Member sheet** — opened by tapping someone's balance (§2.4). It leads
+with the one line that matters ("Vijay owes you C$998.37") and then offers
+what the group's state makes sensible:
+
+- **While the trip runs**: `Record money received` — amount pre-filled with
+  what they owe but freely editable, a method chip row (cash / Interac /
+  PayPal / Venmo / other), and a line saying part payments are fine. The
+  balance moves immediately (FR-7.5); the payer is notified, not asked.
+- **Once locked** (FR-2.7): the same record action, worded as closing the
+  balance out, plus `Remind <name>` (FR-7.6). Asking belongs to the
+  settling-up phase — mid-trip the tab is still growing.
+- **When you are the one who owes**: `Settle up with <name>`, which opens
+  the settle sheet above.
+
+A member who has not registered yet (a placeholder carried in from an
+import) shows why no reminder is offered rather than an inert button. Every
+refusal from the reminder endpoint — too soon, opted out, unreachable,
+nothing owed — is shown as a sentence, never as silence.
 
 Profile → payment handles screen explains each format inline and validates
 shape (email for Interac, username patterns for PayPal/Venmo).

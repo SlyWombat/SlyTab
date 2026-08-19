@@ -91,6 +91,16 @@ If Alice owes Ben, and Ben owes you, SlyTab does not make Alice pay Ben so
 Ben can pay you. It tells Alice to pay you directly. Fewer payments, same
 result.
 
+**Tap anyone's balance** to act on it. If you owe them, that is where you pay.
+If they owe you, that is where you write down what they have handed you —
+including a part of it, which is how money on a trip usually arrives.
+
+When the spending is over, **lock the group for settling up** (group settings,
+the gear). Nobody can add expenses to a locked group, so the numbers stop
+moving while everyone pays up — but payments still go in, and you can remind
+someone what they owe. Anyone in the group can unlock it again when the
+receipt everybody forgot turns up.
+
 ---
 
 ## Totals {#group-totals}
@@ -172,8 +182,14 @@ hundred and thirty, and SlyTab reads it that way.
 
 ![Settling up with someone](img/web/settle.png)
 
-When someone pays you back, record it. They are asked to confirm, and once
-they do the balance between you clears.
+Either side can record a payment.
+
+When you pay someone, record it and they are asked to confirm; the balance
+between you clears once they do. When someone pays **you** — cash at the
+table, an e-transfer that has landed — record it from their row on Balances,
+and it counts straight away. There is nobody left to confirm it to: you are
+the person who would have. If you fumble the amount, either of you can delete
+it and put it in again.
 
 SlyTab does not move money. It records that money moved. Your payment handles
 — Interac e-Transfer, PayPal.Me, Venmo — live on your profile so the other

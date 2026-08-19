@@ -8,9 +8,9 @@
     },
     "settle": {
       "uiHash": "feaab6fc4b1a0faa",
-      "srcHash": "7cafb34621676c54",
-      "proseHash": "f6dc4e55156e02a0",
-      "acceptedAt": "2026-08-02"
+      "srcHash": "eec90424b13533d9",
+      "proseHash": "d23b092aad1bfeba",
+      "acceptedAt": "2026-08-19"
     },
     "home": {
       "uiHash": "df3809cf434e81f4",
@@ -38,9 +38,9 @@
     },
     "group-balances": {
       "uiHash": "e7d000084f6a73e0",
-      "srcHash": "7cafb34621676c54",
-      "proseHash": "81879e31ea049979",
-      "acceptedAt": "2026-08-02"
+      "srcHash": "eec90424b13533d9",
+      "proseHash": "9458001fa4c55d8b",
+      "acceptedAt": "2026-08-19"
     },
     "group-totals": {
       "uiHash": "6a284a718939b0b9",
