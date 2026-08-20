@@ -1,0 +1,152 @@
+# Play Store screenshots from the real Android app.
+#
+# The mirror of ios-screenshots.yml, and the same argument: a store listing
+# should show the app, running, with data nobody has to apologise for. So the
+# job builds its own API, seeds the demo world, builds an APK pointed at that
+# API, and photographs the result on an emulator.
+#
+# Why not the emulator kdocker2 already has (scripts/docs/capture-android.sh):
+# that one installs the RELEASED APK, which can only talk to production. Fine
+# for the manual, wrong for a store listing — see the honest-limitation note in
+# that script's header. This job has no such limitation.
+name: Android Play screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: slytab_shots
+          MYSQL_USER: slytab
+          MYSQL_PASSWORD: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      # 10.0.2.2 is the host, as the emulator sees it. The API listens on the
+      # runner's 127.0.0.1; the app inside the emulator cannot use that name.
+      SLYTAB_API_BASE: http://10.0.2.2:8100/api/v1
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: slytab_shots
+      DB_USER: slytab
+      DB_PASS: ci
+      MAIL_DISABLE: '1'
+      FX_OFFLINE: '1'
+      APP_URL: http://127.0.0.1:8100
+      INVITE_HMAC_KEY: screenshots-only-not-a-secret
+      SESSION_PEPPER: screenshots-only-not-a-secret
+      MIGRATE_TOKEN: screenshots-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring, gd
+
+      - name: Install JS deps
+        run: npm install --no-audit --no-fund
+
+      # --- the demo world it will photograph ---------------------------------
+      - name: Migrate and serve the API
+        working-directory: api
+        run: |
+          composer install --no-interaction --prefer-dist
+          php bin/migrate.php
+          # Single-threaded by default, and a screen opens with half a dozen
+          # concurrent requests — the app would sit there waiting on itself.
+          PHP_CLI_SERVER_WORKERS=6 nohup php -S 0.0.0.0:8100 -t public > /tmp/php-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS -m 2 http://127.0.0.1:8100/api/v1/health && break
+            sleep 1
+          done
+          curl -fsS -m 5 http://127.0.0.1:8100/api/v1/health \
+            || { echo "::error::API never answered"; cat /tmp/php-server.log; exit 1; }
+
+      - name: Seed the demo world
+        run: |
+          node scripts/docs/seed-demo.mjs --base http://127.0.0.1:8100 || {
+            echo "::error::Seeding failed — the API log follows"
+            tail -60 /tmp/php-server.log
+            exit 1
+          }
+
+      # --- the app itself -----------------------------------------------------
+      - name: Build the APK
+        working-directory: apps/mobile
+        run: |
+          npx expo prebuild --platform android --no-install
+          cd android && ./gradlew assembleRelease --no-daemon
+          APK=app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "::error::No APK produced"; exit 1; }
+          echo "APK=$PWD/$APK" >> "$GITHUB_ENV"
+
+      - name: Prove it points at the throwaway API
+        # The same guard the iOS shots workflow carries. Without it, a build
+        # that failed to pick up SLYTAB_API_BASE falls back to DEFAULT_BASE and
+        # photographs real families' balances — silently, and only obvious
+        # afterwards to someone who recognises the names.
+        run: |
+          unzip -p "$APK" assets/index.android.bundle > /tmp/bundle.js 2>/dev/null || true
+          if grep -q "10.0.2.2:8100" /tmp/bundle.js || unzip -p "$APK" AndroidManifest.xml | grep -qa "10.0.2.2"; then
+            echo "confirmed: the build targets the local API"
+          else
+            echo "::error::The APK does not reference 10.0.2.2:8100 — it is pointing at production. Check that SLYTAB_API_BASE reached expo prebuild."
+            exit 1
+          fi
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Capture
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          arch: x86_64
+          profile: pixel_6
+          # One line, deliberately: this action splits a multi-line script and
+          # fails with a syntax error that names nothing useful.
+          script: bash scripts/docs/capture-store-android.sh "$APK" "$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.READER.email))")" "$(node -e "import('./scripts/docs/demo-world.mjs').then(m=>console.log(m.DEMO_PASSWORD))")" /tmp/store-shots
+
+      - name: Collect
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-screenshots
+          path: /tmp/store-shots/
+          retention-days: 30
+
+      - name: What the app was showing when it failed
+        if: failure()
+        run: |
+          adb exec-out screencap -p > /tmp/store-shots/zz-failure-state.png 2>/dev/null || true
+          adb exec-out uiautomator dump /dev/tty 2>/dev/null | head -100 || true
+          adb logcat -d | tail -80 || true
+          tail -40 /tmp/php-server.log || true

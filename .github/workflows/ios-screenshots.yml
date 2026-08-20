@@ -21,10 +21,6 @@ on:
         description: Simulator device (must be a 6.9-inch class iPhone)
         default: iPhone 16 Pro Max
         type: string
-      rebuild:
-        description: Build the app again (only needed when the APP changed — costs an EAS build)
-        default: false
-        type: boolean
 
 jobs:
   screenshots:
@@ -119,71 +115,40 @@ jobs:
           }
 
       # --- the app itself ----------------------------------------------------
+      - name: Pin Xcode
+        # Same pin as the release workflow: one toolchain builds this app, so
+        # a screenshot never shows something a shipped build cannot.
+        run: |
+          ls /Applications | grep -i '^xcode' || true
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
       - name: Build for the simulator
         working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        # Built here rather than fetched from EAS. EAS was the original path
+        # and cost a build from a monthly allowance every time this flow
+        # changed — for a binary the runner is perfectly capable of producing,
+        # unsigned, in about the time the download took. It also removes the
+        # last reason this workflow needed EXPO_TOKEN.
+        #
+        # SLYTAB_API_BASE is a job-level env var, so `expo prebuild` bakes it
+        # into extra.apiBase (app.config.js) exactly as the eas.json profile
+        # used to. Same guard as before: prove it before anything runs.
         run: |
-          if [ -z "${EXPO_TOKEN:-}" ]; then
-            echo "::error::No EXPO_TOKEN secret. Create one at expo.dev (Account Settings -> Access Tokens) and add it under Settings -> Secrets -> Actions."
-            exit 1
-          fi
-
-          # Reuse the last simulator build unless the app itself changed.
-          #
-          # Every run used to build from scratch, and most runs changed only
-          # the Maestro flow — the app was identical. That burned the whole
-          # free-plan iOS allowance for the month on rebuilding the same
-          # binary, and the quota does not reset for 28 days. Iterating on a
-          # flow should cost nothing.
-          #
-          # Rebuild deliberately with the `rebuild` input when the app has
-          # actually changed. The build being used is always printed with its
-          # date, so which binary is under test is never a guess.
-          if [ "${{ inputs.rebuild }}" = "true" ]; then
-            echo "rebuild requested — this consumes an EAS build"
-            npx eas-cli@latest build \
-              --platform ios --profile ios-simulator \
-              --non-interactive --wait --json > /tmp/build.json
-          else
-            echo "reusing the most recent finished simulator build"
-            npx eas-cli@latest build:list \
-              --platform ios --profile ios-simulator --status finished \
-              --limit 1 --json --non-interactive > /tmp/build.json
-          fi
-          echo "--- build json ---"; head -c 1200 /tmp/build.json; echo
-          URL=$(python3 - <<'PY'
-          import json
-          d = json.load(open('/tmp/build.json'))
-          b = d[0] if isinstance(d, list) else d
-          print(b.get('artifacts', {}).get('applicationArchiveUrl')
-                or b.get('applicationArchiveUrl') or '')
-          PY
-          )
-          python3 - <<'PY'
-          import json
-          d = json.load(open('/tmp/build.json'))
-          b = d[0] if isinstance(d, list) else d
-          print(f"using build {b.get('id')} completed {b.get('completedAt')}")
-          PY
-          [ -n "$URL" ] || { echo "::error::No artifact URL in the build output above"; exit 1; }
-          echo "artifact: $URL"
-          curl -sSL -o /tmp/app.tar.gz "$URL"
-          mkdir -p /tmp/app && tar -xzf /tmp/app.tar.gz -C /tmp/app
-          echo "--- what the artifact contained ---"; find /tmp/app -maxdepth 3 | head -40
-          APP=$(find /tmp/app -name '*.app' -maxdepth 4 | head -1)
-          [ -n "$APP" ] || { echo "::error::No .app inside the artifact — see the listing above"; exit 1; }
+          set -o pipefail
+          npx expo prebuild --platform ios --no-install
+          cd ios && pod install
+          xcodebuild -workspace SlyTab.xcworkspace -scheme SlyTab \
+            -configuration Release -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            build | tail -100
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name 'SlyTab.app' | head -1)
+          [ -n "$APP" ] || { echo "::error::No SlyTab.app was produced"; exit 1; }
           echo "$APP" > /tmp/app-path.txt
           echo "app: $APP"
-          # Prove the build points at the throwaway API before anything runs
-          # it. EAS builds in the cloud and does NOT inherit this runner's
-          # environment, so SLYTAB_API_BASE has to come from eas.json — and
-          # when it did not, the app fell back to production and tried to sign
-          # in there with a demo account that only exists locally. That cost a
-          # full run to diagnose and, worse, pointed a screenshot build at real
-          # people's data.
           if ! grep -rq "127.0.0.1:8100" "$APP" 2>/dev/null; then
-            echo "::error::The built app does not reference the local API. It is pointing at production — check build.ios-simulator.env in apps/mobile/eas.json."
+            echo "::error::The built app does not reference the local API — it is pointing at production. Check SLYTAB_API_BASE reached expo prebuild."
             exit 1
           fi
           echo "confirmed: the build targets the local API"
