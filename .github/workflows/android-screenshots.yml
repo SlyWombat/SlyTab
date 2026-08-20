@@ -111,11 +111,16 @@ jobs:
         # photographs real families' balances — silently, and only obvious
         # afterwards to someone who recognises the names.
         run: |
-          unzip -p "$APK" assets/index.android.bundle > /tmp/bundle.js 2>/dev/null || true
-          if grep -q "10.0.2.2:8100" /tmp/bundle.js || unzip -p "$APK" AndroidManifest.xml | grep -qa "10.0.2.2"; then
+          # Every member, not a guessed path: expo-constants moves where it
+          # keeps the resolved config between SDKs, and the first version of
+          # this guard failed on an APK that was perfectly correct because it
+          # looked only in assets/index.android.bundle.
+          if unzip -p "$APK" | grep -qa "10.0.2.2:8100"; then
             echo "confirmed: the build targets the local API"
           else
             echo "::error::The APK does not reference 10.0.2.2:8100 — it is pointing at production. Check that SLYTAB_API_BASE reached expo prebuild."
+            echo "--- what the resolved config says ---"
+            (cd apps/mobile && npx expo config --type public 2>&1 | grep -A3 -i 'extra' | head -20) || true
             exit 1
           fi
 
