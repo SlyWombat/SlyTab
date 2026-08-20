@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, forwardRef, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, AppState, BackHandler, FlatList, Image, KeyboardAvoidingView, Linking,
   Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme,
@@ -164,7 +164,10 @@ function chip(active: boolean) {
   };
 }
 
-function Field({ label, ...input }: { label: string } & React.ComponentProps<typeof TextInput>) {
+// forwardRef so a form can move focus itself: the sign-in form's Email field
+// promises "next" on the return key, and until now nothing was listening.
+const Field = forwardRef<TextInput, { label: string } & React.ComponentProps<typeof TextInput>>(
+  function Field({ label, ...input }, ref) {
   return (
     <View style={{ marginBottom: 12 }}>
       <Text style={s.fieldLabel}>{label}</Text>
@@ -178,13 +181,14 @@ function Field({ label, ...input }: { label: string } & React.ComponentProps<typ
       {/* keyboardAppearance: the UI is hard-dark, and a light iOS keyboard
           slammed up against it looked like a different app (issue #50). */}
       <TextInput
+        ref={ref}
         accessibilityLabel={label}
         testID={label}
         placeholderTextColor={c.text3} keyboardAppearance={activeScheme}
         {...input} style={[s.input, input.style]} />
     </View>
   );
-}
+});
 
 function SheetModal({ title, onClose, children }: {
   title: string; onClose: () => void; children: React.ReactNode;
@@ -733,6 +737,7 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const passwordRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -898,10 +903,19 @@ function AuthScreen({ onSignedIn }: { onSignedIn: (token: string, user: User) =>
             users hand-typed 10+ characters on every reinstall — the biggest
             everyday friction in the app (#99). passwordRules keeps Safari's
             generator inside what the API accepts. */}
+        {/* Return moves to the password field, which is what returnKeyType
+            "next" has been promising since #99 without anything listening —
+            you had to reach up and tap. It also gives the screenshot runs a
+            way in: tapping the password box focuses it on neither platform
+            when a driver does it (the email went in, the password did not,
+            and the form was submitted with half a sign-in), and this is a
+            better fix than teaching two capture scripts to tap coordinates. */}
         <Field label="Email" value={email} onChangeText={setEmail}
           autoCapitalize="none" keyboardType="email-address" autoComplete="email"
-          textContentType="username" returnKeyType="next" />
+          textContentType="username" returnKeyType="next"
+          blurOnSubmit={false} onSubmitEditing={() => passwordRef.current?.focus()} />
         <Field label={mode === 'create' ? 'Password (10+ characters)' : 'Password'}
+          ref={passwordRef}
           value={password} onChangeText={setPassword} secureTextEntry
           textContentType={mode === 'create' ? 'newPassword' : 'password'}
           autoComplete={mode === 'create' ? 'new-password' : 'current-password'}

@@ -68,18 +68,31 @@ adb logcat -c
 # --- helpers: find a node by its text, tap the middle of it -------------------
 dump() { adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r'; }
 
-find_text() { # find_text <substring> -> "x y" or empty
+find_text() { # find_text <substring> [id-only] -> "x y" or empty
+  # resource-id first: React Native puts testID there, and the visible "Email"
+  # and "Password" on this screen are LABELS sitting above their inputs. A tap
+  # on the label focuses nothing, which is how a run ended up typing the
+  # password onto the end of the email address.
   dump | python3 -c "
 import re,sys
 xml=sys.stdin.read(); want=sys.argv[1].lower()
-for m in re.finditer(r'<node[^>]*>', xml):
-    n=m.group(0)
-    t=(re.search(r'text=\"([^\"]*)\"',n) or [None,''])[1]
-    d=(re.search(r'content-desc=\"([^\"]*)\"',n) or [None,''])[1]
-    if want in t.lower() or want in d.lower():
-        b=re.search(r'bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"',n)
-        if b:
-            x1,y1,x2,y2=map(int,b.groups()); print((x1+x2)//2,(y1+y2)//2); break
+nodes=[m.group(0) for m in re.finditer(r'<node[^>]*>', xml)]
+def attr(n, name):
+    m=re.search(name+r'=\"([^\"]*)\"', n)
+    return (m.group(1) if m else '')
+def hit(n):
+    b=re.search(r'bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"',n)
+    if not b: return None
+    x1,y1,x2,y2=map(int,b.groups())
+    return f'{(x1+x2)//2} {(y1+y2)//2}'
+for n in nodes:                                   # exact resource-id wins
+    if attr(n,'resource-id').lower().endswith(want):
+        out=hit(n)
+        if out: print(out); raise SystemExit
+for n in nodes:                                   # then text / description
+    if want in attr(n,'text').lower() or want in attr(n,'content-desc').lower():
+        out=hit(n)
+        if out: print(out); raise SystemExit
 " "$1"
 }
 
@@ -128,9 +141,13 @@ wait_text "Sign in" 60
 tap_text "Sign in" || true
 sleep 2
 tap_text "Email" && adb shell input text "$EMAIL"
-adb shell input keyevent 111   # ESC — drop the soft keyboard before the next tap
-tap_text "Password" && adb shell input text "$PASSWORD"
-adb shell input keyevent 111
+# Return, not a second tap: the app's Email field hands focus to the password
+# field on submit, which is both what its return key has always claimed to do
+# and the only way a driver reliably gets into a secure field.
+adb shell input keyevent 66     # ENTER
+sleep 1
+adb shell input text "$PASSWORD"
+adb shell input keyevent 111    # ESC — put the keyboard away before tapping
 tap_text "Sign in" || true
 sleep 10
 

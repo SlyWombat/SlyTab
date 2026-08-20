@@ -20,25 +20,22 @@ appId: ca.electricrv.slytab
 # social providers differ there (Apple yes, Google no).
 # By testID, not by text: the visible "Email" is a label sibling to the input,
 # so tapping the text focused nothing and the form was submitted empty.
-# Password first, email second — deliberately, and it is not superstition.
+# Tap the email field, type, then press return to reach the password field.
 #
-# Typing the email first left the password empty every time (runs 32415822387
-# and 32417489636 both photographed "email or password is incorrect" with a
-# filled email and an empty password box), and hideKeyboard between the fields
-# did not change it. The password field is the one iOS decorates:
-# textContentType="password" makes it an AutoFill target, and whatever the
-# system puts on screen when it takes focus swallows the typing. Focusing it
-# FIRST, from a screen with no keyboard and nothing else in flight, is the
-# state where that has the best chance of behaving — and the screenshot below
-# says what is actually on screen when it does not.
-- tapOn:
-    id: "Password"
-- takeScreenshot: debug-password-focus
-- inputText: "${DEMO_PASSWORD}"
-- hideKeyboard
+# The password box cannot be focused by tapping it from a driver — on neither
+# platform. Runs 32415822387, 32417489636 and 32420093703 all photographed the
+# same thing: email filled, password empty, "email or password is incorrect",
+# and (with a debug shot at the moment of the tap) no keyboard and no focus
+# ring on the field that had just been tapped. Tapping coordinates would paper
+# over it in this flow only. Instead the app now does what its own returnKeyType
+# has been promising since #99 — return moves to the password field — and both
+# capture flows use it.
 - tapOn:
     id: "Email"
 - inputText: "${DEMO_EMAIL}"
+- pressKey: Enter
+- takeScreenshot: debug-password-focus
+- inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"
 # Say why it failed, rather than leaving it to be inferred from a later
