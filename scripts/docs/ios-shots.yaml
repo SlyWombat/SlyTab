@@ -23,11 +23,21 @@ appId: ca.electricrv.slytab
 - tapOn:
     id: "Email"
 - inputText: "${DEMO_EMAIL}"
+# Put the keyboard away before reaching for the next field. With it up it
+# covers the password field, so the tap lands on the keyboard, the field never
+# takes focus, and the password goes nowhere — the form is then submitted with
+# an email and no password, which the app answers with "email or password is
+# incorrect". That is what run 32415822387 photographed.
+- hideKeyboard
 - tapOn:
     id: "Password"
+- waitForAnimationToEnd
 - inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"
+# Say why it failed, rather than leaving it to be inferred from a later
+# assertion about a tab bar that was never going to appear.
+- assertNotVisible: "email or password is incorrect"
 # Let the sign-in actually finish before the app is killed.
 #
 # Tapping Sign in only STARTS the request. Stopping the app immediately killed
