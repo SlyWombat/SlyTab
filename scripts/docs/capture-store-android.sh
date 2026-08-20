@@ -30,6 +30,18 @@ PKG="ca.electricrv.slytab"
 
 mkdir -p "$OUT"
 
+# Diagnostics belong here, where the emulator still exists: the workflow's own
+# post-failure step runs after the emulator-runner has gone, and an `adb` with
+# no device waits for one for ever rather than failing.
+on_error() {
+  echo "--- what was on screen ---"
+  adb exec-out screencap -p > "$OUT/zz-failure-state.png" 2>/dev/null || true
+  adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | head -60 || true
+  echo "--- logcat tail ---"
+  adb logcat -d 2>/dev/null | tail -60 || true
+}
+trap on_error ERR
+
 # --- a device Play will accept -----------------------------------------------
 # Play's maximum screenshot ratio is 2:1 and most emulator profiles are taller
 # than that (a Pixel 6 is 2.11:1), so the shots would be rejected at upload.

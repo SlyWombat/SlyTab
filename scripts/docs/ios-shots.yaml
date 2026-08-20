@@ -20,19 +20,25 @@ appId: ca.electricrv.slytab
 # social providers differ there (Apple yes, Google no).
 # By testID, not by text: the visible "Email" is a label sibling to the input,
 # so tapping the text focused nothing and the form was submitted empty.
+# Password first, email second — deliberately, and it is not superstition.
+#
+# Typing the email first left the password empty every time (runs 32415822387
+# and 32417489636 both photographed "email or password is incorrect" with a
+# filled email and an empty password box), and hideKeyboard between the fields
+# did not change it. The password field is the one iOS decorates:
+# textContentType="password" makes it an AutoFill target, and whatever the
+# system puts on screen when it takes focus swallows the typing. Focusing it
+# FIRST, from a screen with no keyboard and nothing else in flight, is the
+# state where that has the best chance of behaving — and the screenshot below
+# says what is actually on screen when it does not.
+- tapOn:
+    id: "Password"
+- takeScreenshot: debug-password-focus
+- inputText: "${DEMO_PASSWORD}"
+- hideKeyboard
 - tapOn:
     id: "Email"
 - inputText: "${DEMO_EMAIL}"
-# Put the keyboard away before reaching for the next field. With it up it
-# covers the password field, so the tap lands on the keyboard, the field never
-# takes focus, and the password goes nowhere — the form is then submitted with
-# an email and no password, which the app answers with "email or password is
-# incorrect". That is what run 32415822387 photographed.
-- hideKeyboard
-- tapOn:
-    id: "Password"
-- waitForAnimationToEnd
-- inputText: "${DEMO_PASSWORD}"
 - hideKeyboard
 - tapOn: "Sign in"
 # Say why it failed, rather than leaving it to be inferred from a later

@@ -148,10 +148,11 @@ jobs:
           path: /tmp/store-shots/
           retention-days: 30
 
-      - name: What the app was showing when it failed
+      - name: What the API was doing when it failed
         if: failure()
-        run: |
-          adb exec-out screencap -p > /tmp/store-shots/zz-failure-state.png 2>/dev/null || true
-          adb exec-out uiautomator dump /dev/tty 2>/dev/null | head -100 || true
-          adb logcat -d | tail -80 || true
-          tail -40 /tmp/php-server.log || true
+        # Deliberately no adb here. The emulator only exists inside the
+        # emulator-runner step, and `adb` outside it does not fail — it waits
+        # for a device that is never coming, until the job times out. The
+        # device-side diagnostics belong in the capture script, which runs
+        # while there is something to ask.
+        run: tail -60 /tmp/php-server.log || true
