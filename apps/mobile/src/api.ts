@@ -27,8 +27,11 @@ import { DEFAULT_BASE } from './backends';
  * with the token that belongs there. Nothing is ever read from the new server
  * and paired with the old one's credential.
  *
- * `extra.apiBase` still wins at startup, because the documentation pipeline
- * needs a build that can only ever see its own throwaway API (#104).
+ * `extra.apiBase` is where a build that was made to talk somewhere else says
+ * so — the documentation and store-screenshot pipelines need a build that can
+ * only ever see its own throwaway API (#104). It is folded into DEFAULT_BASE
+ * rather than only being read here, because reading it only here was not
+ * enough: `loadActive()` runs a beat after startup and overwrites this.
  */
 interface Conn { base: string; token: string | null }
 

@@ -15,6 +15,7 @@
  * account.
  */
 
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
 import { hostOf, normaliseBase } from '@slytab/core';
@@ -29,8 +30,25 @@ export interface Backend {
   label: string;
 }
 
-/** Where the app points with nothing configured: the one this build shipped with. */
-export const DEFAULT_BASE = 'https://electricrv.ca/slytab/api/v1';
+/**
+ * Where the app points with nothing configured: the one this build shipped
+ * with — and `extra.apiBase` is what "this build" means when a build was made
+ * to talk somewhere else.
+ *
+ * That last clause was missing, and it mattered. `api.ts` reads `extra.apiBase`
+ * at startup, but the moment #113 landed, `loadActive()` ran a beat later, found
+ * nothing stored, returned this constant, and set it — so a build made to point
+ * at a throwaway API silently went to production instead. It cost three
+ * screenshot runs, each of which signed in against the live server with an
+ * account that only exists locally and was told, correctly, that the password
+ * was wrong.
+ *
+ * Anyone self-hosting a build of their own had the same bug, which is the
+ * thing #113 exists to make possible.
+ */
+export const DEFAULT_BASE =
+  (Constants.expoConfig?.extra as { apiBase?: string } | undefined)?.apiBase
+  ?? 'https://electricrv.ca/slytab/api/v1';
 
 export const DEFAULT_BACKEND: Backend = { base: DEFAULT_BASE, label: 'SlyTab' };
 
