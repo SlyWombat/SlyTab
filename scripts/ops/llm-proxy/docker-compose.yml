@@ -1,0 +1,11 @@
+# SlyTab's authenticated front door to the house Ollama (#119).
+# host networking so it can bind 127.0.0.1:11435 — the address the relay
+# dials — and reach Ollama on 127.0.0.1:11434 without a bridge hop.
+services:
+  llm-proxy:
+    image: nginx:1.27-alpine
+    container_name: slytab-llm-proxy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro

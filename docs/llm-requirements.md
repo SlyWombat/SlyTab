@@ -253,8 +253,9 @@ policy against actual behaviour.
 
 ## Host
 
-`LOCAL_LLM_URL=http://147.5.121.145:3308` (Ollama). Reachable from the
-production API host and from a dev box on the LAN.
+`LOCAL_LLM_URL=http://147.5.121.145:3308` (Ollama), plus **`LOCAL_LLM_TOKEN`,
+which is now required** — see below. Reachable from the production API host
+and from a dev box on the LAN.
 
 **This host is production.** It is not a scratch box: upgrading it, or
 loading large models beside `qwen2.5vl:7b`, degrades live receipt scanning
@@ -262,3 +263,27 @@ for real users. On 2026-07-27 it was upgraded to 0.32.5 during a
 benchmarking session and receipt scanning silently produced nonsense until
 the rollback. Before touching it, run the corpus; after touching it, run the
 corpus again.
+
+## The endpoint is authenticated now (#119)
+
+That address is a relay port on the public internet, and Ollama has no
+authentication of its own: for a while, anyone who found `3308` had an
+unrestricted vision model. It was switched off on 2026-08-19, which closed
+the hole and stopped receipt scanning dead — there is no silent fallback to
+Claude (§"If we ever enable the Claude fallback"), so uploads simply failed.
+
+What replaces it: nginx on the house machine, listening on the loopback
+address the relay dials, passing nothing through without SlyTab's token.
+Source and instructions live in `scripts/ops/llm-proxy/`.
+
+So a working production configuration is now three variables, not two:
+
+| Variable | Why |
+|---|---|
+| `LOCAL_LLM_URL` | unchanged — the relay port |
+| `LOCAL_LLM_MODEL` | unchanged — `qwen2.5vl:7b` |
+| `LOCAL_LLM_TOKEN` | the front door's token; without it every parse fails with `local model refused the token` |
+
+`scripts/deploy-api.sh` writes it from `PROD_LLM_TOKEN` in the repo env file.
+A dev box talking to a local Ollama directly needs none of this — absent the
+variable, the request goes out exactly as it always did.

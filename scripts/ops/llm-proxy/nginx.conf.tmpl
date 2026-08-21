@@ -1,0 +1,52 @@
+# A front door for Ollama (SlyTab #119).
+#
+# Ollama has no authentication of its own and was, until 2026-08-19, reachable
+# from the public internet through the house relay — which is why receipt
+# scanning is currently switched off. This is what makes it safe to turn back
+# on: the relay points at THIS, on 127.0.0.1:11435, and it answers nothing at
+# all without the shared token SlyTab's API sends.
+#
+# Rendered from this template with the token substituted; the rendered file is
+# 0600 and the token never appears in a repo.
+worker_processes 1;
+events { worker_connections 256; }
+
+http {
+  access_log /dev/stdout;
+  error_log  /dev/stderr warn;
+
+  # A receipt is a photo, base64-encoded into the JSON body, and the model is
+  # slow — neither of nginx's defaults suits that.
+  client_max_body_size 32m;
+  proxy_read_timeout 300s;
+  proxy_send_timeout 300s;
+
+  # Everything comes from one caller, so this is a brake on a stolen token
+  # rather than fair-queuing between users.
+  limit_req_zone $binary_remote_addr zone=llm:1m rate=60r/m;
+
+  # A 64-hex token makes the map key 71 bytes — longer than the default
+  # bucket, and nginx refuses to start rather than truncating it.
+  map_hash_bucket_size 128;
+
+  map $http_authorization $slytab_ok {
+    default            0;
+    "Bearer __TOKEN__" 1;
+  }
+
+  server {
+    listen 127.0.0.1:11435;
+    server_name _;
+
+    # Deliberately no unauthenticated anything — not even /api/tags. A model
+    # list is a fingerprint, and "Ollama is running" on the bare root is how
+    # this endpoint was found from outside in the first place.
+    location / {
+      if ($slytab_ok = 0) { return 401 "unauthorized\n"; }
+      limit_req zone=llm burst=10 nodelay;
+      proxy_pass http://127.0.0.1:11434;
+      proxy_set_header Host $host;
+      proxy_http_version 1.1;
+    }
+  }
+}
