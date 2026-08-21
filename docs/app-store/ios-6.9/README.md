@@ -17,5 +17,14 @@ documentation pipeline commits its screenshots for the same reason.
 
 Every image is 1320×2868 — the 6.9-inch size Apple requires — and shows a
 seeded demo world, never anyone's real spending. The build points at a
-throwaway API on the runner, and the workflow refuses to run if it does not
-(see `build.ios-simulator.env` in `apps/mobile/eas.json`).
+throwaway API on the runner (`SLYTAB_API_BASE` is a job-level variable that
+`expo prebuild` bakes in), and the workflow refuses to go on if the built app
+does not reference it.
+
+Nothing here comes from EAS any more: the simulator app is built on the runner
+itself, ad-hoc signed, which is both free and — because an unsigned build has
+no keychain entitlement and therefore cannot keep a session — necessary.
+
+The current set is seven shots and includes the member sheet (04), which is
+what 1.2 added: recording money someone handed you. The numbering after it
+shifted, so replace the whole set rather than individual files.
