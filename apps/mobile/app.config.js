@@ -23,6 +23,15 @@ module.exports = () => {
   // the app falls back to production, which is what every normal build wants.
   if (process.env.SLYTAB_API_BASE) {
     expo.extra = { ...(expo.extra ?? {}), apiBase: process.env.SLYTAB_API_BASE };
+    // Android has refused cleartext HTTP by default since API 28, and a
+    // release build of this app is no exception: the screenshot run reached
+    // its own API at http://10.0.2.2:8100 and the request never left the
+    // device — "can't reach SlyTab", with the server sitting there answering
+    // nothing. Only ever opened for an http base, which no shipped build has:
+    // production is https, so a real release cannot pick this up.
+    if (process.env.SLYTAB_API_BASE.startsWith('http://')) {
+      expo.android.usesCleartextTraffic = true;
+    }
   }
 
   return { ...base, expo };
