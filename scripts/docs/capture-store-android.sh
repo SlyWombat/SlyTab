@@ -76,6 +76,11 @@ echo "--- host reachability from the device ---"
 adb shell ping -c 2 10.0.2.2 2>&1 | tail -3 || true
 
 adb install -r "$APK"
+# Grant notifications rather than letting Android ask. The prompt is a system
+# dialog drawn over the app, and uiautomator only dumps the TOP window — so
+# with it up the flow cannot see the tab bar it is waiting for, and reports
+# "never saw Groups" about a screen that is right there behind it.
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
 adb logcat -c
 
 # --- helpers: find a node by its text, tap the middle of it -------------------
@@ -145,6 +150,12 @@ launch() {
   adb shell am force-stop "$PKG"
   adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   sleep 8
+  # Belt and braces: if a permission dialog appears anyway, get rid of it
+  # rather than photographing it.
+  if [ -n "$(find_text "don't allow")" ]; then
+    tap_text "don't allow" 5 || true
+    sleep 2
+  fi
 }
 
 # --- sign in ------------------------------------------------------------------
