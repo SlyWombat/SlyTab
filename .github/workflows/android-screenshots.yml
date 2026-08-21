@@ -115,6 +115,12 @@ jobs:
           # keeps the resolved config between SDKs, and the first version of
           # this guard failed on an APK that was perfectly correct because it
           # looked only in assets/index.android.bundle.
+          if unzip -p "$APK" AndroidManifest.xml | grep -qa "usesCleartextTraffic"; then
+            echo "confirmed: the manifest opts in to cleartext"
+          else
+            echo "::error::AndroidManifest has no usesCleartextTraffic — Android will refuse the http API and the app will say it cannot reach SlyTab."
+            exit 1
+          fi
           if unzip -p "$APK" | grep -qa "10.0.2.2:8100"; then
             echo "confirmed: the build targets the local API"
           else

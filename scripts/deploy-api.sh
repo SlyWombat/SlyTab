@@ -88,6 +88,10 @@ RECEIPT_ENGINE=auto
 LOCAL_LLM_URL=http://147.5.121.145:3308
 LOCAL_LLM_MODEL=qwen2.5vl:7b
 LOCAL_LLM_TIMEOUT=90
+# The token the house-side front door expects (#119). Ollama has no auth of
+# its own and that relay port is on the public internet, so without this the
+# endpoint is open to anyone who finds it — which is why it was switched off.
+LOCAL_LLM_TOKEN=${PROD_LLM_TOKEN:-}
 EOF
 cp "$REPO/scripts/prod/mysql-ca.pem" "$CONFDIR/mysql-ca.pem"
 # The Apple key travels with the config; it is referenced by path on

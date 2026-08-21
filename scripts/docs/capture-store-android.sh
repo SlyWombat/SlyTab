@@ -37,6 +37,8 @@ on_error() {
   echo "--- what was on screen ---"
   adb exec-out screencap -p > "$OUT/zz-failure-state.png" 2>/dev/null || true
   adb exec-out uiautomator dump /dev/tty 2>/dev/null | tr -d '\r' | head -60 || true
+  echo "--- cleartext / network complaints ---"
+  adb logcat -d 2>/dev/null | grep -iE "cleartext|ECONNREFUSED|Failed to connect|Network request failed" | tail -20 || true
   echo "--- logcat tail ---"
   adb logcat -d 2>/dev/null | tail -60 || true
 }
@@ -61,6 +63,17 @@ adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 094
 adb shell am broadcast -a com.android.systemui.demo -e command battery -e level 100 -e plugged false >/dev/null 2>&1 || true
 adb shell am broadcast -a com.android.systemui.demo -e command network -e wifi show -e level 4 >/dev/null 2>&1 || true
 adb shell am broadcast -a com.android.systemui.demo -e command notifications -e visible false >/dev/null 2>&1 || true
+
+# Two things that both surface as "can't reach SlyTab", told apart before the
+# app gets a chance to blur them: is the API still running (it was started in
+# an earlier step, in the background), and can the device see the host at all?
+echo "--- API health from the runner ---"
+curl -fsS -m 10 http://127.0.0.1:8100/api/v1/health || {
+  echo "!! the API is not answering on the runner — it died between steps" >&2
+  exit 1
+}
+echo "--- host reachability from the device ---"
+adb shell ping -c 2 10.0.2.2 2>&1 | tail -3 || true
 
 adb install -r "$APK"
 adb logcat -c

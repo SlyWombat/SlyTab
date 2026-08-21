@@ -408,11 +408,23 @@ final class ReceiptService
             ]],
         ], JSON_THROW_ON_ERROR);
 
+        // The house Ollama has no authentication of its own, and the relay
+        // that carries it reaches the public internet (#119). So SlyTab does
+        // not talk to Ollama directly any more: it talks to a front door that
+        // requires this token and passes nothing through without it. Optional,
+        // because a local dev Ollama on the same machine needs no such thing —
+        // and absent, the request goes out exactly as it always did.
+        $headers = ['Content-Type: application/json'];
+        $llmToken = Env::get('LOCAL_LLM_TOKEN');
+        if ($llmToken !== '') {
+            $headers[] = "Authorization: Bearer {$llmToken}";
+        }
+
         $ch = curl_init(rtrim($baseUrl, '/') . '/api/chat');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_POSTFIELDS => $body,
             CURLOPT_TIMEOUT => (int) Env::get('LOCAL_LLM_TIMEOUT', '90'),
             CURLOPT_CONNECTTIMEOUT => 10,
@@ -422,6 +434,12 @@ final class ReceiptService
         curl_close($ch);
         if ($raw === false) {
             throw new \RuntimeException("local model unreachable: {$err}");
+        }
+        if (trim((string) $raw) === 'unauthorized') {
+            // The front door answered, the token did not match. Worth its own
+            // message: everything else here means "the model struggled", and
+            // this means nobody has updated LOCAL_LLM_TOKEN.
+            throw new \RuntimeException('local model refused the token — check LOCAL_LLM_TOKEN');
         }
         $resp = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
         if (isset($resp['error'])) {
