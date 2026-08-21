@@ -138,10 +138,16 @@ jobs:
           set -o pipefail
           npx expo prebuild --platform ios --no-install
           cd ios && pod install
+          # Ad-hoc signed ("-"), not unsigned. An unsigned simulator build has
+          # no keychain entitlement, so expo-secure-store silently fails to
+          # store anything — the app signs in, the flow restarts it to shed
+          # iOS's save-password alert, and it comes back to an empty sign-in
+          # form because the session was never written. Five attempts died on
+          # that, each one looking like a failure of the restart trick.
           xcodebuild -workspace SlyTab.xcworkspace -scheme SlyTab \
             -configuration Release -sdk iphonesimulator \
             -derivedDataPath "$RUNNER_TEMP/dd" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
             build | tail -100
           APP=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name 'SlyTab.app' | head -1)
           [ -n "$APP" ] || { echo "::error::No SlyTab.app was produced"; exit 1; }

@@ -83,6 +83,28 @@ appId: ca.electricrv.slytab
 # needs nothing from the app that real use does not already do.
 - stopApp
 - launchApp
+# If the session did not survive the restart, sign in again rather than
+# failing: the block is conditional either way, so this costs nothing when the
+# keychain behaved.
+# Only when there is a form to fill. `clearState` does not clear the
+# keychain, so a retried attempt comes back already signed in — and every
+# retry used to die on a sign-in screen that was no longer there, burying
+# whatever had actually gone wrong the first time.
+- runFlow:
+    when:
+      visible: "Sign in"
+    commands:
+      - tapOn:
+          id: "Email"
+      - inputText: "${DEMO_EMAIL}"
+      - pressKey: Enter
+      - takeScreenshot: debug-password-focus
+      - inputText: "${DEMO_PASSWORD}"
+      - hideKeyboard
+      - tapOn: "Sign in"
+      # Say why it failed, rather than leaving it to be inferred from a later
+      # assertion about a tab bar that was never going to appear.
+      - assertNotVisible: "email or password is incorrect"
 # 90s, not 30: a cold start on a busy macOS runner is slow, and run
 # 32432778534 died here with the app perfectly healthy — the failure
 # screenshot taken moments later shows Home, signed in, tab bar and all.
