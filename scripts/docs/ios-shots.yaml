@@ -151,8 +151,12 @@ appId: ca.electricrv.slytab
 # Tapping a person's balance is the new entry point, and a listing should show
 # it rather than describe it. Optional throughout: a missed sheet costs one
 # picture, not the whole run.
+# The plan row's button, not the person's name. "Alice" appears twice on this
+# screen — the member row and the settlement plan — and on iOS the tap that
+# matched first opened nothing, so run 32436112526 photographed the balances
+# screen twice. "Received" is a button, once, and opens the same sheet.
 - tapOn:
-    text: "Alice"
+    text: "Received"
     optional: true
 - extendedWaitUntil:
     visible: "Record money received"
