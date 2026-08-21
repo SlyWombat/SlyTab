@@ -46,6 +46,10 @@ KEY = REPO / 'secrets' / 'play-service-account.json'
 BASE = f'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PKG}'
 UPLOAD = f'https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/{PKG}'
 TRACKS = ('internal', 'alpha', 'beta', 'production')
+# The listing SlyTab actually has. Not cosmetic: the images endpoints 404 —
+# with an HTML error page, not a JSON one — for a language with no listing,
+# which is a confusing way to find out you guessed en-US.
+DEFAULT_LANG = 'en-CA'
 
 
 def _b64(raw: bytes) -> bytes:
@@ -163,11 +167,14 @@ def cmd_screenshots(args: argparse.Namespace) -> None:
     with Edit(tok) as e:
         # Replace rather than append: Play keeps up to eight and appending a
         # second set would leave the old screens on the listing, first.
-        call('DELETE', f'/edits/{e.id}/images/{args.language}/phoneScreenshots', tok)
+        # Under listings/{language}/{imageType}, not images/{language}/... —
+        # the latter is not a Play API path at all and answers with an HTML
+        # 404 page, which reads like a missing listing rather than a typo.
+        call('DELETE', f'/edits/{e.id}/listings/{args.language}/phoneScreenshots', tok)
         for png in pngs:
             with open(png, 'rb') as f:
                 r = requests.post(
-                    f'{UPLOAD}/edits/{e.id}/images/{args.language}/phoneScreenshots?uploadType=media',
+                    f'{UPLOAD}/edits/{e.id}/listings/{args.language}/phoneScreenshots?uploadType=media',
                     data=f, timeout=600,
                     headers={'Authorization': f'Bearer {tok}', 'Content-Type': 'image/png'})
             if r.status_code >= 300:
@@ -185,7 +192,7 @@ def main() -> None:
     up.add_argument('file')
     up.add_argument('name', help='release name, e.g. "SlyTab 1.2.0 (20)"')
     up.add_argument('notes', help="what's new, <=500 chars")
-    up.add_argument('--language', default='en-US')
+    up.add_argument('--language', default=DEFAULT_LANG)
     up.set_defaults(fn=cmd_upload_aab)
 
     pr = sub.add_parser('promote', help='put an existing versionCode on a track')
@@ -194,12 +201,12 @@ def main() -> None:
     pr.add_argument('--status', default='draft', choices=('draft', 'completed', 'inProgress'))
     pr.add_argument('--name')
     pr.add_argument('--notes')
-    pr.add_argument('--language', default='en-US')
+    pr.add_argument('--language', default=DEFAULT_LANG)
     pr.set_defaults(fn=cmd_promote)
 
     sc = sub.add_parser('screenshots', help='replace the phone screenshots on the listing')
     sc.add_argument('dir')
-    sc.add_argument('--language', default='en-US')
+    sc.add_argument('--language', default=DEFAULT_LANG)
     sc.set_defaults(fn=cmd_screenshots)
 
     args = p.parse_args()
