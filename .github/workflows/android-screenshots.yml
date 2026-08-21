@@ -100,6 +100,17 @@ jobs:
         working-directory: apps/mobile
         run: |
           npx expo prebuild --platform android --no-install
+          # Assert on the manifest prebuild just wrote, in plain text. The
+          # compiled manifest inside the APK stores framework attribute names
+          # as resource ids rather than strings, so grepping the APK for
+          # "usesCleartextTraffic" reports a correctly-configured build as
+          # broken — which it did, twice.
+          grep -q 'usesCleartextTraffic="true"' android/app/src/main/AndroidManifest.xml || {
+            echo "::error::prebuild did not write usesCleartextTraffic — the app will not be allowed to reach the http API"
+            grep -n "application" android/app/src/main/AndroidManifest.xml | head -5
+            exit 1
+          }
+          echo "confirmed: the manifest opts in to cleartext"
           cd android && ./gradlew assembleRelease --no-daemon
           APK=app/build/outputs/apk/release/app-release.apk
           [ -f "$APK" ] || { echo "::error::No APK produced"; exit 1; }
@@ -115,12 +126,6 @@ jobs:
           # keeps the resolved config between SDKs, and the first version of
           # this guard failed on an APK that was perfectly correct because it
           # looked only in assets/index.android.bundle.
-          if unzip -p "$APK" AndroidManifest.xml | grep -qa "usesCleartextTraffic"; then
-            echo "confirmed: the manifest opts in to cleartext"
-          else
-            echo "::error::AndroidManifest has no usesCleartextTraffic — Android will refuse the http API and the app will say it cannot reach SlyTab."
-            exit 1
-          fi
           if unzip -p "$APK" | grep -qa "10.0.2.2:8100"; then
             echo "confirmed: the build targets the local API"
           else
