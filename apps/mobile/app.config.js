@@ -30,7 +30,15 @@ module.exports = () => {
     // nothing. Only ever opened for an http base, which no shipped build has:
     // production is https, so a real release cannot pick this up.
     if (process.env.SLYTAB_API_BASE.startsWith('http://')) {
-      expo.android.usesCleartextTraffic = true;
+      // Through expo-build-properties, not `android.usesCleartextTraffic`:
+      // that key is quietly ignored by prebuild, and the first attempt at this
+      // produced a manifest without it and an app that could not reach its own
+      // API. The build now asserts the attribute is present before an emulator
+      // is even started.
+      expo.plugins = (expo.plugins ?? []).map((p) =>
+        Array.isArray(p) && p[0] === 'expo-build-properties'
+          ? [p[0], { ...p[1], android: { ...(p[1].android ?? {}), usesCleartextTraffic: true } }]
+          : p);
     }
   }
 
