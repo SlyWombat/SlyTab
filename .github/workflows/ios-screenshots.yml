@@ -26,7 +26,7 @@ jobs:
   screenshots:
     # macOS is not optional here: the iOS Simulator does not exist elsewhere.
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 75
 
     env:
       # The simulator and the API share a machine, so the app can talk to
@@ -252,18 +252,39 @@ jobs:
           RC=1
           for attempt in 1 2 3 4 5; do
             echo "--- maestro attempt $attempt ---"
+            # Watchdog, because a failed attempt does not always end. Run
+            # 32423780328 signed in, lost its XCUITest driver mid-flow
+            # ("Connection refused" to the driver's own port) and then sat
+            # there for seventy-five minutes until the job timeout killed it —
+            # burning the whole run on an attempt that was already dead. A
+            # hung attempt is now killed at fifteen minutes and retried.
             maestro --device "$UDID" test scripts/docs/ios-shots.yaml \
               -e DEMO_EMAIL="$EMAIL" -e DEMO_PASSWORD="$PASSWORD" \
-              --debug-output "/tmp/maestro-debug-$attempt" 2>&1 \
-              | tee "/tmp/maestro-out-$attempt.log"
-            RC=${PIPESTATUS[0]}
+              --debug-output "/tmp/maestro-debug-$attempt" \
+              > "/tmp/maestro-out-$attempt.log" 2>&1 &
+            MPID=$!
+            WAITED=0
+            while kill -0 "$MPID" 2>/dev/null; do
+              sleep 10
+              WAITED=$((WAITED + 10))
+              if [ "$WAITED" -ge 900 ]; then
+                echo "attempt $attempt has not moved in 15 minutes — killing it"
+                kill -9 "$MPID" 2>/dev/null
+                pkill -f maestro-driver-ios 2>/dev/null
+                xcrun simctl terminate "$UDID" dev.mobile.maestro-driver-iosUITests.xctrunner 2>/dev/null
+                break
+              fi
+            done
+            wait "$MPID"; RC=$?
+            cat "/tmp/maestro-out-$attempt.log"
             [ $RC -eq 0 ] && break
             # Retry ONLY when the driver never started. Retrying a flow that
             # ran and failed is actively harmful: clearState does not clear the
             # keychain, so the second attempt finds the app already signed in,
             # dies at the sign-in form, and buries the real failure under two
             # misleading ones. That happened on run 13.
-            if grep -q "LocalXCTestInstaller\|restartXCTestRunner" "/tmp/maestro-out-$attempt.log"; then
+            if grep -q "LocalXCTestInstaller\|restartXCTestRunner\|ConnectException\|Connection refused" \
+                 "/tmp/maestro-out-$attempt.log" || [ $RC -eq 137 ]; then
               echo "driver failed to start; retrying"
               # Shut the runner down before trying again. A half-started one
               # left behind is part of why the next attempt fails the same way.
