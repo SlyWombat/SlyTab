@@ -30,17 +30,25 @@ appId: ca.electricrv.slytab
 # over it in this flow only. Instead the app now does what its own returnKeyType
 # has been promising since #99 — return moves to the password field — and both
 # capture flows use it.
-- tapOn:
-    id: "Email"
-- inputText: "${DEMO_EMAIL}"
-- pressKey: Enter
-- takeScreenshot: debug-password-focus
-- inputText: "${DEMO_PASSWORD}"
-- hideKeyboard
-- tapOn: "Sign in"
-# Say why it failed, rather than leaving it to be inferred from a later
-# assertion about a tab bar that was never going to appear.
-- assertNotVisible: "email or password is incorrect"
+# Only when there is a form to fill. `clearState` does not clear the
+# keychain, so a retried attempt comes back already signed in — and every
+# retry used to die on a sign-in screen that was no longer there, burying
+# whatever had actually gone wrong the first time.
+- runFlow:
+    when:
+      visible: "Sign in"
+    commands:
+      - tapOn:
+          id: "Email"
+      - inputText: "${DEMO_EMAIL}"
+      - pressKey: Enter
+      - takeScreenshot: debug-password-focus
+      - inputText: "${DEMO_PASSWORD}"
+      - hideKeyboard
+      - tapOn: "Sign in"
+      # Say why it failed, rather than leaving it to be inferred from a later
+      # assertion about a tab bar that was never going to appear.
+      - assertNotVisible: "email or password is incorrect"
 # Let the sign-in actually finish before the app is killed.
 #
 # Tapping Sign in only STARTS the request. Stopping the app immediately killed
@@ -75,9 +83,12 @@ appId: ca.electricrv.slytab
 # needs nothing from the app that real use does not already do.
 - stopApp
 - launchApp
+# 90s, not 30: a cold start on a busy macOS runner is slow, and run
+# 32432778534 died here with the app perfectly healthy — the failure
+# screenshot taken moments later shows Home, signed in, tab bar and all.
 - extendedWaitUntil:
     visible: "Groups"
-    timeout: 30000
+    timeout: 90000
 
 # --- 1. Home: what you are owed, across every group -------------------------
 # Wait for the home data, not just the shell. "Groups" is a tab label and is
@@ -86,7 +97,7 @@ appId: ca.electricrv.slytab
 # cannot appear until the balances have actually arrived.
 - extendedWaitUntil:
     visible: ".*Cottage Trip.*"
-    timeout: 20000
+    timeout: 60000
 - takeScreenshot: 01-home
 
 # --- 2. A group's expenses --------------------------------------------------
@@ -114,13 +125,29 @@ appId: ca.electricrv.slytab
 - tapOn: "Balances"
 - takeScreenshot: 03-balances
 
-# --- 4. Totals --------------------------------------------------------------
+# --- 4. Recording money someone handed you (#120) ---------------------------
+# Tapping a person's balance is the new entry point, and a listing should show
+# it rather than describe it. Optional throughout: a missed sheet costs one
+# picture, not the whole run.
+- tapOn:
+    text: "Alice"
+    optional: true
+- extendedWaitUntil:
+    visible: "Record money received"
+    timeout: 15000
+    optional: true
+- takeScreenshot: 04-settle
+- tapOn:
+    text: "Close"
+    optional: true
+
+# --- 5. Totals --------------------------------------------------------------
 - tapOn:
     text: "Totals"
     optional: true
-- takeScreenshot: 04-totals
+- takeScreenshot: 05-totals
 
-# --- 5. Adding an expense, with the split controls on screen ----------------
+# --- 6. Adding an expense, with the split controls on screen ----------------
 - tapOn: "Expenses"
 - tapOn: "Add expense"
 - extendedWaitUntil:
@@ -140,7 +167,7 @@ appId: ca.electricrv.slytab
 # inside is not "handled" by a child, which is what dismisses it.
 - tapOn:
     text: "Split equally.*"
-- takeScreenshot: 05-add-expense
+- takeScreenshot: 06-add-expense
 - tapOn: "Close"
 
 # --- 6. The activity feed ---------------------------------------------------
@@ -157,4 +184,4 @@ appId: ca.electricrv.slytab
 - extendedWaitUntil:
     visible: "Activity"
     timeout: 15000
-- takeScreenshot: 06-activity
+- takeScreenshot: 07-activity

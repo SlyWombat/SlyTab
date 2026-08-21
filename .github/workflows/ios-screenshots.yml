@@ -283,18 +283,16 @@ jobs:
             # keychain, so the second attempt finds the app already signed in,
             # dies at the sign-in form, and buries the real failure under two
             # misleading ones. That happened on run 13.
-            if grep -q "LocalXCTestInstaller\|restartXCTestRunner\|ConnectException\|Connection refused" \
-                 "/tmp/maestro-out-$attempt.log" || [ $RC -eq 137 ]; then
-              echo "driver failed to start; retrying"
-              # Shut the runner down before trying again. A half-started one
-              # left behind is part of why the next attempt fails the same way.
-              xcrun simctl terminate "$UDID" dev.mobile.maestro-driver-iosUITests.xctrunner 2>/dev/null || true
-              pkill -f maestro-driver-ios 2>/dev/null || true
-              sleep 15
-              continue
-            fi
-            echo "the flow ran and failed on its own terms — not retrying"
-            break
+            # Every failure is now retryable, because the flow's sign-in is
+            # conditional: an attempt that comes back to an app already signed
+            # in skips straight past it. That was the reason for not retrying —
+            # clearState leaves the keychain alone, so the second attempt used
+            # to die on a form that was no longer there and bury the real
+            # failure under two misleading ones.
+            echo "attempt $attempt failed (rc=$RC) — cleaning up and retrying"
+            xcrun simctl terminate "$UDID" dev.mobile.maestro-driver-iosUITests.xctrunner 2>/dev/null || true
+            pkill -f maestro-driver-ios 2>/dev/null || true
+            sleep 15
           done
           set -e
 
