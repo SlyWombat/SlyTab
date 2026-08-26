@@ -68,6 +68,16 @@ except Exception:
 )
 say "App Store $V_STR: $V_STATE"
 
+# Only speak about the version we are actually waiting for. The state and the
+# version string come from App Store Connect but the build number comes from
+# versions.json, and a mail that welds one release's version to another's build
+# number is worse than no mail — which is exactly what this said when the
+# newest record was still the previous release.
+if [ "$V_STR" != "$IOS_VER" ]; then
+  say "newest App Store record is $V_STR, waiting for $IOS_VER — no 1.2-style record yet?"
+  V_STATE="NOT_OURS"
+fi
+
 case "$V_STATE" in
   READY_FOR_SALE|PENDING_DEVELOPER_RELEASE)
     if once "ios:$V_ID:$V_STATE"; then
@@ -111,35 +121,56 @@ carry the text. Nothing was retried automatically."
     fi
     ;;
   UNREACHABLE) say "could not reach App Store Connect — will try again next run" ;;
+  NOT_OURS)    ;;
   *)           say "iOS still in the queue — nothing to do" ;;
 esac
 
 # --------------------------------------------------------------- Google -----
 # Play has no review-status field in the Developer API at all: a committed
 # production release reads status=completed long before Google has reviewed it.
-# The public listing is the only honest signal for "a user can get this", so
-# ask it a yes/no question about the version we are waiting for rather than
-# parsing whatever version string the page happens to contain.
+# The public listing is the only honest signal for "a user can get this".
+#
+# Reading it needs care. The page is a megabyte and carries carousels of other
+# apps, so a bare grep for the version we want can be satisfied by somebody
+# else's version number. What the listing does contain, exactly once, is its
+# own version — so collect every quoted x.y.z on the page and only believe the
+# answer when there is precisely one. More than one means the page changed
+# shape and the answer is "ask a human", not a confident mail.
+#
+# One state this cannot see: if managed publishing is ever turned on for the
+# account, Google reviews the release and then HOLDS it until someone presses
+# Publish in the Console. The listing never flips, so this watcher stays quiet
+# for ever and the silence reads exactly like "still in review".
 PLAY_HTML=$(curl -sS -m 40 -A "$UA" -H 'Accept-Language: en-CA,en' \
   "https://play.google.com/store/apps/details?id=$PKG&hl=en_CA&gl=CA" 2>/dev/null || true)
+SEEN=$(printf '%s' "$PLAY_HTML" | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | tr -d '"' | sort -u)
+SEEN_N=$(printf '%s' "$SEEN" | grep -c . || true)
+SEEN_1L=$(printf '%s' "$SEEN" | tr '\n' ' ')
+
 if [ -z "$PLAY_HTML" ]; then
   say "could not reach the Play listing — will try again next run"
-elif printf '%s' "$PLAY_HTML" | grep -qF "\"$AND_VER\""; then
-  if once "android:$AND_VER"; then
-    mail_to "$OWNER" "SlyTab Android $AND_VER is live on Google Play" \
+elif [ "$SEEN_N" = "0" ]; then
+  say "Play listing shows no version at all (\"varies with device\"?) — check by hand with play-api.py tracks"
+elif [ "$SEEN_N" != "1" ]; then
+  say "Play listing is ambiguous, $SEEN_N versions on the page ($SEEN_1L) — not guessing"
+elif [ "$SEEN" != "$AND_VER" ]; then
+  say "Play listing still advertises $SEEN, waiting for $AND_VER — still in review"
+elif once "android:$AND_VER"; then
+  mail_to "$OWNER" "SlyTab Android $AND_VER is live on Google Play" \
 "The Play listing is now advertising $AND_VER, so Google's review is done and
 the production release is being served to users.
+
+That is read off the public store page, which is the only place Google says
+so — the Developer API has no review-status field. The page advertised
+exactly one version, $SEEN, which is why this is being stated rather than
+guessed.
 
 The sideload APK on the download link should match: if downloads/slytab-latest.apk
 is still an older build, upload the new one (scripts/ops/upload-apk.sh), because
 a sideloaded APK never updates itself."
-    say "emailed the owner — Android $AND_VER is live"
-  else
-    say "already notified for Android $AND_VER"
-  fi
+  say "emailed the owner — Android $AND_VER is live"
 else
-  SEEN=$(printf '%s' "$PLAY_HTML" | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | sort -u | tr -d '"' | tr '\n' ' ')
-  say "Play listing does not advertise $AND_VER yet (sees: ${SEEN:-none}) — still in review"
+  say "already notified for Android $AND_VER"
 fi
 
 say "done"
