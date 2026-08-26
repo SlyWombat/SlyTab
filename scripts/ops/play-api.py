@@ -97,8 +97,15 @@ class Edit:
 
     def __exit__(self, exc_type, *_rest) -> bool:
         if exc_type is None:
+            # Committing IS the submission for review: Play has no separate
+            # "send for review" call, and no field anywhere that reports a
+            # verdict back. The commit deliberately passes no
+            # changesNotSentForReview — its default is false, i.e. changes go
+            # to review — and stays a bare commit rather than saying so
+            # explicitly, because the only way to test that parameter is to
+            # commit a real edit against the live app.
             call('POST', f'/edits/{self.id}:commit', self.tok)
-            print('committed')
+            print('committed — changes sent for review')
         else:
             try:
                 call('DELETE', f'/edits/{self.id}', self.tok)
