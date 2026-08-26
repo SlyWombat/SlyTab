@@ -8,10 +8,11 @@
 # Google serving the new version on the listing — and nothing was watching for
 # either. Run it from cron — once a day is the owner's call (2026-08-26) and
 # the right one: store review takes hours to days, so polling it every twenty
-# minutes bought nothing but log noise. 14:30 UTC is 07:30 Pacific, so the mail
-# is waiting at the start of the day rather than arriving overnight.
+# minutes bought nothing but log noise. The owner is Eastern and kdocker2 runs
+# on UTC, so 12:00 UTC lands at 08:00 EDT and 07:00 EST — a morning either
+# side of the clocks changing, rather than arriving overnight.
 #
-#   30 14 * * * $HOME/slytab-worker/Splitwise/scripts/worker/store-release-watch.sh >> $HOME/store-watch.log 2>&1
+#   0 12 * * * $HOME/slytab-worker/Splitwise/scripts/worker/store-release-watch.sh >> $HOME/store-watch.log 2>&1
 #
 # It notifies and stops there. It deliberately does NOT close issues or email
 # users: dropping the version pin needs a deploy and closing a report-tracked
