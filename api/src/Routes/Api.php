@@ -12,6 +12,7 @@ use SlyTab\Db\Db;
 use SlyTab\Db\Migrator;
 use SlyTab\Middleware\RequireAuth;
 use SlyTab\Services\ScanAvailabilityService;
+use SlyTab\Services\ScanQueue;
 use SlyTab\Services\ActivityService;
 use SlyTab\Services\AppleAuthService;
 use SlyTab\Services\AuthHandoffService;
@@ -784,22 +785,10 @@ final class Api
                 });
 
                 // receipts
-                $p->get('/receipts/eta', function (Request $rq, Response $rs) use ($pdo): Response {
-                    // Historical timing (issue #9): estimate from the last
-                    // 20 successful parses instead of a static guess.
-                    $stmt = $pdo->query(
-                        "SELECT parse_ms FROM receipt_metrics WHERE outcome = 'parsed'
-                         ORDER BY id DESC LIMIT 20",
-                    );
-                    $ms = array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
-                    sort($ms);
-                    $n = count($ms);
-                    return Http::json($rs, [
-                        'samples' => $n,
-                        'typicalMs' => $n > 0 ? $ms[intdiv($n, 2)] : 15000,
-                        'slowMs' => $n > 0 ? $ms[min($n - 1, (int) floor($n * 0.9))] : 40000,
-                    ]);
-                });
+                $p->get('/receipts/eta', fn(Request $rq, Response $rs): Response =>
+                    // Historical timing (issue #9): the last twenty successful
+                    // parses, not a static guess. Shared with the scan queue.
+                    Http::json($rs, ReceiptService::eta($pdo)));
                 $p->post('/groups/{id}/receipts', function (Request $rq, Response $rs, array $a) use ($groups, $receipts, $limiter): Response {
                     $userId = Http::user($rq)['id'];
                     $limiter->guard('receipts', $userId, 20, 86400); // FR-4.5 cost guard
@@ -812,13 +801,32 @@ final class Api
                     $hint = strtoupper((string) (($rq->getParsedBody() ?? [])['currencyHint'] ?? ''));
                     return Http::json($rs->withStatus(201), $receipts->ingest($a['id'], $userId, $file, $hint));
                 });
+                // Rescan doubles as "is it my turn yet?" for a queued scan (#123):
+                // a client holding a ticket calls this when told to. The FR-4.5
+                // cost guard is charged only when a parse actually runs, so
+                // waiting in line does not spend the day's scans.
                 $p->post('/receipts/{id}/rescan', function (Request $rq, Response $rs, array $a) use ($groups, $receipts, $limiter): Response {
                     $userId = Http::user($rq)['id'];
                     $img = $receipts->imageFile($a['id']);
                     $groups->assertMember($img['groupId'], $userId);
-                    $limiter->guard('receipts', $userId, 20, 86400); // same FR-4.5 cost guard as ingest
-                    $hint = strtoupper((string) (($rq->getParsedBody() ?? [])['currencyHint'] ?? ''));
-                    return Http::json($rs, $receipts->rescan($a['id'], $hint));
+                    $body = $rq->getParsedBody() ?? [];
+                    $hint = strtoupper((string) ($body['currencyHint'] ?? ''));
+                    $ticket = is_string($body['ticket'] ?? null) && preg_match('/^[0-9A-Z]{26}$/', $body['ticket']) ? $body['ticket'] : null;
+                    return Http::json($rs, $receipts->rescan(
+                        $a['id'],
+                        $userId,
+                        $hint,
+                        $ticket,
+                        fn() => $limiter->guard('receipts', $userId, 20, 86400),
+                    ));
+                });
+                // Leaving the line early, so the people behind move up now
+                // rather than when the ticket times out.
+                $p->delete('/receipts/queue/{ticket}', function (Request $rq, Response $rs, array $a) use ($pdo): Response {
+                    if (preg_match('/^[0-9A-Z]{26}$/', $a['ticket'])) {
+                        (new ScanQueue($pdo))->cancel($a['ticket'], Http::user($rq)['id']);
+                    }
+                    return Http::json($rs, ['ok' => true]);
                 });
                 $p->get('/receipts/{id}/image', function (Request $rq, Response $rs, array $a) use ($groups, $receipts): Response {
                     $img = $receipts->imageFile($a['id']);

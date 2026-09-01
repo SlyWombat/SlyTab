@@ -1,6 +1,9 @@
-# SlyTab's authenticated front door to the house Ollama (#119).
-# host networking so it can bind 127.0.0.1:11435 — the address the relay
-# dials — and reach Ollama on 127.0.0.1:11434 without a bridge hop.
+# SlyTab's authenticated, load-sharing front door to the house Ollama(s)
+# (#119, #123). host networking so it can bind 127.0.0.1:11435 — the address
+# the relay dials — and reach a backend on 127.0.0.1:11434 without a bridge
+# hop. Backends on other machines are reached by their LAN address the same
+# way. Do NOT list a backend on one of kdocker2's own macvlan addresses: the
+# host cannot reach those (macvlan host isolation), so it would look dead.
 services:
   llm-proxy:
     image: nginx:1.27-alpine
@@ -9,3 +12,5 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # healthcheck.sh writes status.json here; served at /slytab/status.
+      - ./status:/srv/status:ro

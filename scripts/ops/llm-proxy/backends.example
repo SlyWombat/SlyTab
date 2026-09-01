@@ -1,0 +1,6 @@
+# One Ollama per line, host:port. Copy to `backends` beside nginx.conf.tmpl.
+# healthcheck.sh probes each every minute; render.sh turns this into nginx's
+# upstream block. A backend on another machine is just its LAN address — but
+# not one of kdocker2's own macvlan addresses (the host cannot reach those).
+127.0.0.1:11434
+# 192.168.10.31:11434   # the second box, when it arrives (house replacement analysis, 2026-08-27)

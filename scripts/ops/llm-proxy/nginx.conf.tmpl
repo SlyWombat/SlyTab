@@ -1,13 +1,21 @@
-# A front door for Ollama (SlyTab #119).
+# The front door for SlyTab's receipt reader (#119 auth, #123 load sharing).
 #
 # Ollama has no authentication of its own and was, until 2026-08-19, reachable
 # from the public internet through the house relay — which is why receipt
-# scanning is currently switched off. This is what makes it safe to turn back
-# on: the relay points at THIS, on 127.0.0.1:11435, and it answers nothing at
-# all without the shared token SlyTab's API sends.
+# scanning was switched off. This is what makes it safe to turn back on: the
+# relay points at THIS, on 127.0.0.1:11435, and it answers nothing at all
+# without the shared token SlyTab's API sends.
 #
-# Rendered from this template with the token substituted; the rendered file is
-# 0600 and the token never appears in a repo.
+# It is also where "more boxes" plug in (#123, requirement 2). The upstream
+# block below is rendered from the `backends` file beside this template, one
+# Ollama per line; nginx spreads receipts across them by least connections and
+# steps around one that refuses connections. `healthcheck.sh` (cron, every
+# minute) does the active half — marks a backend `down` when it stops
+# advertising our model, warms the model back in after a host reset, and
+# reloads nginx only when something changed.
+#
+# Rendered by render.sh with the token and the upstream list substituted; the
+# rendered file is 0600 and the token never appears in a repo.
 worker_processes 1;
 events { worker_connections 256; }
 
@@ -34,6 +42,18 @@ http {
     "Bearer __TOKEN__" 1;
   }
 
+  # The Ollama pool. `least_conn` because a receipt parse is a single long
+  # request per backend: the backend with the fewest in flight is the idle one.
+  # `max_fails=1 fail_timeout=20s` is the passive check — one refused
+  # connection sidelines a backend for 20 s. The active check is
+  # healthcheck.sh, which renders `down` onto backends that answer but do not
+  # serve our model (a door that opens with the model missing is the worst
+  # case: it fails after the photo is taken).
+  upstream ollama {
+    least_conn;
+__UPSTREAMS__
+  }
+
   server {
     listen 127.0.0.1:11435;
     server_name _;
@@ -41,12 +61,29 @@ http {
     # Deliberately no unauthenticated anything — not even /api/tags. A model
     # list is a fingerprint, and "Ollama is running" on the bare root is how
     # this endpoint was found from outside in the first place.
+
+    # What healthcheck.sh last saw, for operators and for the API's
+    # availability probe: which backends are up, which are down and why.
+    location = /slytab/status {
+      if ($slytab_ok = 0) { return 401 "unauthorized\n"; }
+      default_type application/json;
+      alias /srv/status/status.json;
+    }
+
     location / {
       if ($slytab_ok = 0) { return 401 "unauthorized\n"; }
       limit_req zone=llm burst=10 nodelay;
-      proxy_pass http://127.0.0.1:11434;
-      proxy_set_header Host $host;
+      proxy_pass http://ollama;
       proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      # Try the next backend only when this one could not be reached at all
+      # (or is saying 502/503 itself). NOT on timeout: a parse that is merely
+      # slow must not be started again on a second box — that is how one
+      # receipt costs two runs of the model. POSTs are retried by nginx only
+      # when nothing was sent yet, which is exactly the connect-failure case.
+      proxy_next_upstream error http_502 http_503;
+      proxy_next_upstream_tries 3;
+      proxy_connect_timeout 5s;
     }
   }
 }

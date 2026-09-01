@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Receipt scanning says when it is available — and waits its turn out
+  loud** (#123). The apps ask the server whether the receipt reader is up
+  before offering the camera; when it is off, the scan buttons stay visible
+  but disabled, with the reason and "you can still add this expense by hand"
+  beneath them. When the reader is busy, a scan is no longer refused: the
+  photo is saved, you are shown your place in line and an estimate ("2 ahead
+  of you · about 45 s"), and the scan completes by itself when your turn
+  comes. Cancelling gives the place up. Behind the scenes the reader can now
+  be several machines behind one door, with a per-minute health check that
+  drops a sick one and warms the model back in after a reboot.
+
 - **Settling up from either end** (#120): only the person who *owed* money
   could record a payment, so anyone who was owed had no way to close a
   balance — the app just told them to wait. Tapping someone's balance now

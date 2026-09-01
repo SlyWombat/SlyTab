@@ -33,7 +33,7 @@ final class ScanAvailabilityTest extends TestCase
     protected function tearDown(): void
     {
         ScanAvailabilityService::forget();
-        foreach (['RECEIPT_ENGINE', 'LOCAL_LLM_URL', 'LOCAL_LLM_MODEL', 'ANTHROPIC_API_KEY'] as $k) {
+        foreach (['RECEIPT_ENGINE', 'LOCAL_LLM_URL', 'LOCAL_LLM_MODEL', 'ANTHROPIC_API_KEY', 'LOCAL_LLM_TOKEN'] as $k) {
             putenv($k);
         }
     }
@@ -135,5 +135,35 @@ final class ScanAvailabilityTest extends TestCase
         ScanAvailabilityService::forget();
         $svc->status();
         self::assertCount(2, $calls);
+    }
+
+    /**
+     * The front door (#119) answers 401 to anything without SlyTab's token,
+     * /api/tags included. A probe that forgot the token would report the
+     * scanner offline for exactly as long as it was working.
+     */
+    public function testTheProbeCarriesTheFrontDoorToken(): void
+    {
+        putenv('LOCAL_LLM_TOKEN=door-token-1234');
+        $seen = null;
+        $svc = new ScanAvailabilityService(function (string $url, array $headers) use (&$seen): array {
+            $seen = $headers;
+            return ['ok' => true, 'body' => self::TAGS];
+        });
+        self::assertTrue($svc->status()['available']);
+        self::assertSame(['Authorization: Bearer door-token-1234'], $seen);
+    }
+
+    /** A dev Ollama with no door in front of it gets no header at all. */
+    public function testNoTokenMeansNoAuthorizationHeader(): void
+    {
+        putenv('LOCAL_LLM_TOKEN=');
+        $seen = null;
+        $svc = new ScanAvailabilityService(function (string $url, array $headers) use (&$seen): array {
+            $seen = $headers;
+            return ['ok' => true, 'body' => self::TAGS];
+        });
+        $svc->status();
+        self::assertSame([], $seen);
     }
 }

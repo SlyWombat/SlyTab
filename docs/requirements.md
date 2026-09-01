@@ -158,7 +158,9 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   available"*) — no latency budget, because a slow answer is still an answer
   and the passing model's honest range is 3.5–8.0 s. A host that answers while
   lacking `LOCAL_LLM_MODEL` counts as **un**available: it would fail at parse
-  time, after the user has already taken the photograph.
+  time, after the user has already taken the photograph. The probe carries the
+  front door's token (`LOCAL_LLM_TOKEN`), since the door answers 401 to
+  everything else — `/api/tags` included.
 - **FR-4.9 (MUST)** When scanning is unavailable the client **shows the control
   disabled with the reason**, rather than hiding it (owner, 2026-09-01). A
   vanished button teaches nobody that the feature exists, and the fallback is
@@ -166,6 +168,36 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   treats an unreachable capabilities endpoint as unavailable — offering a
   feature that posts to an API you cannot reach helps no one — and does not
   cache that failure, so a blip does not disable scanning until reload.
+- **FR-4.10 (MUST)** **The reader scales out, and nobody waits in the dark**
+  (issue #123, requirement 2; owner: *"proper load balancing … also need to
+  support queuing and provide feedback to user"*).
+  - *Load sharing.* The API talks to one front door (`scripts/ops/llm-proxy/`),
+    which fans out to N Ollama backends by least connections, sidelines one
+    that refuses connections, and — via a per-minute health check — marks
+    `down` any backend that answers without advertising the pinned model, and
+    warms the model back in after a host reset. Adding a machine is a line in
+    the door's `backends` file plus `LOCAL_LLM_PARALLEL=N` on the API. With no
+    healthy backend the door answers 502, which FR-4.8 reports as offline.
+  - *Queuing.* The API admits at most `LOCAL_LLM_PARALLEL` parses at once (one
+    per backend; flock slots, so a crashed parse frees its own). A scan that
+    cannot start is **not refused and not held open** — the photo is stored,
+    the receipt row exists, and the response carries `queued: {ticket,
+    position, ahead, inFlight, slots, etaMs, retryAfterMs}` with `parsed:
+    null`. Turns go oldest ticket first; a newcomer never overtakes someone
+    already in line, even when the model is idle. A ticket nobody has
+    refreshed in 45 s belongs to someone who left and is dropped; the line is
+    capped at 25, beyond which the answer is `SCAN_BUSY` (429). Holding a PHP
+    request open to wait is the one thing this must never do: that is what
+    took the whole app down with 508s (ingest's history comment).
+  - *Feedback.* The client shows the place in line and an honest "about N s"
+    (rounds of the model until this receipt is *done*, from the last twenty
+    real parses), keeps asking with its ticket when told to
+    (`POST /receipts/{id}/rescan` with `ticket` — the FR-4.5 cost guard is
+    charged only when a parse actually runs), flips to "reading" when next up,
+    and gives its place back on cancel (`DELETE /receipts/queue/{ticket}`).
+    After four minutes in line it stops and shows the server's own message,
+    with the photo attached and Rescan a tap away. A client from before the
+    queue existed sees that same message in `parseError`.
 
 ### 2.5 Multi-currency
 

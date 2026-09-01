@@ -233,7 +233,20 @@ beneath them** — "Receipt scanning is offline right now — you can still add 
 expense by hand" — and the reason is also the buttons' `title`. Deliberately not
 hidden: the point is that people learn the feature exists and that its absence is
 temporary. Everything else on the sheet stays usable; manual entry never depended
-on the model.
+on the model. The card-slip scan in the assign-items step is gated the same way,
+with "you can still adjust the tip after Continue" as its fallback line.
+
+**When the reader is busy** (FR-4.10) the scan overlay has a third stage between
+*Uploading photo… 62 %* and *Reading the receipt… 4 s*: **"Photo saved — in line
+for the receipt reader · 2 ahead of you · about 45 s · waited 12 s"**. The
+position and estimate refresh every few seconds; "next up" replaces the count
+when nobody is ahead, and the overlay flips to *Reading* as soon as the turn
+comes. **Cancel** stays available throughout and gives the place up immediately,
+so the people behind move up. The photo is already saved by the time the line
+is shown, so cancelling loses nothing but the wait: the receipt stays attached
+and *Rescan* re-joins the line. After four minutes waiting the overlay closes
+and the server's own line ("3 receipts are ahead of yours — the photo is
+attached, tap Rescan in a moment") appears where scan notes appear.
 
 When the expense already has one or more scanned receipts (FR-4.4), the
 receipt row swaps to three actions:

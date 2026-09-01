@@ -322,11 +322,31 @@ export interface ParsedReceipt {
   confidence: 'high' | 'medium' | 'low';
 }
 
+/**
+ * A place in line for the receipt reader (#123). The model takes one receipt
+ * per backend at a time; when they are all busy, or someone asked first, the
+ * upload still succeeds and the photo is kept, but instead of a parse the
+ * server hands back this — and a time to ask again. Asking again is a
+ * `rescanReceipt` with the ticket; it costs nothing until a parse actually runs.
+ */
+export interface ScanQueued {
+  ticket: string;
+  /** 1 = next up. */
+  position: number;
+  ahead: number;
+  inFlight: number;
+  slots: number;
+  etaMs: number;
+  retryAfterMs: number;
+}
+
 export interface ReceiptResult {
   id: string;
   groupId: string;
   parsed: ParsedReceipt | null;
   parseError?: string;
+  /** Present, with `parsed` null, while the receipt waits its turn. */
+  queued?: ScanQueued;
 }
 
 async function upload<T>(path: string, field: string, file: File, extra: Record<string, string> = {}): Promise<T> {
@@ -490,9 +510,13 @@ export const api = {
     return json as { id: string; status: string; tracking?: string };
   },
   /** Re-run the parser on the stored photo — no re-photographing. */
-  rescanReceipt: (receiptId: string, currencyHint?: string) =>
-    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,
-      currencyHint ? { currencyHint } : {}),
+  rescanReceipt: (receiptId: string, currencyHint?: string, ticket?: string) =>
+    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`, {
+      ...(currencyHint ? { currencyHint } : {}),
+      ...(ticket ? { ticket } : {}),
+    }),
+  /** Leaving the line early, so the people behind move up now (#123). */
+  leaveScanQueue: (ticket: string) => req<{ ok: true }>('DELETE', `/receipts/queue/${ticket}`),
   /**
    * A person's photo as an object URL, or null if they have none (#112).
    *

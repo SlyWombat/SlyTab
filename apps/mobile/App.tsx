@@ -14,10 +14,10 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, resolveCategories, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, GROUP_EMOJI, minorToAmountString, foldSummaryLines, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, tokens, type CategoryOverride, type Currency, type SplitMethod } from '@slytab/core';
 import {
-  api, ApiFailure, appVersion, noteClientError, receiptImageSource, setToken, uploadReceipt,
+  api, ApiFailure, appVersion, getCapabilities, noteClientError, receiptImageSource, setToken, uploadReceipt,
   type Balances, type Expense, type Group, type GroupTotals, type HomeBalances, type Member,
   type ActivityItem, type Comment, type Session, type SplitwiseGroup,
-  type ParsedReceipt, type User,
+  type ParsedReceipt, type ReceiptResult, type User,
   avatarSource, uploadAvatar, currentBase, setBackend,
 } from './src/api';
 import {
@@ -2916,11 +2916,74 @@ function InviteSheet({ group, user, link, onClose, onChanged }: {
 
 type ScanStage =
   | { stage: 'upload'; fraction: number }
-  | { stage: 'read'; startedAt: number };
+  | { stage: 'read'; startedAt: number }
+  /** Waiting for a turn at the model (#123): position 1 is next up. */
+  | { stage: 'queued'; position: number; etaMs: number; startedAt: number };
 
 let etaCache: { typicalMs: number; slowMs: number } | null = null;
 function fetchEta(): void {
   api.receiptEta().then((e) => { if (e.samples > 0) etaCache = e; }).catch(() => {});
+}
+
+/**
+ * Longer than this in line and the honest thing is to stop spinning and say
+ * so: the photo is attached and Rescan is a tap away. Four minutes is a dozen
+ * typical parses — if the line is that long, something upstream is wrong and
+ * a progress dialog is not the place to find out.
+ */
+const MAX_QUEUE_WAIT_MS = 4 * 60 * 1000;
+
+/** A cancel that can interrupt a wait, for the queue below. */
+interface WaitToken { canceled: boolean; wake: (() => void) | null }
+
+function sleepUnless(ms: number, token: WaitToken): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const bail = () => reject(new ApiFailure({ code: 'CANCELED', message: 'scan canceled' }, 0));
+    if (token.canceled) { bail(); return; }
+    const t = setTimeout(() => { token.wake = null; resolve(); }, ms);
+    token.wake = () => { clearTimeout(t); token.wake = null; bail(); };
+  });
+}
+
+/**
+ * Wait out the line (#123, requirement 2). A scan that could not start
+ * comes back `queued` with a ticket and a time to ask again; this keeps
+ * asking — with the ticket, which is what holds the place — showing the
+ * position each time, until it is our turn and the answer is a real parse.
+ * Cancelling gives the place up so the people behind move up at once.
+ *
+ * Returns whatever the server finally said. Past MAX_QUEUE_WAIT_MS it returns
+ * the queued answer as-is, whose `parseError` already reads correctly.
+ */
+async function awaitTurn(
+  first: ReceiptResult,
+  currencyHint: string | undefined,
+  onStage: (s: ScanStage) => void,
+  token: WaitToken,
+): Promise<ReceiptResult> {
+  const startedAt = Date.now();
+  let r = first;
+  while (r.queued) {
+    const q = r.queued;
+    if (Date.now() - startedAt > MAX_QUEUE_WAIT_MS) return r;
+    onStage({ stage: 'queued', position: q.position, etaMs: q.etaMs, startedAt });
+    try {
+      await sleepUnless(q.retryAfterMs, token);
+    } catch (e) {
+      api.leaveScanQueue(q.ticket).catch(() => {});
+      throw e;
+    }
+    // Next up: the answer to this ask is most likely the parse itself, which
+    // takes a while — show "reading" rather than a frozen "1 ahead".
+    if (q.ahead === 0) onStage({ stage: 'read', startedAt: Date.now() });
+    r = await api.rescanReceipt(r.id, currencyHint, q.ticket);
+  }
+  return r;
+}
+
+/** The cancel handle for a scan once the upload is done and the wait begins. */
+function waitCancel(token: WaitToken): { cancel: () => void } {
+  return { cancel: () => { token.canceled = true; token.wake?.(); } };
 }
 
 /** Staged scan progress (issue #9): upload % → reading with elapsed time. */
@@ -3032,7 +3095,7 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
     const t = setInterval(() => tick((n) => n + 1), 500);
     return () => clearInterval(t);
   }, []);
-  const elapsed = scan.stage === 'read' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
+  const elapsed = scan.stage !== 'upload' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
   return (
     <Modal transparent statusBarTranslucent animationType="fade">
       <View style={{ flex: 1, backgroundColor: 'rgba(6,10,18,0.78)',
@@ -3046,6 +3109,14 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
                 borderRadius: 3, backgroundColor: c.brand }} />
             </View>
           </>
+        ) : scan.stage === 'queued' ? (
+          <Text style={[s.body, { textAlign: 'center', lineHeight: 22 }]}>
+            Photo saved — in line for the receipt reader{'\n'}
+            <Text style={{ color: c.text2 }}>
+              {scan.position <= 1 ? 'next up' : `${scan.position - 1} ahead of you`}
+              {' · '}about {Math.max(1, Math.round(scan.etaMs / 1000))}s · waited {elapsed}s
+            </Text>
+          </Text>
         ) : (
           <Text style={s.body}>
             Reading the receipt… {elapsed}s{'  '}
@@ -3301,6 +3372,20 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   );
   const [scanProg, setScanProg] = useState<ScanStage | null>(null);
   const scanHandle = useRef<{ cancel: () => void } | null>(null);
+  // Receipt scanning depends on a self-hosted vision model, so it is a capability
+  // rather than a constant (#123). Shown DISABLED WITH A REASON rather than hidden
+  // (owner, 2026-09-01): a button that vanishes teaches nobody the feature exists.
+  // Starts available so the control never flickers out from under a tap on the
+  // common path where the service is up.
+  const [scanCap, setScanCap] = useState<{ available: boolean; reason: string | null }>(
+    { available: true, reason: null },
+  );
+  useEffect(() => {
+    let alive = true;
+    void getCapabilities().then((cap) => { if (alive) setScanCap(cap.receiptScanning); });
+    return () => { alive = false; };
+  }, []);
+  const scanOff = !scanCap.available;
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   // The last successful parse, kept so "Split by item" stays available
   // without re-scanning. A scan fills the form directly now — it used to
@@ -3430,12 +3515,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       setScanProg({ stage: 'upload', fraction: 0 });
       fetchEta();
       const small = await shrinkPhoto(asset.uri);
+      const hint = localCurrency ?? currency;
       const handle = uploadReceipt(group.id, small.uri, small.mime, {
         onUploadProgress: (fraction) => setScanProg({ stage: 'upload', fraction }),
         onUploaded: () => setScanProg({ stage: 'read', startedAt: Date.now() }),
-      }, localCurrency ?? currency);
+      }, hint);
       scanHandle.current = handle;
-      const r = await handle.promise;
+      const uploaded = await handle.promise;
+      // From here Cancel means "give up my place in line", not "stop the upload".
+      const wait: WaitToken = { canceled: false, wake: null };
+      scanHandle.current = waitCancel(wait);
+      const r = await awaitTurn(uploaded, hint, setScanProg, wait);
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -3518,17 +3608,22 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
     setScanProg({ stage: 'read', startedAt: Date.now() });
     setError(null);
     fetchEta();
+    const wait: WaitToken = { canceled: false, wake: null };
+    scanHandle.current = waitCancel(wait);
     try {
-      const r = await api.rescanReceipt(receiptId, currency);
+      const r = await awaitTurn(await api.rescanReceipt(receiptId, currency), currency, setScanProg, wait);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt');
       } else {
         applyParse(r.parsed);
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (!(e instanceof ApiFailure && e.error.code === 'CANCELED')) {
+        setError((e as Error).message);
+      }
     } finally {
       setScanProg(null);
+      scanHandle.current = null;
     }
   }
 
@@ -3684,7 +3779,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
               disabled={scanBusy} onPress={() => setViewingReceipt(0)} />
           </View>
           <View style={{ flex: 1 }}>
-            <Btn label="↻ Rescan" disabled={scanBusy} onPress={() => void rescan()} />
+            <Btn label="↻ Rescan" disabled={scanBusy || scanOff} onPress={() => void rescan()} />
           </View>
         </View>
       )}
@@ -3695,13 +3790,20 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         <Btn label={`🍽 Split by item (${lastParsed.items.length})`}
           disabled={scanBusy} onPress={() => setAssigning(lastParsed)} />
       )}
+      {/* FR-4.9: when the reader is off, the controls stay visible, disabled,
+          with the reason and the fallback said in the same breath. */}
+      {scanOff && (
+        <Text style={[s.meta, { marginBottom: 6 }]} accessibilityLiveRegion="polite">
+          {scanCap.reason ?? 'Receipt scanning is offline right now'} — you can still add this expense by hand.
+        </Text>
+      )}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
           <Btn label={scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}
-            disabled={scanBusy} onPress={() => void scan(true)} />
+            disabled={scanBusy || scanOff} onPress={() => void scan(true)} />
         </View>
         <View style={{ flex: 1 }}>
-          <Btn label="Photo library" disabled={scanBusy} onPress={() => void scan(false)} />
+          <Btn label="Photo library" disabled={scanBusy || scanOff} onPress={() => void scan(false)} />
         </View>
       </View>
       {/* FR-3.2 (issue #13): all five split methods */}
@@ -3936,6 +4038,13 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   const slipHandle = useRef<{ cancel: () => void } | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
   const slipBusy = slipScan !== null;
+  // The card slip is a scan too (#123): same capability, same disabled-with-reason.
+  const [slipCap, setSlipCap] = useState<{ available: boolean; reason: string | null }>({ available: true, reason: null });
+  useEffect(() => {
+    let alive = true;
+    void getCapabilities().then((cap) => { if (alive) setSlipCap(cap.receiptScanning); });
+    return () => { alive = false; };
+  }, []);
   // Issue #23: parsed lines that aren't part of the bill (loyalty
   // credits, promo blurbs) can be ignored — they then count toward
   // nothing and don't block Continue.
@@ -3961,7 +4070,10 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
       }, rcur);
       slipHandle.current = handle;
-      const r = await handle.promise;
+      const uploaded = await handle.promise;
+      const wait: WaitToken = { canceled: false, wake: null };
+      slipHandle.current = waitCancel(wait);
+      const r = await awaitTurn(uploaded, rcur, setSlipScan, wait);
       // Slip amounts arrive in the slip parse's own scale — bridge to the
       // bill's currency before comparing totals.
       const slipTotal = r.parsed === null ? null
@@ -4073,10 +4185,15 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
           })} />
       )}
       {slipError !== null && <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={s.error}>{slipError}</Text>}
+      {!slipCap.available && (
+        <Text style={[s.meta, { marginBottom: 6 }]}>
+          {slipCap.reason ?? 'Receipt scanning is offline right now'} — you can still adjust the tip after Continue.
+        </Text>
+      )}
       <Btn label={slip !== null
           ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`
           : 'Scan card slip (adds the tip)'}
-        disabled={slipBusy} onPress={() => void scanSlip()} />
+        disabled={slipBusy || !slipCap.available} onPress={() => void scanSlip()} />
       <Text style={[s.meta, { marginVertical: 8 }]}>
         {members.filter((m) => (perMember[m.id] ?? 0) !== 0)
           .map((m) => `${m.id === user.id ? 'You' : m.displayName} ${minorToAmountString(perMember[m.id] ?? 0, rcur)}`)

@@ -349,8 +349,74 @@ export interface ParsedReceipt {
   tipMinor: number | null; totalMinor: number | null;
   confidence: 'high' | 'medium' | 'low';
 }
+/**
+ * A place in line for the receipt reader (#123). The model takes one receipt
+ * per backend at a time; when they are all busy, or someone asked first, the
+ * upload still succeeds and the photo is kept, but instead of a parse the
+ * server hands back this — and a time to ask again. Asking again is a
+ * `rescanReceipt` with the ticket; it costs nothing until a parse actually runs.
+ */
+export interface ScanQueued {
+  ticket: string;
+  /** 1 = next up. */
+  position: number;
+  ahead: number;
+  inFlight: number;
+  slots: number;
+  etaMs: number;
+  retryAfterMs: number;
+}
+
 export interface ReceiptResult {
   id: string; groupId: string; parsed: ParsedReceipt | null; parseError?: string;
+  /** Present, with `parsed` null, while the receipt waits its turn. */
+  queued?: ScanQueued;
+}
+
+/**
+ * What this server can do right now (#123). Receipt scanning depends on a
+ * self-hosted vision model, so it is a capability, not a constant — and the
+ * app asks BEFORE offering the camera, so nobody photographs a receipt into a
+ * reader that is off.
+ *
+ * Cached per server for the life of the app after a successful answer: this
+ * decides whether a button is enabled, so re-asking on every render would put
+ * a request in front of a screen paint. Keyed by base because the app can
+ * move between servers (#113) and one server's answer says nothing about
+ * another's. A FAILED lookup is not cached — a blip must not disable scanning
+ * until the next launch. Unreachable is reported as unavailable: offering a
+ * feature that posts to a server you cannot reach helps nobody.
+ */
+export interface Capabilities {
+  receiptScanning: { available: boolean; reason: string | null };
+}
+
+const OFFLINE: Capabilities = {
+  receiptScanning: { available: false, reason: 'Receipt scanning is offline right now' },
+};
+const capsByBase = new Map<string, Capabilities>();
+
+export async function getCapabilities(): Promise<Capabilities> {
+  const { base } = conn;
+  const hit = capsByBase.get(base);
+  if (hit) return hit;
+  try {
+    const res = await fetch(`${base}/capabilities`);
+    if (!res.ok) throw new Error(String(res.status));
+    const json = (await res.json()) as Partial<Capabilities>;
+    const scan = json.receiptScanning;
+    if (!scan || typeof scan.available !== 'boolean') throw new Error('shape');
+    const caps: Capabilities = { receiptScanning: { available: scan.available, reason: scan.reason ?? null } };
+    capsByBase.set(base, caps);
+    return caps;
+  } catch {
+    return OFFLINE;
+  }
+}
+
+/** Drop the memoised capabilities — after a sign-in, a server switch, or in tests. */
+export function forgetCapabilities(): void {
+  capsByBase.clear();
 }
 
 /** Receipt image needs the Bearer token — RN <Image> supports headers. */
@@ -626,9 +692,13 @@ export const api = {
     return json as { id: string; status: string; tracking?: string };
   },
   /** Re-run the parser on the stored photo — no re-photographing. */
-  rescanReceipt: (receiptId: string, currencyHint?: string) =>
-    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`,
-      currencyHint ? { currencyHint } : {}),
+  rescanReceipt: (receiptId: string, currencyHint?: string, ticket?: string) =>
+    req<ReceiptResult>('POST', `/receipts/${receiptId}/rescan`, {
+      ...(currencyHint ? { currencyHint } : {}),
+      ...(ticket ? { ticket } : {}),
+    }),
+  /** Leaving the line early, so the people behind move up now (#123). */
+  leaveScanQueue: (ticket: string) => req<{ ok: true }>('DELETE', `/receipts/queue/${ticket}`),
   fxRate: (base: string, quote: string) =>
     req<{ date: string; base: string; quote: string; rate: number }>(
       'GET', `/rates?base=${encodeURIComponent(base)}&quote=${encodeURIComponent(quote)}`),

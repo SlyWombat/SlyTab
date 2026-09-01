@@ -54,10 +54,14 @@ final class ReceiptService
         $normalizeMs = (int) round((microtime(true) - $t0) * 1000);
         $normalizedBytes = (int) (filesize(self::dataDir() . '/' . $relPath) ?: 0);
 
-        $parsed = null;
-        $parseError = null;
-        $t1 = microtime(true);
-        // One parse at a time, across the whole app.
+        // The receipt row exists from here on, parsed or not: a queued scan
+        // has to be something the client can come back for.
+        $this->pdo->prepare(
+            'INSERT INTO receipts (id, group_id, image_path, parsed, created_by) VALUES (?, ?, ?, NULL, ?)',
+        )->execute([$id, $groupId, $relPath, $userId]);
+
+        // One parse per backend, across the whole app — and a LINE for the
+        // rest (#123, requirement 2).
         //
         // The vision model serialises absolutely — four concurrent requests
         // measured 3.2s, 6.3s, 9.3s, 12.4s, one behind the other. A real
@@ -71,25 +75,40 @@ final class ReceiptService
         // processes for its whole duration, so twenty simultaneous scans take
         // the entire app down with 508s for several minutes.
         //
-        // Refusing in a millisecond is strictly better than hanging for
-        // forty-five seconds and failing anyway. The photo is already stored
-        // by this point, so the user keeps it and can Rescan.
-        $lock = self::parseLock();
+        // So nobody waits inside a request. A scan that cannot start now gets a
+        // ticket and a place in line, and the client asks again (rescan with
+        // the ticket) when told to. The photo is already stored by this point,
+        // so the user keeps it either way.
+        $queue = new ScanQueue($this->pdo);
+        $admission = $queue->admit($id, $userId, null, self::eta($this->pdo)['typicalMs']);
+        if ($admission['queued'] !== null) {
+            $this->recordMetrics([
+                'receipt_id' => $id,
+                'group_id' => $groupId,
+                'upload_bytes' => $uploadBytes,
+                'normalized_bytes' => $normalizedBytes,
+                'normalize_ms' => $normalizeMs,
+                'engine' => $this->engineName(),
+                'parse_ms' => 0,
+                'outcome' => 'queued',
+                'confidence' => null,
+                'error' => null,
+            ]);
+            return self::queuedResult($id, $groupId, $admission['queued']);
+        }
+
+        $parsed = null;
+        $parseError = null;
+        $t1 = microtime(true);
         try {
-            if ($lock['busy']) {
-                throw new ApiException(
-                    'SCAN_BUSY',
-                    'someone else is scanning a receipt right now — the photo is attached, '
-                    . 'tap Rescan in a few seconds',
-                    429,
-                );
-            }
             $parsed = $this->parse(self::dataDir() . '/' . $relPath, $mime, $currencyHint);
             // Issue #10: keep the raw parse for repeat testing (data dir only).
             @file_put_contents(
                 self::dataDir() . '/' . preg_replace('/\.[a-z]+$/', '.parse.json', $relPath),
                 json_encode($parsed, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR),
             );
+            $this->pdo->prepare('UPDATE receipts SET parsed = ? WHERE id = ?')
+                ->execute([json_encode($parsed, JSON_THROW_ON_ERROR), $id]);
         } catch (\Throwable $e) {
             $parseError = $e instanceof ApiException
                 ? $e->getMessage()
@@ -98,20 +117,10 @@ final class ReceiptService
                     : 'could not read this receipt — the photo is attached, enter the details manually');
             error_log('receipt parse failed: ' . $e->getMessage());
         } finally {
-            if ($lock['handle'] !== null) {
-                flock($lock['handle'], LOCK_UN);
-                fclose($lock['handle']);
-            }
+            $queue->release($admission['slot']);
         }
         $parseMs = (int) round((microtime(true) - $t1) * 1000);
 
-        $this->pdo->prepare(
-            'INSERT INTO receipts (id, group_id, image_path, parsed, created_by) VALUES (?, ?, ?, ?, ?)',
-        )->execute([
-            $id, $groupId, $relPath,
-            $parsed === null ? null : json_encode($parsed, JSON_THROW_ON_ERROR),
-            $userId,
-        ]);
         $this->recordMetrics([
             'receipt_id' => $id,
             'group_id' => $groupId,
@@ -130,6 +139,56 @@ final class ReceiptService
             $out['parseError'] = $parseError;
         }
         return $out;
+    }
+
+    /**
+     * The shape a client gets while its receipt waits in line. `parsed` is
+     * null and `parseError` is filled in so a client from before the queue
+     * existed shows something true ("in line, tap Rescan") instead of
+     * nothing; a current client reads `queued` and asks again by itself.
+     *
+     * @param array<string,mixed> $queued
+     * @return array<string,mixed>
+     */
+    private static function queuedResult(string $id, string $groupId, array $queued): array
+    {
+        $ahead = (int) $queued['ahead'];
+        $line = $ahead === 0
+            ? 'the receipt reader is busy with another receipt'
+            : sprintf('%d receipt%s %s ahead of yours', $ahead, $ahead === 1 ? '' : 's', $ahead === 1 ? 'is' : 'are');
+        return [
+            'id' => $id,
+            'groupId' => $groupId,
+            'parsed' => null,
+            'queued' => $queued,
+            'parseError' => "{$line} — the photo is attached, tap Rescan in a moment",
+        ];
+    }
+
+    /**
+     * How long a scan takes here, from the last twenty that worked (issue #9:
+     * historical timing, not a static guess). Shared by the ETA endpoint and
+     * the queue's "about N seconds".
+     *
+     * @return array{samples: int, typicalMs: int, slowMs: int}
+     */
+    public static function eta(PDO $pdo): array
+    {
+        try {
+            $stmt = $pdo->query(
+                "SELECT parse_ms FROM receipt_metrics WHERE outcome = 'parsed' ORDER BY id DESC LIMIT 20",
+            );
+            $ms = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        } catch (\Throwable) {
+            $ms = [];
+        }
+        sort($ms);
+        $n = count($ms);
+        return [
+            'samples' => $n,
+            'typicalMs' => $n > 0 ? $ms[intdiv($n, 2)] : 15000,
+            'slowMs' => $n > 0 ? $ms[min($n - 1, (int) floor($n * 0.9))] : 40000,
+        ];
     }
 
     /** Testing-phase telemetry (issue #10). Never allowed to break an upload. */
@@ -267,7 +326,18 @@ final class ReceiptService
      *
      * @return array<string,mixed>
      */
-    public function rescan(string $receiptId, string $currencyHint = ''): array
+    /**
+     * Re-run the parser on the stored photo. Also how a QUEUED scan is
+     * collected: the client that was handed a ticket calls this with it when
+     * told to, and either gets its turn (a real parse) or a refreshed place in
+     * line. `$charge` is the FR-4.5 cost guard, applied only when a parse
+     * actually happens — asking "is it my turn yet?" must not eat the day's
+     * scans.
+     *
+     * @param ?callable(): void $charge
+     * @return array<string,mixed>
+     */
+    public function rescan(string $receiptId, string $userId, string $currencyHint = '', ?string $ticket = null, ?callable $charge = null): array
     {
         $currencyHint = preg_match('/^[A-Z]{3}$/', $currencyHint) ? $currencyHint : '';
         $stmt = $this->pdo->prepare('SELECT id, group_id, image_path FROM receipts WHERE id = ?');
@@ -283,10 +353,19 @@ final class ReceiptService
         $ext = pathinfo($r['image_path'], PATHINFO_EXTENSION);
         $mime = array_search($ext === 'jpg' ? 'jpg' : $ext, self::MIME_EXT, true) ?: 'image/jpeg';
 
+        $queue = new ScanQueue($this->pdo);
+        $admission = $queue->admit($receiptId, $userId, $ticket, self::eta($this->pdo)['typicalMs']);
+        if ($admission['queued'] !== null) {
+            return self::queuedResult($receiptId, (string) $r['group_id'], $admission['queued']);
+        }
+
         $parsed = null;
         $parseError = null;
         $t0 = microtime(true);
         try {
+            if ($charge !== null) {
+                $charge();
+            }
             $parsed = $this->parse($path, $mime, $currencyHint);
             @file_put_contents(
                 self::dataDir() . '/' . preg_replace('/\.[a-z]+$/', '.parse.json', $r['image_path']),
@@ -301,6 +380,8 @@ final class ReceiptService
                     ? 'the receipt reader is offline right now — try Rescan later'
                     : 'could not read this receipt');
             error_log('receipt rescan failed: ' . $e->getMessage());
+        } finally {
+            $queue->release($admission['slot']);
         }
         $this->recordMetrics([
             'receipt_id' => $receiptId,
@@ -720,34 +801,6 @@ final class ReceiptService
             }
         }
         return ['groups' => $settled, 'files' => $files, 'bytes' => $bytes, 'dryRun' => $dryRun];
-    }
-
-    /**
-     * Try to take the global parse lock without waiting.
-     *
-     * flock is the right primitive here precisely because the kernel releases
-     * it when the process dies: a crashed parse cannot leave the feature
-     * wedged, which a database flag or a lock row could.
-     *
-     * Fails OPEN. If the lock file cannot be created the parse proceeds
-     * unguarded and says so in the log — a guard that cannot be taken must not
-     * become an outage of its own.
-     *
-     * @return array{busy: bool, handle: resource|null}
-     */
-    private static function parseLock(): array
-    {
-        $path = self::dataDir() . '/receipt-parse.lock';
-        $fh = @fopen($path, 'c');
-        if ($fh === false) {
-            error_log("receipt parse lock unavailable at {$path} — parsing unguarded");
-            return ['busy' => false, 'handle' => null];
-        }
-        if (!flock($fh, LOCK_EX | LOCK_NB)) {
-            fclose($fh);
-            return ['busy' => true, 'handle' => null];
-        }
-        return ['busy' => false, 'handle' => $fh];
     }
 
     private static function dataDir(): string

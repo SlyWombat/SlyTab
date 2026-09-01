@@ -24,6 +24,33 @@ JSON, it is just wrong, and wrong numbers become wrong money.
 follow it without noticing. If you need a hard guarantee, pin the digest
 in `LOCAL_LLM_MODEL` and update it deliberately.
 
+## Where it runs: one front door, N backends (#119, #123)
+
+SlyTab never talks to an Ollama directly in production. `LOCAL_LLM_URL`
+points at a **front door** — nginx on kdocker2, `127.0.0.1:11435`, reached
+through the house relay — which requires `LOCAL_LLM_TOKEN` and fans out to
+every backend listed in its `backends` file. `scripts/ops/llm-proxy/README.md`
+is the runbook; the short version:
+
+- **Availability** is decided per backend, every minute, by
+  `healthcheck.sh`: does `/api/tags` answer *and* list the pinned model? A
+  backend that answers without the model is marked `down` — the door opening
+  with the model missing is the worst case, because the request fails after
+  the photo is taken. With no healthy backend the door answers 502 and the
+  API's capabilities endpoint says scanning is offline (FR-4.8).
+- **Residency** is enforced by the same check: if `/api/ps` shows the pinned
+  model unloaded it is warmed back in with `keep_alive: -1`. Ollama forgets
+  the pin across restarts, and the host restarts more than it should
+  (house-network-ops#48); without this every reboot cost the next receipt a
+  cold load or a timeout.
+- **Concurrency** on the API side is `LOCAL_LLM_PARALLEL` (default 1): one
+  parse per backend at a time, the rest in a fair line with feedback
+  (FR-4.10). When a backend is added, raise it in `scripts/deploy-api.sh` and
+  redeploy.
+- **The pinned model tag lives in two places** that must agree: the door's
+  `model` file (what "healthy" means) and `LOCAL_LLM_MODEL` in the deployed
+  config (what the API asks for). Change both in the same breath.
+
 ## Hard requirements for any replacement model
 
 1. **Vision.** It must accept an image in the `images` array of Ollama's

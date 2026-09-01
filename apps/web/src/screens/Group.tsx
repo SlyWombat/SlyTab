@@ -13,7 +13,9 @@ import { Amount, Badge, CurrencyMultiPicker, Mark, Sheet, SkeletonRows } from '.
 
 export type ScanStage =
   | { stage: 'upload'; fraction: number }
-  | { stage: 'read'; startedAt: number };
+  | { stage: 'read'; startedAt: number }
+  /** Waiting for a turn at the model (#123): position 1 is next up. */
+  | { stage: 'queued'; position: number; etaMs: number; startedAt: number };
 
 export interface ScanEta { typicalMs: number; slowMs: number }
 
@@ -23,14 +25,68 @@ export function fetchEta(): void {
   api.receiptEta().then((e) => { if (e.samples > 0) etaCache = e; }).catch(() => {});
 }
 
-/** Staged scan progress (issue #9): upload % → reading with elapsed time. */
+/**
+ * Longer than this in line and the honest thing is to stop spinning and say
+ * so: the photo is attached and Rescan is a tap away. Four minutes is a dozen
+ * typical parses — if the line is that long, something upstream is wrong and
+ * a progress dialog is not the place to find out.
+ */
+const MAX_QUEUE_WAIT_MS = 4 * 60 * 1000;
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(t);
+      reject(new ApiFailure({ code: 'CANCELED', message: 'scan canceled' }, 0));
+    }, { once: true });
+  });
+}
+
+/**
+ * Wait out the line (#123, requirement 2). A scan that could not start
+ * comes back `queued` with a ticket and a time to ask again; this keeps
+ * asking — with the ticket, which is what holds the place — showing the
+ * position each time, until it is our turn and the answer is a real parse.
+ * Cancelling gives the place up so the people behind move up at once.
+ *
+ * Returns whatever the server finally said. Past MAX_QUEUE_WAIT_MS it returns
+ * the queued answer as-is, whose `parseError` already reads correctly.
+ */
+export async function awaitTurn(
+  first: ReceiptResult,
+  currencyHint: string | undefined,
+  onStage: (s: ScanStage) => void,
+  signal?: AbortSignal,
+): Promise<ReceiptResult> {
+  const startedAt = Date.now();
+  let r = first;
+  while (r.queued) {
+    const q = r.queued;
+    if (Date.now() - startedAt > MAX_QUEUE_WAIT_MS) return r;
+    onStage({ stage: 'queued', position: q.position, etaMs: q.etaMs, startedAt });
+    try {
+      await sleep(q.retryAfterMs, signal);
+    } catch (e) {
+      api.leaveScanQueue(q.ticket).catch(() => {});
+      throw e;
+    }
+    // Next up: the answer to this ask is most likely the parse itself, which
+    // takes a while — show "reading" rather than a frozen "1 ahead".
+    if (q.ahead === 0) onStage({ stage: 'read', startedAt: Date.now() });
+    r = await api.rescanReceipt(r.id, currencyHint, q.ticket);
+  }
+  return r;
+}
+
+/** Staged scan progress (issue #9): upload % → (in line →) reading with elapsed time. */
 function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => void }) {
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 500);
     return () => clearInterval(t);
   }, []);
-  const elapsed = scan.stage === 'read' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
+  const elapsed = scan.stage !== 'upload' ? Math.round((Date.now() - scan.startedAt) / 1000) : 0;
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column',
@@ -49,6 +105,15 @@ function BusyOverlay({ scan, onCancel }: { scan: ScanStage; onCancel?: () => voi
               borderRadius: 3, background: 'var(--ss-brand)', transition: 'width .2s' }} />
           </div>
         </>
+      ) : scan.stage === 'queued' ? (
+        <div style={{ fontSize: '0.875rem', color: 'var(--ss-text)', textAlign: 'center', lineHeight: 1.5 }}>
+          Photo saved — in line for the receipt reader
+          <br />
+          <span style={{ color: 'var(--ss-text-2)' }}>
+            {scan.position <= 1 ? 'next up' : `${scan.position - 1} ahead of you`}
+            {' · '}about {Math.max(1, Math.round(scan.etaMs / 1000))}s · waited {elapsed}s
+          </span>
+        </div>
       ) : (
         <div style={{ fontSize: '0.875rem', color: 'var(--ss-text)' }}>
           Reading the receipt… {elapsed}s{' '}
@@ -655,11 +720,12 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
       // strips EXIF); screenshots/PNGs just yield null.
       const gps = gpsFromJpeg(await file.arrayBuffer());
       const localCurrency = gps !== null ? currencyForLocation(gps.lat, gps.lon) : null;
-      const r = await api.uploadReceipt(group.id, file, {
+      const hint = localCurrency ?? currency;
+      const r = await awaitTurn(await api.uploadReceipt(group.id, file, {
         onUploadProgress: (fraction) => setScan({ stage: 'upload', fraction }),
         onUploaded: () => setScan({ stage: 'read', startedAt: Date.now() }),
         signal: scanAbort.current.signal,
-      }, localCurrency ?? currency);
+      }, hint), hint, setScan, scanAbort.current.signal);
       setReceiptId(r.id);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt — enter it manually (photo attached)');
@@ -682,17 +748,20 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   async function onRescan() {
     if (receiptId === null) return;
     setScan({ stage: 'read', startedAt: Date.now() });
+    scanAbort.current = new AbortController();
     setError(null);
     fetchEta();
     try {
-      const r = await api.rescanReceipt(receiptId, currency);
+      const r = await awaitTurn(await api.rescanReceipt(receiptId, currency), currency, setScan, scanAbort.current.signal);
       if (r.parsed === null) {
         setError(r.parseError ?? 'could not read this receipt');
       } else {
         applyParse(r.parsed);
       }
     } catch (err) {
-      setError((err as Error).message);
+      if (!(err instanceof ApiFailure && err.error.code === 'CANCELED')) {
+        setError((err as Error).message);
+      }
     } finally {
       setScan(null);
     }
@@ -1249,6 +1318,13 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
   const [slipScan, setSlipScan] = useState<ScanStage | null>(null);
   const slipAbort = useRef<AbortController | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
+  // The card slip is a scan too (#123): same capability, same disabled-with-reason.
+  const [slipCap, setSlipCap] = useState<{ available: boolean; reason: string | null }>({ available: true, reason: null });
+  useEffect(() => {
+    let alive = true;
+    void getCapabilities().then((c) => { if (alive) setSlipCap(c.receiptScanning); });
+    return () => { alive = false; };
+  }, []);
   const slipInput = useRef<HTMLInputElement>(null);
   const slipBusy = slipScan !== null;
 
@@ -1268,11 +1344,11 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
     setSlipError(null);
     fetchEta();
     try {
-      const r = await api.uploadReceipt(group.id, file, {
+      const r = await awaitTurn(await api.uploadReceipt(group.id, file, {
         onUploadProgress: (fraction) => setSlipScan({ stage: 'upload', fraction }),
         onUploaded: () => setSlipScan({ stage: 'read', startedAt: Date.now() }),
         signal: slipAbort.current.signal,
-      }, rcur);
+      }, rcur), rcur, setSlipScan, slipAbort.current.signal);
       // Slip amounts arrive in the slip parse's own scale — bridge to the
       // bill's currency before comparing totals.
       const slipTotal = r.parsed === null ? null
@@ -1389,7 +1465,13 @@ function AssignItemsSheet({ parsed, group, members, user, onCancel, onDone }: {
         </button>
       )}
       {slipError && <div className="error" role="alert">{slipError}</div>}
-      <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={slipBusy}
+      {!slipCap.available && (
+        <p className="muted" style={{ padding: '4px 2px' }}>
+          {slipCap.reason ?? 'Receipt scanning is offline right now'} — you can still adjust the tip after Continue.
+        </p>
+      )}
+      <button type="button" className="btn block" style={{ marginTop: 8 }} disabled={slipBusy || !slipCap.available}
+        title={!slipCap.available ? (slipCap.reason ?? undefined) : undefined}
         onClick={() => slipInput.current?.click()}>
         {slip !== null
           ? `Tip from card slip: ${minorToAmountString(slip.tipMinor, rcur)} ✓ — rescan`

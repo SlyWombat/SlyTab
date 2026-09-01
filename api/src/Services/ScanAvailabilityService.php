@@ -34,12 +34,13 @@ final class ScanAvailabilityService
     /** @var array{at: float, status: array<string,mixed>}|null */
     private static ?array $cache = null;
 
-    /** @var (callable(string): array{ok: bool, body: string})|null */
+    /** @var (callable(string, list<string>): array{ok: bool, body: string})|null */
     private $probe;
 
     /**
-     * @param (callable(string): array{ok: bool, body: string})|null $probe
-     *        Injected in tests; production uses the curl probe below.
+     * @param (callable(string, list<string>): array{ok: bool, body: string})|null $probe
+     *        Injected in tests; production uses the curl probe below. The second
+     *        argument is the request headers — the front door's token rides there.
      */
     public function __construct(?callable $probe = null)
     {
@@ -95,7 +96,7 @@ final class ScanAvailabilityService
     private function localStatus(string $baseUrl): array
     {
         $probe = $this->probe ?? self::curlProbe(...);
-        $res = $probe(rtrim($baseUrl, '/') . '/api/tags');
+        $res = $probe(rtrim($baseUrl, '/') . '/api/tags', self::headers());
         if (!$res['ok']) {
             return self::off('Receipt scanning is offline right now');
         }
@@ -137,12 +138,30 @@ final class ScanAvailabilityService
         return false;
     }
 
-    /** @return array{ok: bool, body: string} */
-    private static function curlProbe(string $url): array
+    /**
+     * The same headers a parse sends. The front door (#119) answers 401 to
+     * anything without SlyTab's token — /api/tags included, deliberately, since
+     * a model list is a fingerprint — so a probe without it would report the
+     * scanner offline for as long as it was actually working.
+     *
+     * @return list<string>
+     */
+    private static function headers(): array
+    {
+        $token = Env::get('LOCAL_LLM_TOKEN');
+        return $token === '' ? [] : ["Authorization: Bearer {$token}"];
+    }
+
+    /**
+     * @param list<string> $headers
+     * @return array{ok: bool, body: string}
+     */
+    private static function curlProbe(string $url, array $headers = []): array
     {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_CONNECTTIMEOUT => 2,
             // Short on purpose: this runs while a user waits for a screen to render.
             // Parsing gets a long timeout; asking whether the door is open does not.
