@@ -23,6 +23,24 @@ npm run test:e2e           # Playwright E2E against the web app
 npm run lint && npm run typecheck
 ```
 
+**Playwright is pinned exactly** (`"@playwright/test": "1.61.0"`, no caret). Each
+`playwright-core` bakes in one browser revision and refuses any other, so a floating range
+means an extra ~620 MB Chromium on the box every time it drifts — and the range it replaced,
+`^1.49.0`, described what SlyTab ran in 2024, not what `npm install` actually resolved.
+
+Two places carry a Playwright version and **must stay on the same browser revision**:
+
+| Where | What it is | Today |
+| :-- | :-- | :-- |
+| `package.json` → `@playwright/test` | the client the suite runs | `1.61.0` → chromium **1228** |
+| `scripts/docs/make-docs.sh` → `DOCS_PW_IMAGE` | the docs-capture container | `v1.61.1-noble` → chromium **1228** |
+
+They differ in version string on purpose: patch releases share a browser build, so both land on
+1228, and the docs image is left alone because swapping it risks font/rasteriser drift that
+would trip the pixel-hash gate for no gain. **Revision equality is the invariant, not string
+equality** — when you bump one, check the other's `browsers.json` revision still matches. There
+is no dependency bot in this repo, so nothing will fight the pin and nothing will nudge it.
+
 ## Code style
 
 - TypeScript strict mode, `noUncheckedIndexedAccess`, no `any`.
