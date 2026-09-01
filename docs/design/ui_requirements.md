@@ -227,6 +227,14 @@ me** shortcuts. Full field order when expanded:
 Editing an existing expense reuses the sheet, pre-filled; a footer notes
 "Edits are visible to the whole group" (FR-3.4).
 
+**When receipt scanning is unavailable** (FR-4.8/4.9) the `Scan receipt`,
+`New photo` and `Rescan` buttons render **disabled, with the reason shown
+beneath them** — "Receipt scanning is offline right now — you can still add this
+expense by hand" — and the reason is also the buttons' `title`. Deliberately not
+hidden: the point is that people learn the feature exists and that its absence is
+temporary. Everything else on the sheet stays usable; manual entry never depended
+on the model.
+
 When the expense already has one or more scanned receipts (FR-4.4), the
 receipt row swaps to three actions:
 

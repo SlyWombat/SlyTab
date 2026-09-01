@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Icon } from '../Icon';
 import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGORY_HEADINGS, computeSplit, convertAcrossMinor, CURRENCIES, CURRENCY_NAMES, currencyForLocation, formatMinor, gpsFromJpeg, GROUP_EMOJI, minorToAmountString, normalizeParsedReceipt, parseAmount, receiptBill, rescaleAmountFields, rescaleAmountString, SplitError, splitInputsFromStored, splitInputsToStored, splitMembersFromInputs, resolveCategories, type CategoryOverride, type SplitMethod } from '@slytab/core';
 import {
-  api, ApiFailure,
+  api, ApiFailure, getCapabilities,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
   type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
 } from '../api';
@@ -608,6 +608,20 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
   const [viewing, setViewing] = useState<{ ids: string[]; idx: number; url: string | null } | null>(null);
   const [scan, setScan] = useState<ScanStage | null>(null);
   const scanAbort = useRef<AbortController | null>(null);
+  // Receipt scanning depends on a self-hosted vision model, so it is a capability
+  // rather than a constant (#123). Shown DISABLED WITH A REASON rather than hidden
+  // (owner, 2026-09-01): a button that vanishes teaches nobody the feature exists.
+  // Starts available so the control never flickers out from under a tap on the
+  // common path where the service is up.
+  const [scanCap, setScanCap] = useState<{ available: boolean; reason: string | null }>(
+    { available: true, reason: null },
+  );
+  useEffect(() => {
+    let alive = true;
+    void getCapabilities().then((c) => { if (alive) setScanCap(c.receiptScanning); });
+    return () => { alive = false; };
+  }, []);
+  const scanOff = !scanCap.available;
   const [assigning, setAssigning] = useState<ParsedReceipt | null>(null);
   // Kept so "Split by item" stays available without re-scanning. A scan
   // fills the form directly now: it used to drop you into item assignment,
@@ -1107,7 +1121,8 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
               onClick={() => void openReceiptView(0)}>
               🧾 View receipt{extraReceiptIds.length > 0 ? 's' : ''}
             </button>
-            <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy}
+            <button type="button" className="btn" style={{ flex: 1 }} disabled={scanBusy || scanOff}
+              title={scanOff ? (scanCap.reason ?? undefined) : undefined}
               onClick={() => void onRescan()}>
               ↻ Rescan
             </button>
@@ -1122,8 +1137,15 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             🍽 Split by item ({lastParsed.items.length})
           </button>
         )}
+        {scanOff && (
+          <p className="muted" style={{ padding: '4px 2px' }}>
+            {scanCap.reason ?? 'Receipt scanning is offline right now'} — you can still add
+            this expense by hand.
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button type="button" className="btn" disabled={scanBusy}
+          <button type="button" className="btn" disabled={scanBusy || scanOff}
+            title={scanOff ? (scanCap.reason ?? undefined) : undefined}
             style={{ flex: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             onClick={() => fileInput.current?.click()}>
             {scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}

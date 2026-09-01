@@ -190,6 +190,44 @@ function deviceLabel(): string {
   return `${browser} on ${os}`;
 }
 
+/**
+ * What this deployment can do right now (#123). Receipt scanning depends on a
+ * self-hosted vision model, so it is a capability, not a constant.
+ *
+ * Cached for the tab's lifetime after a successful answer: this decides whether a
+ * button renders, so re-asking on every render would put a request in front of a
+ * screen paint. A failed lookup is NOT cached — a capabilities call that fails
+ * during a blip must not disable scanning until reload.
+ *
+ * Unreachable is reported as unavailable rather than assumed-fine: if the API
+ * cannot be asked, offering a feature that posts to it helps nobody.
+ */
+export interface Capabilities {
+  receiptScanning: { available: boolean; reason: string | null };
+}
+
+let capsCache: Capabilities | null = null;
+
+export async function getCapabilities(): Promise<Capabilities> {
+  if (capsCache) return capsCache;
+  try {
+    const res = await fetch(`${BASE}/capabilities`);
+    if (!res.ok) throw new Error(String(res.status));
+    const json = (await res.json()) as Partial<Capabilities>;
+    const scan = json.receiptScanning;
+    if (!scan || typeof scan.available !== 'boolean') throw new Error('shape');
+    capsCache = { receiptScanning: { available: scan.available, reason: scan.reason ?? null } };
+    return capsCache;
+  } catch {
+    return { receiptScanning: { available: false, reason: 'Receipt scanning is offline right now' } };
+  }
+}
+
+/** Drop the memoised capabilities — used after sign-in and by tests. */
+export function forgetCapabilities(): void {
+  capsCache = null;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }

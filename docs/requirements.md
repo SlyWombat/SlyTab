@@ -149,6 +149,24 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   non-bill content (loyalty credits) are individually ignorable in the
   assign step.
 
+- **FR-4.8 (MUST)** Receipt scanning is an **optional capability, advertised
+  before it is used** (issue #123). `GET /api/v1/capabilities` reports
+  `receiptScanning: {available, reason}`; the API answers it without touching
+  the database, so a database blip cannot hide a working scanner. "Available"
+  means the configured engine's front door answers **and** advertises the
+  configured model (owner, 2026-09-01: *"if service is advertising then it is
+  available"*) — no latency budget, because a slow answer is still an answer
+  and the passing model's honest range is 3.5–8.0 s. A host that answers while
+  lacking `LOCAL_LLM_MODEL` counts as **un**available: it would fail at parse
+  time, after the user has already taken the photograph.
+- **FR-4.9 (MUST)** When scanning is unavailable the client **shows the control
+  disabled with the reason**, rather than hiding it (owner, 2026-09-01). A
+  vanished button teaches nobody that the feature exists, and the fallback is
+  stated in the same breath: the expense can still be added by hand. The client
+  treats an unreachable capabilities endpoint as unavailable — offering a
+  feature that posts to an API you cannot reach helps no one — and does not
+  cache that failure, so a blip does not disable scanning until reload.
+
 ### 2.5 Multi-currency
 
 - **FR-5.1 (MUST)** Each group has a home currency; each expense has its own

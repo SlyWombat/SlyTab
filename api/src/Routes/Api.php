@@ -11,6 +11,7 @@ use Slim\Routing\RouteCollectorProxy;
 use SlyTab\Db\Db;
 use SlyTab\Db\Migrator;
 use SlyTab\Middleware\RequireAuth;
+use SlyTab\Services\ScanAvailabilityService;
 use SlyTab\Services\ActivityService;
 use SlyTab\Services\AppleAuthService;
 use SlyTab\Services\AuthHandoffService;
@@ -69,6 +70,21 @@ final class Api
                 'database' => 'ok',
                 'queryMs' => (int) round((microtime(true) - $started) * 1000),
             ]);
+        });
+
+        // ---- capabilities: what this deployment can actually do right now (#123) ----
+        // Registered beside the health checks, and for the same reason: it must not
+        // depend on the database. A client asks this to decide whether to OFFER
+        // receipt scanning, so an answer of "I don't know" is worse than useless --
+        // it would hide a working feature every time MySQL hiccuped.
+        //
+        // Unauthenticated like /health. The payload says whether a feature is on and
+        // nothing about how it is served; the reason string is written for a user,
+        // not an operator. The service memoises for a few seconds so this cannot be
+        // used to drive traffic at the model host.
+        $app->get('/api/v1/capabilities', function (Request $rq, Response $rs): Response {
+            $scan = (new ScanAvailabilityService())->status();
+            return Http::json($rs, ['receiptScanning' => $scan]);
         });
 
         try {
