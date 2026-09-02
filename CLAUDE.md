@@ -49,12 +49,20 @@ https://electricrv.ca/slytab — live user data; treat with care.
   for a mobile-only fix. Use `Refs #N` for anything that needs a build,
   and close it once the build is actually out (2026-07-30 — this caught
   #87 and #95 and they had to be reopened).
-- **Release policy (owner, 2026-07-25):** when mobile work is done,
-  release BOTH platforms (`scripts/worker`/release runbook: bump
-  app.json, EAS build android-apk + ios-testflight, upload APK to
-  `downloads/slytab-latest.apk`, submit iOS, then close the
-  mobile-pending issues so their "update your app" email is truthful).
-  This reversed the earlier "never build an APK" rule.
+- **Release policy (owner, 2026-09-02):** **never submit a mobile build to
+  the stores without the owner's explicit approval in the session.** Mobile
+  fixes are BATCHED; the owner decides when a release goes out. So: finish
+  the mobile work, commit with `Refs #N`, comment on the issue that a mobile
+  release is pending, leave it open, and ask. Do not push `ios-v*` /
+  `android-v*` tags, run `play-api.py upload-aab`/`promote`, or create an
+  App Store version or review submission on your own. (This replaced the
+  2026-07-25 "when mobile work is done, release BOTH platforms" rule after a
+  session auto-released 1.2.1 the night 1.2.0 went live.) Once approved,
+  release BOTH platforms together: bump `apps/mobile/versions.json`, tag
+  both, GitHub Actions builds, upload the APK to
+  `downloads/slytab-latest.apk`, Play upload + promote, TestFlight + App
+  Store submission via `asc-api.sh`, then close the mobile-pending issues
+  once the builds actually reach users.
 
 ## The feedback loop (how work arrives)
 
