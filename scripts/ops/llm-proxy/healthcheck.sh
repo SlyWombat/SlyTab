@@ -29,6 +29,27 @@ STATE="$STATUS_DIR/.healthy"           # last healthy set, for change detection
 mkdir -p "$STATUS_DIR"
 say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] llm-health: $*"; }
 
+# The two questions, as python read from stdin (Ollama JSON) with the model
+# tag as argv[1]. Kept in heredocs: quoting python inside a bash single-quoted
+# string is how the first version of this reported every model as absent.
+PY_ADVERTISES=$(cat <<'PYEOF'
+import json, sys
+want = sys.argv[1]; wanted = want if ":" in want else want + ":latest"
+try: names = [m.get("name", "") for m in json.load(sys.stdin).get("models", [])]
+except Exception: names = []
+sys.exit(0 if (want in names or wanted in names) else 1)
+PYEOF
+)
+PY_RESIDENT=$(cat <<'PYEOF'
+import json, sys
+want = sys.argv[1]; wanted = want if ":" in want else want + ":latest"
+try: ms = json.load(sys.stdin).get("models", [])
+except Exception: ms = []
+print("yes" if any(m.get("name") in (want, wanted) for m in ms) else "no")
+print(", ".join("%s %.1fGB" % (m.get("name"), m.get("size", 0) / 1e9) for m in ms))
+PYEOF
+)
+
 HEALTHY=()
 DETAILS=()
 while read -r line; do
@@ -39,24 +60,14 @@ while read -r line; do
     DETAILS+=("{\"backend\":\"$addr\",\"ok\":false,\"reason\":\"no answer\"}")
     continue
   fi
-  if ! printf '%s' "$tags" | python3 -c '
-import json,sys
-want=sys.argv[1]; wanted = want if ":" in want else want+":latest"
-names=[m.get("name","") for m in json.load(sys.stdin).get("models",[])]
-sys.exit(0 if (want in names or wanted in names) else 1)' "$MODEL" 2>/dev/null; then
+  if ! printf '%s' "$tags" | python3 -c "$PY_ADVERTISES" "$MODEL" 2>/dev/null; then
     DETAILS+=("{\"backend\":\"$addr\",\"ok\":false,\"reason\":\"does not advertise $MODEL\"}")
     continue
   fi
   # Resident? Warm it if not — in the background, so a cold load on one box
   # does not hold up the check of the others. The load itself takes ~20 s.
   ps="$(curl -sS -m 4 "http://$addr/api/ps" 2>/dev/null)" || ps=""
-  resident=$(printf '%s' "$ps" | python3 -c '
-import json,sys
-want=sys.argv[1]; wanted = want if ":" in want else want+":latest"
-try: ms=json.load(sys.stdin).get("models",[])
-except Exception: ms=[]
-print("yes" if any(m.get("name") in (want,wanted) for m in ms) else "no")
-print(", ".join(f"{m.get(\"name\")} {round(m.get(\"size\",0)/1e9,1)}GB" for m in ms))' "$MODEL" 2>/dev/null)
+  resident=$(printf '%s' "$ps" | python3 -c "$PY_RESIDENT" "$MODEL" 2>/dev/null)
   is_resident="$(printf '%s\n' "$resident" | sed -n 1p)"
   others="$(printf '%s\n' "$resident" | sed -n 2p)"
   if [ "$is_resident" != "yes" ]; then

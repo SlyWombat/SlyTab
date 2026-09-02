@@ -89,8 +89,9 @@ LOCAL_LLM_URL=http://147.5.121.145:3308
 LOCAL_LLM_MODEL=qwen2.5vl:7b
 LOCAL_LLM_TIMEOUT=90
 # How many receipts may be at the reader at once: one per Ollama behind the
-# front door (#123). Raise it when a backend is added to the door's
-# `backends` file — scripts/ops/llm-proxy/README.md.
+# front door (#123). Raise it when a backend is added to the door's backends
+# file - scripts/ops/llm-proxy/README.md. (No backticks in this heredoc: it
+# is unquoted, so they would run as a command.)
 LOCAL_LLM_PARALLEL=1
 # The token the house-side front door expects (#119). Ollama has no auth of
 # its own and that relay port is on the public internet, so without this the
