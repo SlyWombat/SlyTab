@@ -213,6 +213,21 @@ Screened 2026-07-27 against all three corpus fixtures using the real
 `parseLocal` prompt and schema, `Money::parsePrinted` replicated, currency
 hint `CLP`. **Not adopted — offered for you to gate on the PHPUnit suite.**
 
+**Re-screened 2026-09-01 with the PHPUnit suite itself** (Ollama 0.30.10,
+model warm and resident, nothing else on the GPU), same night as the pinned
+model, back to back:
+
+| | `qwen2.5vl:7b` (pinned) | `qwen3-vl:8b-instruct` |
+|---|---|---|
+| `ReceiptCorpusTest` | **OK, 3/3, 16 assertions, 14 s total** | FAIL 2/3 — totals and currency all exact, but `itemsIncludeMinor` misses 11129 and 11639 (the dropped-line-item gap below, unchanged) |
+| Latency, warm | ~4 s/receipt | ~4 s/receipt — the 64–78 s recorded above was a cold or contended run |
+
+So the pin **stays on `qwen2.5vl:7b`**. The candidate is now in the weekly
+screen (`~dave/.slytab-corpus-candidates` on kdocker2, read by
+`scripts/worker/model-corpus-check.sh`), so the day it starts reading whole
+receipts shows up in the log without anyone re-running this by hand. The
+door's `model` file and `LOCAL_LLM_MODEL` both still say `qwen2.5vl:7b`.
+
 | | `qwen2.5vl:7b` (current) | `qwen3-vl:8b-instruct` |
 |---|---|---|
 | Size | 6.0 GB | 6.1 GB |
