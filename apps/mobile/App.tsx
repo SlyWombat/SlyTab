@@ -3315,6 +3315,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   editing?: Expense | null; onDeleted?: () => void; lastCurrency?: string;
 }) {
   const [description, setDescription] = useState(editing?.description ?? '');
+  const descRef = useRef<TextInput>(null);
   const [notes, setNotes] = useState((editing as (Expense & { notes?: string | null }) | null)?.notes ?? '');
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -3486,6 +3487,38 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   }, [multiPayer, payerId, amountMinor, payerAmounts, group.members, currency]);
   const payersRemaining = amountMinor - payers.reduce((a, p) => a + p.amountMinor, 0);
 
+  /**
+   * Why can Save not go through? Every reason, in the order the form reads.
+   *
+   * Until this existed the button was simply disabled and said nothing, so a
+   * form that looked complete just did not respond. Reported 2026-09-03: a
+   * scan whose merchant came back empty left Description blank behind its grey
+   * placeholder, and Save was dead with no way to find out why. The counters
+   * ("remaining:") only appear for some split methods, and only above the fold.
+   *
+   * Null means the form is good to go.
+   */
+  const saveHint = useMemo((): string | null => {
+    if (amountMinor <= 0) return 'enter an amount';
+    if (description.trim() === '') return 'a description is required';
+    if (shares === null || Object.keys(shares).length === 0) {
+      return splitHint ?? 'pick who is in the split';
+    }
+    if (remaining !== 0) {
+      return `the shares are ${minorToAmountString(Math.abs(remaining), currency)} `
+        + `${remaining > 0 ? 'short of' : 'over'} the amount`;
+    }
+    if (payers.length === 0) return 'pick who paid';
+    if (payersRemaining !== 0) {
+      return `what the payers put in is ${minorToAmountString(Math.abs(payersRemaining), currency)} `
+        + `${payersRemaining > 0 ? 'short of' : 'over'} the amount`;
+    }
+    return null;
+  }, [amountMinor, description, shares, splitHint, remaining, payers.length, payersRemaining, currency]);
+  // Shown once Save has been pressed, not while the form is still being
+  // filled in — a hint that appears before you have done anything is nagging.
+  const [saveTried, setSaveTried] = useState(false);
+
   async function scan(fromCamera: boolean) {
     setError(null);
     try {
@@ -3630,7 +3663,16 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
   async function save() {
     // A second tap while the first save is in flight is what filed the
     // same expense twice in production (issue #76).
-    if (shares === null || saving) return;
+    if (saving) return;
+    // Say what is missing rather than going quiet: the press is the moment
+    // the question gets asked, so it is the moment to answer it.
+    if (saveHint !== null) {
+      setSaveTried(true);
+      // Send them to the field when it is the field that is missing.
+      if (amountMinor > 0 && description.trim() === '') descRef.current?.focus();
+      return;
+    }
+    if (shares === null) return;
     setError(null);
     setSaving(true);
     try {
@@ -3702,7 +3744,7 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
         <CurrencySearchList selected={[currency]}
           onPick={(cur) => { switchCurrency(cur); setAllCurrencies(false); }} />
       )}
-      <Field label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
+      <Field ref={descRef} label="Description" value={description} onChangeText={setDescription} placeholder="Groceries" />
       {/* Issue #37 speed entry: category, who-paid, notes behind "More". */}
       <Pressable onPress={() => setShowMore((v) => !v)} style={{ paddingVertical: 8 }}>
         <Text style={{ color: c.text2, fontSize: 13 }} maxFontSizeMultiplier={1.4}>
@@ -3881,12 +3923,17 @@ function AddExpenseSheet({ group, user, onClose, onSaved, editing = null, onDele
       {splitHint !== null && amountMinor > 0 && (
         <Text style={[s.meta, { color: c.owe, paddingVertical: 4 }]}>{splitHint}</Text>
       )}
+      {saveTried && saveHint !== null && (
+        <Text accessibilityLiveRegion="assertive" accessibilityRole="alert"
+          style={[s.meta, { color: c.owe, paddingVertical: 4 }]}>{saveHint}</Text>
+      )}
+      {/* Pressable even when the form is short of something, so that pressing
+          it can say what: a disabled button answers "why not?" with silence.
+          save() is what refuses to submit, and it explains itself. */}
       <Btn primary
         label={saving ? 'Saving…' : allowDuplicate ? 'Add it anyway'
           : editing ? 'Save changes' : 'Save expense'}
-        disabled={saving || amountMinor <= 0 || description.trim() === '' || shares === null
-          || Object.keys(shares).length === 0 || remaining !== 0
-          || payers.length === 0 || payersRemaining !== 0}
+        disabled={saving}
         onPress={save} />
       {editing && (
         <>

@@ -88,6 +88,32 @@ final class ReceiptDoorTest extends TestCase
         self::assertNull(self::call('describeRefusal', 404, 'not found'));
     }
 
+    /**
+     * A merchant the model could not read must come back absent, not blank.
+     *
+     * A real scan on 2026-09-03 returned `merchant: ""`, which is a *present*
+     * value: it slipped past both clients' `?? 'Receipt'` fallback and past
+     * `if (r.merchant) setDescription(...)`, leaving Description empty behind
+     * its placeholder and Save refusing to go with nothing said.
+     */
+    public function testAnUnreadableMerchantIsNullNotEmptyString(): void
+    {
+        foreach (['', '   ', "\n\t ", null, 42, [], false] as $raw) {
+            self::assertNull(
+                self::call('normalizeMerchant', $raw),
+                'expected null for ' . var_export($raw, true),
+            );
+        }
+    }
+
+    public function testARealMerchantSurvivesTrimmedAndCapped(): void
+    {
+        self::assertSame('Costco Wholesale', self::call('normalizeMerchant', '  Costco Wholesale  '));
+        self::assertSame(120, mb_strlen((string) self::call('normalizeMerchant', str_repeat('a', 300))));
+        // A name that is only punctuation is still a name; only blank is absent.
+        self::assertSame('-', self::call('normalizeMerchant', '-'));
+    }
+
     /** A dev Ollama with no doors in front of it must be sent nothing extra. */
     public function testNoCredentialsMeansNoHeaders(): void
     {

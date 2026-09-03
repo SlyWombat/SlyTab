@@ -910,8 +910,48 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
     && Object.keys(shares).length > 0 && remaining === 0
     && payers.length > 0 && payersRemaining === 0;
 
+  /**
+   * Why can Save not go through? Every reason `valid` covers, in the order the
+   * form reads, in words.
+   *
+   * Until this existed the button was simply disabled and said nothing, so a
+   * form that looked complete just did not respond. Reported 2026-09-03 on the
+   * phone: a scan whose merchant came back empty left Description blank behind
+   * its grey placeholder, and Save was dead with no way to find out why. The
+   * "remaining:" counters only appear for some split methods, and only above
+   * the fold.
+   */
+  const saveHint = useMemo((): string | null => {
+    if (amountMinor <= 0) return 'enter an amount';
+    if (description.trim() === '') return 'a description is required';
+    if (shares === null || Object.keys(shares).length === 0) {
+      return splitHint ?? 'pick who is in the split';
+    }
+    if (remaining !== 0) {
+      return `the shares are ${minorToAmountString(Math.abs(remaining), currency)} `
+        + `${remaining > 0 ? 'short of' : 'over'} the amount`;
+    }
+    if (payers.length === 0) return 'pick who paid';
+    if (payersRemaining !== 0) {
+      return `what the payers put in is ${minorToAmountString(Math.abs(payersRemaining), currency)} `
+        + `${payersRemaining > 0 ? 'short of' : 'over'} the amount`;
+    }
+    return null;
+  }, [amountMinor, description, shares, splitHint, remaining, payers.length, payersRemaining, currency]);
+  // Shown once Save has been pressed, not while the form is still being filled
+  // in — a hint that appears before you have done anything is nagging.
+  const [saveTried, setSaveTried] = useState(false);
+  const descRef = useRef<HTMLInputElement>(null);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
+    // Say what is missing rather than going quiet: the press is the moment
+    // the question gets asked, so it is the moment to answer it.
+    if (saveHint !== null) {
+      setSaveTried(true);
+      if (amountMinor > 0 && description.trim() === '') descRef.current?.focus();
+      return;
+    }
     // Ignore a second submit while the first is still in flight: a
     // double-tapped Save is exactly what filed the same expense twice
     // (issue #76).
@@ -1016,7 +1056,8 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
           </label>
         )}
         <label className="field"><span>Description</span>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} required maxLength={200} placeholder="Groceries" />
+          <input ref={descRef} value={description} onChange={(e) => setDescription(e.target.value)}
+            maxLength={200} placeholder="Groceries" />
         </label>
         {/* Issue #37 speed entry: the happy path is amount → description →
             save. Date (today), category, who-paid (you), and notes are
@@ -1220,10 +1261,17 @@ export function AddExpenseSheet({ group, user, onClose, onSaved, editing = null,
             onClick={() => fileInput.current?.click()}>
             {scanBusy ? 'Reading…' : receiptId ? '📷 New photo' : '📷 Scan receipt'}
           </button>
-          <button className="btn primary" style={{ flex: 2 }} disabled={!valid || saving}>
+          {/* Pressable even when the form is short of something, so that
+              pressing it can say what: a disabled button answers "why not?"
+              with silence. submit() is what refuses, and it explains itself. */}
+          <button className="btn primary" style={{ flex: 2 }} disabled={saving}>
             {saving ? 'Saving…' : allowDuplicate ? 'Add it anyway' : editing ? 'Save changes' : 'Save expense'}
           </button>
         </div>
+        {saveTried && saveHint !== null && (
+          <p role="alert" aria-live="assertive" className="muted"
+            style={{ padding: '4px 2px', color: 'var(--ss-owe)' }}>{saveHint}</p>
+        )}
         {editing && (
           <div style={{ marginTop: 10 }}>
             <div className="sect" style={{ paddingLeft: 0 }}>Comments</div>

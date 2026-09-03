@@ -469,6 +469,25 @@ final class ReceiptService
     }
 
     /**
+     * An unreadable merchant is null, never "".
+     *
+     * The model does return an empty string — a real scan on 2026-09-03 came
+     * back `merchant: ""` — and an empty string is a *present* value where a
+     * null is an absent one. It defeats every `?? 'Receipt'` fallback in both
+     * clients, and lands in the expense form as a description that looks
+     * filled in behind its placeholder and is not, which is how a user ends up
+     * with a Save button that will not go.
+     */
+    private static function normalizeMerchant(mixed $raw): ?string
+    {
+        if (!is_string($raw)) {
+            return null;
+        }
+        $name = trim($raw);
+        return $name === '' ? null : mb_substr($name, 0, 120);
+    }
+
+    /**
      * Was this reply a door saying no, and which door? Null when it is not a
      * refusal at all and the caller should read the body as the model's answer.
      *
@@ -614,7 +633,7 @@ final class ReceiptService
         }
 
         $parsed = [
-            'merchant' => is_string($doc['merchant'] ?? null) ? mb_substr($doc['merchant'], 0, 120) : null,
+            'merchant' => self::normalizeMerchant($doc['merchant'] ?? null),
             'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($doc['date'] ?? '')) ? $doc['date'] : null,
             'currency' => $currency,
             // The scale the *Minor fields are written in. With no currency
