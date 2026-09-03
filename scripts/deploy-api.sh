@@ -94,9 +94,15 @@ LOCAL_LLM_TIMEOUT=90
 # is unquoted, so they would run as a command.)
 LOCAL_LLM_PARALLEL=1
 # The token the house-side front door expects (#119). Ollama has no auth of
-# its own and that relay port is on the public internet, so without this the
+# its own and that port is on the public internet, so without this the
 # endpoint is open to anyone who finds it — which is why it was switched off.
 LOCAL_LLM_TOKEN=${PROD_LLM_TOKEN:-}
+# Cloudflare Access service token for the tunnel that publishes the model host
+# (#124). Access is the outer door and answers 403 before the request ever
+# reaches nginx; the bearer token above is the inner one. Both empty is a
+# valid configuration - it means no Access in front, as on a LAN address.
+LOCAL_LLM_CF_ACCESS_ID=${PROD_LLM_CF_ACCESS_ID:-}
+LOCAL_LLM_CF_ACCESS_SECRET=${PROD_LLM_CF_ACCESS_SECRET:-}
 EOF
 cp "$REPO/scripts/prod/mysql-ca.pem" "$CONFDIR/mysql-ca.pem"
 # The Apple key travels with the config; it is referenced by path on

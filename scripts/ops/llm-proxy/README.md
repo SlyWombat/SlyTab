@@ -1,23 +1,30 @@
 # The front door in front of Ollama (#119 auth · #123 load sharing)
 
-SlyTab's receipt scanning calls a vision model on house hardware. The
-route from the API to that model runs through a relay that publishes it on
-the public internet, and **Ollama has no authentication of its own** — so on
-2026-08-19 the relay entry was switched off, which closed the hole and took
-receipt scanning down with it.
+SlyTab's receipt scanning calls a vision model on house hardware. The route
+from the API to that model runs over the public internet, and **Ollama has no
+authentication of its own** — so on 2026-08-19 the relay entry that carried it
+was switched off, which closed the hole and took receipt scanning down with it.
 
 This is what makes it safe to turn back on, and — since 2026-09-01 — what
 lets more than one machine serve it. nginx listens on `127.0.0.1:11435` (the
-address the relay dials), answers `401` to everything that does not carry
-SlyTab's token, and spreads receipts across every Ollama listed in
-`backends`, stepping around one that is down.
+address the tunnel dials), answers `401` to everything that does not carry
+SlyTab's token, and spreads receipts across every Ollama listed in `backends`
+— by weight, since they are not equally fast — stepping around one that is
+down.
 
 ```
-API ──relay──▶ nginx :11435 ──▶ 127.0.0.1:11434   (kdocker2's Ollama)
-     token        least_conn ──▶ 192.168.x.y:11434 (the next box, when it lands)
-                                  ▲
-                 healthcheck.sh ──┘ every minute: advertises our model? resident?
+API ──Cloudflare Access──▶ tunnel ──▶ nginx :11435 ──▶ 127.0.0.1:11434    (kdocker2, iGPU)
+      service token                   bearer token ──▶ 192.168.10.38:11434 (kdocker3, R9700)
+                                        least_conn      ▲
+                                                        │ every minute:
+                                      healthcheck.sh ───┘ advertises our model? resident?
 ```
+
+Since #124 the path in front of the door is a Cloudflare tunnel rather than
+the house relay, and there is a door on **each** house box, so scanning no
+longer dies with kdocker2. The API sends `CF-Access-Client-Id` /
+`CF-Access-Client-Secret` as well as its bearer token; see
+`docs/llm-requirements.md`.
 
 ## Files
 
@@ -26,7 +33,7 @@ API ──relay──▶ nginx :11435 ──▶ 127.0.0.1:11434   (kdocker2's Ol
 | `nginx.conf.tmpl` | the config, with `__TOKEN__` and `__UPSTREAMS__` placeholders |
 | `render.sh` | template + token + backends → `nginx.conf`; validates with `nginx -t` first; `--apply` reloads |
 | `healthcheck.sh` | the active check; renders `down` onto sick backends; warms the model; writes `status/status.json` |
-| `backends.example` | copy to `backends`: one `host:port` per line |
+| `backends.example` | copy to `backends`: one `host:port` per line, plus optional `weight=N` / `backup` |
 | `docker-compose.yml` | `nginx:1.27-alpine`, host networking |
 
 On kdocker2 these live in `/data/stacks/slytab/llm-proxy/` (owner `dave`),
@@ -63,12 +70,46 @@ only** to `~/llm-health.log`:
    listens on the LAN (`OLLAMA_HOST=0.0.0.0:11434`) — **and only the LAN**.
    The front door authenticates; the backends still do not, so they must not
    be reachable from anywhere the front door is not.
-2. Append `host:port` to `$D/backends`.
+2. Append `host:port` to `$D/backends`, with a `weight=` if it is not the
+   equal of the others (below).
 3. Wait a minute. `healthcheck.sh` sees it advertise the model, renders it
    into the upstream, reloads nginx, and warms the model in. `status.json`
    shows it. Nothing on the API side changes for that — but do raise
    `LOCAL_LLM_PARALLEL` in `scripts/deploy-api.sh` to the number of backends
    and redeploy, or the API will keep admitting one receipt at a time.
+4. Run the corpus against the new box directly, before it takes live
+   receipts — `LOCAL_LLM_URL=http://host:port vendor/bin/phpunit --filter
+   ReceiptCorpusTest`. A backend that answers with a different ollama version
+   or a re-pulled tag reads receipts *wrongly*, not not-at-all, and nginx
+   cannot tell the difference. The weekly
+   `scripts/worker/model-corpus-check.sh` then covers it on every run: it
+   reads this same file and tests each backend separately.
+
+### Weights, and a backup
+
+A backends line may carry nginx upstream flags after the address:
+
+```
+192.168.10.38:11434 weight=3     # kdocker3, R9700 — ~3.4 s warm
+127.0.0.1:11434                  # kdocker2, iGPU  — ~6.7 s warm
+```
+
+`least_conn` alone treats the boxes as equals, and they are not: measured on
+2026-09-03 (#124) kdocker3 parses a receipt in 3.4 s warm where kdocker2's
+iGPU takes 6.7 s, so an unweighted pool still sends half of every day's
+receipts to the slow one. `weight=N` is the share; `backup` goes further and
+keeps a box out of rotation entirely until no primary is up, which is what you
+want for a machine that is a fallback rather than a peer.
+
+`max_fails=` and `fail_timeout=` may be overridden the same way; anything else
+is refused by `render.sh` rather than rendered, because an unknown word would
+otherwise only surface later as an `nginx -t` failure with the door left on
+its old config. At least one backend must be a primary — an upstream of
+nothing but `backup` servers does not load.
+
+`healthcheck.sh` reads only the address from these lines. Health and weight
+are separate questions: the check decides `down`, the flags decide the share
+among whatever is up.
 
 Do **not** list a backend on one of kdocker2's own macvlan addresses: the
 host cannot reach those (macvlan host isolation), so it would look dead for
@@ -103,17 +144,16 @@ of a reboot.
 
 ## The last mile is not ours
 
-The relay entry that carries this to the API lives in **SlyTesla's** tree,
-`/data/stacks/tesla-log/relay/client.toml`, and must point at **11435**, not
-11434 — pointing it back at Ollama directly would restore the open endpoint
-this exists to close:
+What carries this to the API is a **Cloudflare tunnel** published as
+`llm.slymega.com` and gated by Cloudflare Access, built and owned house-side
+(SlyWombat/house-network-ops#102) — the same pattern as SlyTesla's
+`tesla.slymega.com`. It must point at **11435**, not 11434: pointing it back
+at Ollama directly would restore the open endpoint this exists to close.
 
-    [client.services.slytab-ollama]
-    token = "default_token"
-    local_addr = "127.0.0.1:11435"
-
-Then `docker restart tesla-relay-client`. Receipt scanning is down until that
-happens (it has been since 2026-08-19).
+This replaced the house relay entry, which was closed on 2026-08-19 (#119)
+and took receipt scanning down with it. SlyTab's side of the switch is
+`LOCAL_LLM_URL`, plus the Access service token in `LOCAL_LLM_CF_ACCESS_ID` /
+`LOCAL_LLM_CF_ACCESS_SECRET` — see `docs/llm-requirements.md`.
 
 ## Sizes
 

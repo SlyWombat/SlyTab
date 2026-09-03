@@ -3,16 +3,20 @@
 # Ollama has no authentication of its own and was, until 2026-08-19, reachable
 # from the public internet through the house relay — which is why receipt
 # scanning was switched off. This is what makes it safe to turn back on: the
-# relay points at THIS, on 127.0.0.1:11435, and it answers nothing at all
-# without the shared token SlyTab's API sends.
+# Cloudflare tunnel that replaced the relay (#124) points at THIS, on
+# 127.0.0.1:11435, and it answers nothing at all without the shared token
+# SlyTab's API sends. Cloudflare Access is the outer door on that tunnel and
+# has already turned away anything without SlyTab's service token; this is the
+# inner one, and it is the only one that exists on the LAN side.
 #
 # It is also where "more boxes" plug in (#123, requirement 2). The upstream
 # block below is rendered from the `backends` file beside this template, one
-# Ollama per line; nginx spreads receipts across them by least connections and
-# steps around one that refuses connections. `healthcheck.sh` (cron, every
-# minute) does the active half — marks a backend `down` when it stops
-# advertising our model, warms the model back in after a host reset, and
-# reloads nginx only when something changed.
+# Ollama per line; nginx spreads receipts across them by least connections —
+# weighted, since the boxes are not equally fast — and steps around one that
+# refuses connections. `healthcheck.sh` (cron, every minute) does the active
+# half — marks a backend `down` when it stops advertising our model, warms the
+# model back in after a host reset, and reloads nginx only when something
+# changed.
 #
 # Rendered by render.sh with the token and the upstream list substituted; the
 # rendered file is 0600 and the token never appears in a repo.
@@ -44,6 +48,8 @@ http {
 
   # The Ollama pool. `least_conn` because a receipt parse is a single long
   # request per backend: the backend with the fewest in flight is the idle one.
+  # A `weight=N` on a server is how the fast box takes the larger share —
+  # least_conn alone treats a 3.4 s box and a 6.7 s box as equals (#124).
   # `max_fails=1 fail_timeout=20s` is the passive check — one refused
   # connection sidelines a backend for 20 s. The active check is
   # healthcheck.sh, which renders `down` onto backends that answer but do not

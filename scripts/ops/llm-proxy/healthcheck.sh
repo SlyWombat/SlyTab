@@ -53,7 +53,9 @@ PYEOF
 HEALTHY=()
 DETAILS=()
 while read -r line; do
-  addr="${line%%#*}"; addr="$(echo "$addr" | tr -d '[:space:]')"
+  # A backends line may carry nginx flags after the address (`weight=3`,
+  # `backup` — render.sh reads those). Health is about the address alone.
+  read -r addr _ <<<"${line%%#*}"
   [ -n "$addr" ] || continue
   tags="$(curl -sS -m 4 "http://$addr/api/tags" 2>/dev/null)" || tags=""
   if [ -z "$tags" ]; then

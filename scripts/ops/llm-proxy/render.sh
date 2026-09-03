@@ -11,6 +11,19 @@
 # an empty upstream — while sending it nothing. healthcheck.sh is the normal
 # caller; by hand, run it with no HEALTHY to render every backend up.
 #
+# A line may carry nginx upstream flags after the address, space separated:
+#
+#   192.168.10.38:11434 weight=3     # three receipts here for every one elsewhere
+#   127.0.0.1:11434 backup           # only when no primary is up
+#
+# That matters because the boxes are not equals: kdocker3 (R9700) parses a
+# receipt in ~3.4 s warm where kdocker2's iGPU takes ~6.7 s (#124), and plain
+# `least_conn` over the two would still send half of them to the slow one.
+# Recognised: `weight=N`, `backup`, and overrides of the per-server defaults
+# `max_fails=1` / `fail_timeout=20s`. Anything else is refused here rather than
+# rendered — an unknown word would only fail later, in `nginx -t`, with the
+# door left on its old config and no clue why.
+#
 # Prints "changed" or "unchanged" so a cron caller can stay quiet.
 set -euo pipefail
 D="$(cd "$(dirname "$0")" && pwd)"
@@ -22,16 +35,42 @@ OUT="$D/nginx.conf"
 [ -s "$BACKENDS_FILE" ] || { echo "no backends at $BACKENDS_FILE — one host:port per line" >&2; exit 1; }
 
 UPSTREAMS=""
+PRIMARIES=0
 while read -r line; do
-  addr="${line%%#*}"; addr="$(echo "$addr" | tr -d '[:space:]')"
+  read -r addr flags <<<"${line%%#*}"
   [ -n "$addr" ] || continue
-  flag=""
+
+  # Per-server defaults, overridable by a flag on the line. Held in variables
+  # rather than appended, so `max_fails=2` REPLACES the default instead of
+  # emitting the directive twice (which nginx rejects).
+  max_fails="max_fails=1"
+  fail_timeout="fail_timeout=20s"
+  weight=""
+  backup=""
+  for f in $flags; do
+    case "$f" in
+      backup)                              backup=" backup" ;;
+      weight=[1-9]|weight=[1-9][0-9])      weight=" $f" ;;
+      max_fails=[0-9]|max_fails=[0-9][0-9]) max_fails="$f" ;;
+      fail_timeout=[1-9]*[sm])             fail_timeout="$f" ;;
+      *) echo "backends: $addr carries an unrecognised flag '$f' — refusing to render" >&2; exit 1 ;;
+    esac
+  done
+  [ -n "$backup" ] || PRIMARIES=$((PRIMARIES + 1))
+
+  # `down` is the health verdict and outranks everything: healthcheck.sh
+  # decides it, this script only writes it down.
+  down=""
   if [ "${HEALTHY+set}" = set ]; then
-    case " $HEALTHY " in *" $addr "*) ;; *) flag=" down";; esac
+    case " $HEALTHY " in *" $addr "*) ;; *) down=" down";; esac
   fi
-  UPSTREAMS+="    server ${addr} max_fails=1 fail_timeout=20s${flag};"$'\n'
+  UPSTREAMS+="    server ${addr} ${max_fails} ${fail_timeout}${weight}${backup}${down};"$'\n'
 done < "$BACKENDS_FILE"
 [ -n "$UPSTREAMS" ] || { echo "backends file names no backend" >&2; exit 1; }
+# nginx has no upstream without a primary: a pool of nothing but `backup`
+# servers fails `nginx -t`, and would leave the door on its old config with
+# only nginx's own wording to explain it.
+[ "$PRIMARIES" -gt 0 ] || { echo "every backend is marked \`backup\` — at least one must be a primary" >&2; exit 1; }
 
 NEW="$(mktemp)"
 trap 'rm -f "$NEW"' EXIT

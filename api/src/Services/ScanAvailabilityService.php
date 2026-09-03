@@ -139,17 +139,33 @@ final class ScanAvailabilityService
     }
 
     /**
-     * The same headers a parse sends. The front door (#119) answers 401 to
-     * anything without SlyTab's token — /api/tags included, deliberately, since
-     * a model list is a fingerprint — so a probe without it would report the
-     * scanner offline for as long as it was actually working.
+     * The same headers a parse sends — and it must stay the same set, or this
+     * reports on a door the parse does not go through.
+     *
+     * The front door (#119) answers 401 to anything without SlyTab's token —
+     * /api/tags included, deliberately, since a model list is a fingerprint —
+     * and since #124 Cloudflare Access stands in front of that and answers 403
+     * to anything without the service token. A probe missing either would
+     * report the scanner offline for exactly as long as it was working.
+     * Both are optional: a dev Ollama with no doors in front of it gets
+     * neither. Mirrors `ReceiptService::localHeaders()`.
      *
      * @return list<string>
      */
     private static function headers(): array
     {
+        $headers = [];
         $token = Env::get('LOCAL_LLM_TOKEN');
-        return $token === '' ? [] : ["Authorization: Bearer {$token}"];
+        if ($token !== '') {
+            $headers[] = "Authorization: Bearer {$token}";
+        }
+        $cfId = Env::get('LOCAL_LLM_CF_ACCESS_ID');
+        $cfSecret = Env::get('LOCAL_LLM_CF_ACCESS_SECRET');
+        if ($cfId !== '' && $cfSecret !== '') {
+            $headers[] = "CF-Access-Client-Id: {$cfId}";
+            $headers[] = "CF-Access-Client-Secret: {$cfSecret}";
+        }
+        return $headers;
     }
 
     /**
@@ -165,6 +181,8 @@ final class ScanAvailabilityService
             CURLOPT_CONNECTTIMEOUT => 2,
             // Short on purpose: this runs while a user waits for a screen to render.
             // Parsing gets a long timeout; asking whether the door is open does not.
+            // Cloudflare Access and the tunnel (#124) add ~30-60 ms to a /api/tags
+            // that already answers in single-digit ms, so 2 s / 4 s still has room.
             CURLOPT_TIMEOUT => 4,
         ]);
         $body = curl_exec($ch);

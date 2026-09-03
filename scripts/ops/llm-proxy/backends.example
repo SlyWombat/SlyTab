@@ -1,6 +1,17 @@
-# One Ollama per line, host:port. Copy to `backends` beside nginx.conf.tmpl.
-# healthcheck.sh probes each every minute; render.sh turns this into nginx's
-# upstream block. A backend on another machine is just its LAN address — but
-# not one of kdocker2's own macvlan addresses (the host cannot reach those).
-127.0.0.1:11434
-# 192.168.10.31:11434   # the second box, when it arrives (house replacement analysis, 2026-08-27)
+# One Ollama per line, `host:port` and optional nginx upstream flags. Copy to
+# `backends` beside nginx.conf.tmpl. healthcheck.sh probes each address every
+# minute; render.sh turns the whole line into nginx's upstream block. A backend
+# on another machine is just its LAN address — but not one of kdocker2's own
+# macvlan addresses (the host cannot reach those).
+#
+# Flags, after the address:
+#   weight=N        share of receipts relative to the others (default 1)
+#   backup          only used when no primary is up
+#   max_fails=N     override the default passive check (max_fails=1)
+#   fail_timeout=Ns override the default sideline period (fail_timeout=20s)
+#
+# The boxes are not equals, so plain least_conn is not what you want: kdocker3
+# parses a receipt in ~3.4 s warm against kdocker2's ~6.7 s (#124). Weighted,
+# the fast box takes the share it can actually turn around.
+192.168.10.38:11434 weight=3     # kdocker3, Radeon AI PRO R9700 32 GB
+127.0.0.1:11434                  # kdocker2, iGPU — slower, still useful

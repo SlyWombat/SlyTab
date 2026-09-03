@@ -17,11 +17,15 @@
 # committed):
 #   1. syncs api/ from this checkout into the harness (never .env);
 #   2. runs ReceiptCorpusTest against the pinned model (`LOCAL_LLM_MODEL`, from
-#      the front door's `model` file) through the HOST's Ollama;
+#      the front door's `model` file) on EVERY backend in the door's `backends`
+#      file, each one directly, not through the door — since #124 there are two
+#      boxes and a receipt lands on whichever nginx picks, so a smoke alarm
+#      that only watched this host would miss half the receipts going wrong;
 #   3. optionally screens CANDIDATE models listed one per line in
-#      ~/.slytab-corpus-candidates — reported, never gating;
-#   4. mails the owner on a pinned-model failure, with the test's own
-#      diagnosis (what was resident, how long it took). A pass is a log line.
+#      ~/.slytab-corpus-candidates — reported, never gating, on one backend;
+#   4. mails the owner when the pinned model fails on ANY backend, with the
+#      test's own diagnosis (what was resident, how long it took) and which
+#      box it was. A pass is a log line.
 #
 # Notify-only. It changes no pin and restarts nothing.
 set -uo pipefail
@@ -55,28 +59,50 @@ rsync -a --delete \
 docker start slytab-test-mysql >/dev/null 2>&1 || true
 GW="$(docker network inspect slytab-test-net -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1)"
 
-run_corpus() { # run_corpus <model> -> prints phpunit tail, returns its exit code
+# Every backend the door fans out to (#124). A line may carry nginx flags after
+# the address (`weight=3`, `backup`) — the address is the first field. This
+# host's own Ollama is `127.0.0.1:11434` in that file and unreachable under
+# that name from inside the test container, so it becomes the bridge gateway.
+BACKENDS=()
+while read -r line; do
+  read -r a _ <<<"${line%%#*}"
+  [ -n "$a" ] || continue
+  case "$a" in 127.0.0.1:*|localhost:*) a="$GW:${a##*:}";; esac
+  BACKENDS+=("$a")
+done < <(cat "$FRONT/backends" 2>/dev/null || echo 127.0.0.1:11434)
+[ "${#BACKENDS[@]}" -gt 0 ] || BACKENDS=("$GW:11434")
+
+run_corpus() { # run_corpus <model> <host:port> -> prints phpunit tail, returns its exit code
   docker run --rm --network slytab-test-net \
     -v "$HARNESS":/repo -w /repo/api \
     -e DB_HOST=slytab-test-mysql -e DB_PORT=3306 -e DB_NAME=slytab_test -e DB_TEST_NAME=slytab_test \
     -e DB_USER=slytab -e DB_PASS=ci \
     -e SESSION_PEPPER=ci-only -e INVITE_HMAC_KEY=ci-only -e MIGRATE_TOKEN=ci-only \
-    -e LOCAL_LLM_URL="http://$GW:11434" -e LOCAL_LLM_MODEL="$1" -e LOCAL_LLM_TIMEOUT="${LOCAL_LLM_TIMEOUT:-90}" \
+    -e LOCAL_LLM_URL="http://$2" -e LOCAL_LLM_MODEL="$1" -e LOCAL_LLM_TIMEOUT="${LOCAL_LLM_TIMEOUT:-90}" \
     slytab-php:dev sh -c "vendor/bin/phpunit --filter ReceiptCorpusTest --testdox 2>&1" 2>&1
 }
 
-say "pinned model $MODEL via $GW:11434"
-OUT="$(run_corpus "$MODEL")"; RC=$?
-SUMMARY="$(printf '%s\n' "$OUT" | grep -E '^(OK|FAILURES|ERRORS|Tests:|No tests)' | tail -2 | tr '\n' ' ')"
-if [ "$RC" -eq 0 ]; then
-  say "PASS — $SUMMARY"
-else
-  say "FAIL — $SUMMARY"
+FAILED=()
+for BE in "${BACKENDS[@]}"; do
+  say "pinned model $MODEL via $BE"
+  T0=$(date +%s)
+  OUT="$(run_corpus "$MODEL" "$BE")"; RC=$?
+  SUMMARY="$(printf '%s\n' "$OUT" | grep -E '^(OK|FAILURES|ERRORS|Tests:|No tests)' | tail -2 | tr '\n' ' ')"
+  if [ "$RC" -eq 0 ]; then
+    say "PASS on $BE in $(( $(date +%s) - T0 ))s — $SUMMARY"
+    continue
+  fi
+  FAILED+=("$BE")
+  say "FAIL on $BE — $SUMMARY"
   printf '%s\n' "$OUT" | tail -40
-  mail_to "SlyTab receipt reader: the corpus FAILED on $MODEL" \
-"The weekly receipt corpus run on kdocker2 failed against the pinned model ($MODEL).
+  mail_to "SlyTab receipt reader: the corpus FAILED on $MODEL at $BE" \
+"The weekly receipt corpus run on kdocker2 failed against the pinned model ($MODEL) on backend $BE.
 
 $SUMMARY
+
+Receipts are shared across every backend behind the front door, so one bad box
+means a share of live scans are wrong — not all of them, which is why nobody
+may have noticed.
 
 This is the money check: real receipts re-parsed through the live model, totals asserted exactly. A failure here means receipt scanning is returning wrong numbers or not returning at all, even though the app may still look fine.
 
@@ -89,32 +115,39 @@ The test's own diagnosis follows.
 
 $(printf '%s\n' "$OUT" | tail -40)
 
-Nothing was changed automatically."
-fi
+Nothing was changed automatically. To take the box out of rotation, mark it
+\`down\` by stopping its Ollama, or remove its line from $FRONT/backends —
+healthcheck.sh re-renders nginx within the minute."
+done
+[ "${#FAILED[@]}" -eq 0 ] || say "backends failing: ${FAILED[*]}"
 
-# 3. candidates: screened, reported, never gating.
+# 3. candidates: screened, reported, never gating. One backend is enough — a
+# candidate is being judged on how it reads receipts, not on which box it sat
+# on — and each run loads a second model onto that GPU, which is the very
+# neighbour this test exists to catch.
+CAND_BE="${BACKENDS[0]}"
 if [ -s "$CANDIDATES_FILE" ]; then
   while read -r cand; do
     cand="${cand%%#*}"; cand="$(echo "$cand" | tr -d '[:space:]')"
     [ -n "$cand" ] || continue
     T0=$(date +%s)
-    COUT="$(run_corpus "$cand")"; CRC=$?
-    say "candidate $cand: $([ $CRC -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - T0 ))s — $(printf '%s\n' "$COUT" | grep -E '^(OK|FAILURES|ERRORS|Tests:)' | tail -1)"
+    COUT="$(run_corpus "$cand" "$CAND_BE")"; CRC=$?
+    say "candidate $cand on $CAND_BE: $([ $CRC -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - T0 ))s — $(printf '%s\n' "$COUT" | grep -E '^(OK|FAILURES|ERRORS|Tests:)' | tail -1)"
   done < "$CANDIDATES_FILE"
 fi
 
 # Leave the GPU as we found it for the pinned model: candidates were loaded
 # with SlyTab's keep_alive -1, and a spare 6-20 GB model resident is exactly
 # the neighbour this test exists to catch. Unload anything that is not ours.
-curl -s -m 5 "http://127.0.0.1:11434/api/ps" 2>/dev/null | python3 -c '
+curl -s -m 5 "http://$CAND_BE/api/ps" 2>/dev/null | python3 -c '
 import json,sys,urllib.request
 keep=sys.argv[1]
 for m in json.load(sys.stdin).get("models",[]):
     n=m.get("name","")
     if n and n!=keep and n!=keep+":latest":
-        req=urllib.request.Request("http://127.0.0.1:11434/api/generate",
+        req=urllib.request.Request("http://%s/api/generate" % sys.argv[2],
             data=json.dumps({"model":n,"keep_alive":0}).encode(),headers={"Content-Type":"application/json"})
         try: urllib.request.urlopen(req,timeout=30); print("unloaded",n)
         except Exception as e: print("could not unload",n,e)
-' "$MODEL" 2>/dev/null | while read -r l; do say "$l"; done
+' "$MODEL" "$CAND_BE" 2>/dev/null | while read -r l; do say "$l"; done
 exit 0

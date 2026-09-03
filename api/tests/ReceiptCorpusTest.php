@@ -74,10 +74,21 @@ final class ReceiptCorpusTest extends TestCase
 
     private static function get(string $url, int $timeout): ?string
     {
+        // The same doors parseLocal goes through, or the preflight reports a
+        // host down that is merely shut to us: the front door's bearer token
+        // (#119) and, when the host is reached over the tunnel, the Cloudflare
+        // Access service token (#124). Both optional — a LAN address needs
+        // neither.
         $headers = [];
         $token = getenv('LOCAL_LLM_TOKEN') ?: '';
         if ($token !== '') {
             $headers[] = "Authorization: Bearer {$token}";
+        }
+        $cfId = getenv('LOCAL_LLM_CF_ACCESS_ID') ?: '';
+        $cfSecret = getenv('LOCAL_LLM_CF_ACCESS_SECRET') ?: '';
+        if ($cfId !== '' && $cfSecret !== '') {
+            $headers[] = "CF-Access-Client-Id: {$cfId}";
+            $headers[] = "CF-Access-Client-Secret: {$cfSecret}";
         }
         $ch = curl_init($url);
         curl_setopt_array($ch, [

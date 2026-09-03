@@ -158,9 +158,13 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
   available"*) — no latency budget, because a slow answer is still an answer
   and the passing model's honest range is 3.5–8.0 s. A host that answers while
   lacking `LOCAL_LLM_MODEL` counts as **un**available: it would fail at parse
-  time, after the user has already taken the photograph. The probe carries the
-  front door's token (`LOCAL_LLM_TOKEN`), since the door answers 401 to
-  everything else — `/api/tags` included.
+  time, after the user has already taken the photograph. The probe carries
+  every credential a parse carries — the front door's token
+  (`LOCAL_LLM_TOKEN`) and the Cloudflare Access service token
+  (`LOCAL_LLM_CF_ACCESS_ID` / `LOCAL_LLM_CF_ACCESS_SECRET`, issue #124) — since
+  each door refuses without its own: 401 and 403 respectively, `/api/tags`
+  included. A probe missing one reports scanning offline for exactly as long
+  as it is working.
 - **FR-4.9 (MUST)** When scanning is unavailable the client **shows the control
   disabled with the reason**, rather than hiding it (owner, 2026-09-01). A
   vanished button teaches nobody that the feature exists, and the fallback is
@@ -178,6 +182,10 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
     warms the model back in after a host reset. Adding a machine is a line in
     the door's `backends` file plus `LOCAL_LLM_PARALLEL=N` on the API. With no
     healthy backend the door answers 502, which FR-4.8 reports as offline.
+    Backends need not be equals: a line may carry `weight=N` (share) or
+    `backup` (only when no primary is up), because plain least-connections
+    over a 3.4 s box and a 6.7 s one still sends half the receipts to the slow
+    one (#124).
   - *Queuing.* The API admits at most `LOCAL_LLM_PARALLEL` parses at once (one
     per backend; flock slots, so a crashed parse frees its own). A scan that
     cannot start is **not refused and not held open** — the photo is stored,

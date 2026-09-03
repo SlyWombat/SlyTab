@@ -4,7 +4,8 @@ import { allAssigned as allItemsAssigned, assignedShares, categoryLabel, CATEGOR
 import {
   api, ApiFailure, getCapabilities,
   type Balances, type Expense, type Group, type GroupTotals, type Member,
-  type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type SplitwiseGroup, type User,
+  type ActivityItem, type Comment, type ImportResult, type ParsedReceipt, type ReceiptResult,
+  type SplitwiseGroup, type User,
 } from '../api';
 import { foldSummaryLines } from '@slytab/core';
 import { CategoriesScreen } from './Categories';

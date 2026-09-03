@@ -440,6 +440,73 @@ final class ReceiptService
     }
 
     /**
+     * The headers that get a request past everything standing in front of the
+     * model. Both credentials are optional, so a dev box talking straight to
+     * its own Ollama sends neither and behaves exactly as it always did.
+     *
+     * Two doors since #124: Cloudflare Access at the edge of the tunnel that
+     * publishes the model host, which checks a service token; then SlyTab's
+     * own nginx front door (#119), which checks a bearer token. Ollama has no
+     * authentication of its own, so all of the protection is out here — the
+     * same pattern SlyTesla uses for its own hostname.
+     *
+     * @return list<string>
+     */
+    private static function localHeaders(): array
+    {
+        $headers = [];
+        $token = Env::get('LOCAL_LLM_TOKEN');
+        if ($token !== '') {
+            $headers[] = "Authorization: Bearer {$token}";
+        }
+        $cfId = Env::get('LOCAL_LLM_CF_ACCESS_ID');
+        $cfSecret = Env::get('LOCAL_LLM_CF_ACCESS_SECRET');
+        if ($cfId !== '' && $cfSecret !== '') {
+            $headers[] = "CF-Access-Client-Id: {$cfId}";
+            $headers[] = "CF-Access-Client-Secret: {$cfSecret}";
+        }
+        return $headers;
+    }
+
+    /**
+     * Was this reply a door saying no, and which door? Null when it is not a
+     * refusal at all and the caller should read the body as the model's answer.
+     *
+     * The two are worth telling apart because different people fix them in
+     * different places: an Access refusal is the service token in
+     * `LOCAL_LLM_CF_ACCESS_ID` / `LOCAL_LLM_CF_ACCESS_SECRET` (or the Access
+     * policy itself, which is house-side), a 401 is `LOCAL_LLM_TOKEN` against
+     * the front door's `token` file. Cloudflare answers 403 with an HTML page,
+     * or redirects to its login screen; the front door answers 401 with the
+     * single word `unauthorized`. Neither is JSON, so without this both would
+     * surface as a JsonException about a syntax error, which names nothing.
+     *
+     * None of this text reaches the user: both mean the reader is shut, and
+     * `ScanAvailabilityService` probes the same doors with the same headers,
+     * so the scan buttons are already disabled before a photo is taken (#123).
+     * This is for `error_log` and whoever reads it.
+     */
+    private static function describeRefusal(int $code, string $raw): ?string
+    {
+        if ($code === 403 || ($code >= 300 && $code < 400)) {
+            return sprintf(
+                'Cloudflare Access refused the request (HTTP %d) — check %s / %s, '
+                . 'and that the service token is still in the Access policy',
+                $code,
+                'LOCAL_LLM_CF_ACCESS_ID',
+                'LOCAL_LLM_CF_ACCESS_SECRET',
+            );
+        }
+        if ($code === 401 || trim($raw) === 'unauthorized') {
+            // The front door answered, the token did not match. Worth its own
+            // message: everything else here means "the model struggled", and
+            // this means nobody has updated LOCAL_LLM_TOKEN.
+            return 'local model refused the token — check LOCAL_LLM_TOKEN';
+        }
+        return null;
+    }
+
+    /**
      * Local vision model via Ollama (default qwen2.5vl:7b). The model
      * transcribes amounts as printed TEXT, separators and all; the server
      * turns that into minor units using the currency's rules and recomputes
@@ -489,17 +556,11 @@ final class ReceiptService
             ]],
         ], JSON_THROW_ON_ERROR);
 
-        // The house Ollama has no authentication of its own, and the relay
-        // that carries it reaches the public internet (#119). So SlyTab does
-        // not talk to Ollama directly any more: it talks to a front door that
-        // requires this token and passes nothing through without it. Optional,
-        // because a local dev Ollama on the same machine needs no such thing —
-        // and absent, the request goes out exactly as it always did.
-        $headers = ['Content-Type: application/json'];
-        $llmToken = Env::get('LOCAL_LLM_TOKEN');
-        if ($llmToken !== '') {
-            $headers[] = "Authorization: Bearer {$llmToken}";
-        }
+        // The house Ollama has no authentication of its own and is published
+        // to the internet, so SlyTab does not talk to it directly: it talks
+        // through Cloudflare Access and a token-checking front door. Both
+        // credentials are optional — see localHeaders().
+        $headers = array_merge(['Content-Type: application/json'], self::localHeaders());
 
         $ch = curl_init(rtrim($baseUrl, '/') . '/api/chat');
         curl_setopt_array($ch, [
@@ -512,15 +573,14 @@ final class ReceiptService
         ]);
         $raw = curl_exec($ch);
         $err = curl_error($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
         if ($raw === false) {
             throw new \RuntimeException("local model unreachable: {$err}");
         }
-        if (trim((string) $raw) === 'unauthorized') {
-            // The front door answered, the token did not match. Worth its own
-            // message: everything else here means "the model struggled", and
-            // this means nobody has updated LOCAL_LLM_TOKEN.
-            throw new \RuntimeException('local model refused the token — check LOCAL_LLM_TOKEN');
+        $refusal = self::describeRefusal($code, (string) $raw);
+        if ($refusal !== null) {
+            throw new \RuntimeException($refusal);
         }
         $resp = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
         if (isset($resp['error'])) {

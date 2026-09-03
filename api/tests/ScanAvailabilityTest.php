@@ -33,7 +33,10 @@ final class ScanAvailabilityTest extends TestCase
     protected function tearDown(): void
     {
         ScanAvailabilityService::forget();
-        foreach (['RECEIPT_ENGINE', 'LOCAL_LLM_URL', 'LOCAL_LLM_MODEL', 'ANTHROPIC_API_KEY', 'LOCAL_LLM_TOKEN'] as $k) {
+        foreach ([
+            'RECEIPT_ENGINE', 'LOCAL_LLM_URL', 'LOCAL_LLM_MODEL', 'ANTHROPIC_API_KEY',
+            'LOCAL_LLM_TOKEN', 'LOCAL_LLM_CF_ACCESS_ID', 'LOCAL_LLM_CF_ACCESS_SECRET',
+        ] as $k) {
             putenv($k);
         }
     }
@@ -158,6 +161,49 @@ final class ScanAvailabilityTest extends TestCase
     public function testNoTokenMeansNoAuthorizationHeader(): void
     {
         putenv('LOCAL_LLM_TOKEN=');
+        $seen = null;
+        $svc = new ScanAvailabilityService(function (string $url, array $headers) use (&$seen): array {
+            $seen = $headers;
+            return ['ok' => true, 'body' => self::TAGS];
+        });
+        $svc->status();
+        self::assertSame([], $seen);
+    }
+
+    /**
+     * Cloudflare Access stands in front of the front door (#124) and answers 403
+     * to a request without its service token — so a probe that carried only the
+     * bearer token would report scanning offline for as long as it worked, which
+     * is the same inversion the bearer-token case above guards.
+     */
+    public function testTheProbeCarriesTheAccessServiceToken(): void
+    {
+        putenv('LOCAL_LLM_TOKEN=door-token-1234');
+        putenv('LOCAL_LLM_CF_ACCESS_ID=abc123.access');
+        putenv('LOCAL_LLM_CF_ACCESS_SECRET=cf-service-token');
+        $seen = null;
+        $svc = new ScanAvailabilityService(function (string $url, array $headers) use (&$seen): array {
+            $seen = $headers;
+            return ['ok' => true, 'body' => self::TAGS];
+        });
+        self::assertTrue($svc->status()['available']);
+        self::assertSame([
+            'Authorization: Bearer door-token-1234',
+            'CF-Access-Client-Id: abc123.access',
+            'CF-Access-Client-Secret: cf-service-token',
+        ], $seen);
+    }
+
+    /**
+     * Half a service token is not a credential: sending only the id would be
+     * refused exactly as sending nothing is, so it stays off the request
+     * rather than looking like a configured door in a header dump.
+     */
+    public function testHalfAnAccessTokenSendsNeitherHalf(): void
+    {
+        putenv('LOCAL_LLM_TOKEN=');
+        putenv('LOCAL_LLM_CF_ACCESS_ID=abc123.access');
+        putenv('LOCAL_LLM_CF_ACCESS_SECRET=');
         $seen = null;
         $svc = new ScanAvailabilityService(function (string $url, array $headers) use (&$seen): array {
             $seen = $headers;

@@ -24,13 +24,31 @@ JSON, it is just wrong, and wrong numbers become wrong money.
 follow it without noticing. If you need a hard guarantee, pin the digest
 in `LOCAL_LLM_MODEL` and update it deliberately.
 
-## Where it runs: one front door, N backends (#119, #123)
+## Where it runs: a tunnel, two doors, two backends (#119, #123, #124)
 
 SlyTab never talks to an Ollama directly in production. `LOCAL_LLM_URL`
-points at a **front door** — nginx on kdocker2, `127.0.0.1:11435`, reached
-through the house relay — which requires `LOCAL_LLM_TOKEN` and fans out to
-every backend listed in its `backends` file. `scripts/ops/llm-proxy/README.md`
-is the runbook; the short version:
+points at **`https://llm.slymega.com`**, a Cloudflare tunnel gated by
+Cloudflare Access, which reaches a **front door** — nginx, `127.0.0.1:11435`
+— which requires `LOCAL_LLM_TOKEN` and fans out to every backend listed in
+its `backends` file.
+
+**The relay is gone from this path.** Until 2026-08-19 the last mile was a
+house relay entry publishing the model host on a public port; closing it
+(#119) is what took receipt scanning down. The tunnel replaces it, and there
+is a door on **each** house box, so scanning no longer dies with kdocker2.
+
+The backends, and the ollama pinned on each — both are SlyTab's dependency
+now, not the house's free choice, and neither moves without a corpus run:
+
+| Backend | Hardware | ollama | Warm scan | Notes |
+|---|---|---|---|---|
+| `192.168.10.38:11434` (kdocker3) | Radeon AI PRO R9700 32 GB | **0.33.3** (`ollama/ollama:rocm`, digest-pinned) | **3.4 s** | `weight=3` — it earns the larger share |
+| `127.0.0.1:11434` (kdocker2) | iGPU | **0.30.10** | 6.7 s | the original box; still correct, just slower |
+
+Both run model `qwen2.5vl:7b`, digest `5ced39dfa4ba`. The house falls back to
+`0.31.2-rocm` on kdocker3 if the corpus ever fails there — that is a house
+change, not a SlyTab one. `scripts/ops/llm-proxy/README.md` is the runbook;
+the short version:
 
 - **Availability** is decided per backend, every minute, by
   `healthcheck.sh`: does `/api/tags` answer *and* list the pinned model? A
@@ -47,9 +65,17 @@ is the runbook; the short version:
   parse per backend at a time, the rest in a fair line with feedback
   (FR-4.10). When a backend is added, raise it in `scripts/deploy-api.sh` and
   redeploy.
+- **Share** between backends is `weight=N` on the backends line, because the
+  boxes are not equals: plain `least_conn` over a 3.4 s box and a 6.7 s box
+  still sends half of every day's receipts to the slow one. `backup` keeps a
+  box out of rotation until nothing else is up.
 - **The pinned model tag lives in two places** that must agree: the door's
   `model` file (what "healthy" means) and `LOCAL_LLM_MODEL` in the deployed
   config (what the API asks for). Change both in the same breath.
+- **The availability probe still fits.** `ScanAvailabilityService` gives
+  `/api/tags` 2 s to connect and 4 s in total, on purpose — it runs while a
+  user waits for a screen. Cloudflare Access and the tunnel add roughly
+  30–60 ms to a call that already answers in single-digit milliseconds.
 
 ## Hard requirements for any replacement model
 
@@ -174,8 +200,34 @@ by A/B on this host and independently reproduced with SlyTab's own
 | `qwen3-vl:8b-instruct` | 3/3 exact, but 64–78 s — past the 90 s timeout in practice | 3/3 exact, **3.5–8.0 s** |
 | `laguna-xs-2.1:q8_0` | fails to load (`missing tensor blk.0.attn_g.weight`) | works |
 
-**There is no version where everything works**, and the choice is a package
-deal, not two independent decisions:
+### ollama 0.33.3 on kdocker3: the regression is gone (2026-09-03, #124)
+
+The 0.32.5 breakage above does **not** reproduce on 0.33.3. Measured with
+SlyTab's own `ReceiptCorpusTest` against `192.168.10.38:11434` from the dev
+box, model `qwen2.5vl:7b` warm and resident, nothing else on the GPU:
+
+| | result |
+|---|---|
+| Corpus, three consecutive runs | **3/3 pass each time** — 88930 / 80190 / 450000, currency `CLP`, 17 assertions |
+| Wall clock, all three fixtures | 9.4 s warm (24.4 s on the cold first run) |
+| Determinism, 5 identical parses per fixture at `temperature: 0` | **one distinct result per fixture, 15 parses** — currency, total, subtotal, tax, tip and every line item identical |
+| Per-receipt latency | 1.8–3.6 s |
+
+That settles the two questions #124 raised. The determinism worry came from a
+receipt outside the corpus, where kdocker3 once read `currency: "GTQ",
+currencyExplicit: true` off a street name ("Guatemala 4691") on an Argentine
+receipt and once read `"$", false`. It did not recur on any corpus fixture —
+but note what would happen if it did: `currencyExplicit: true` makes
+`resolveCurrency` prefer the model's answer over the buyer's currency hint, so
+that flap is a wrong currency, not a wrong-looking one. It is a property of
+the model and the receipt rather than of the engine version, and the corpus
+fixtures do not contain a receipt that provokes it.
+
+So the version bind below is about kdocker2's 0.30.10. It does not generalise
+to 0.33.3, which was never tested with the candidate models.
+
+**There is no version where everything works** on 0.30.10, and the choice is a
+package deal, not two independent decisions:
 
 - **Staying on 0.30.10** keeps receipt scanning correct, complete and fast,
   and costs laguna.
@@ -293,39 +345,66 @@ AI service. **Update the policy first**, then the Play Data safety answers,
 then enable the key — in that order. Apple and Google both check the
 policy against actual behaviour.
 
-## Host
+## Hosts
 
-`LOCAL_LLM_URL=http://147.5.121.145:3308` (Ollama), plus **`LOCAL_LLM_TOKEN`,
-which is now required** — see below. Reachable from the production API host
-and from a dev box on the LAN.
+`LOCAL_LLM_URL=https://llm.slymega.com` — the Cloudflare tunnel, from the
+production API host. A dev box on the LAN reaches either backend directly by
+address (`http://192.168.10.38:11434`) and needs no credential for it.
 
-**This host is production.** It is not a scratch box: upgrading it, or
-loading large models beside `qwen2.5vl:7b`, degrades live receipt scanning
-for real users. On 2026-07-27 it was upgraded to 0.32.5 during a
-benchmarking session and receipt scanning silently produced nonsense until
-the rollback. Before touching it, run the corpus; after touching it, run the
+**These hosts are production.** They are not scratch boxes: upgrading one, or
+loading large models beside `qwen2.5vl:7b`, degrades live receipt scanning for
+real users. On 2026-07-27 kdocker2 was upgraded to 0.32.5 during a
+benchmarking session and receipt scanning silently produced nonsense until the
+rollback. Before touching one, run the corpus; after touching it, run the
 corpus again.
 
-## The endpoint is authenticated now (#119)
+With two backends that matters more, not less: nginx spreads receipts across
+both, so **one bad box makes a share of live scans wrong** rather than all of
+them — which is exactly the kind of failure nobody reports.
+`scripts/worker/model-corpus-check.sh` therefore runs the corpus against every
+backend in the door's `backends` file, separately, every week.
 
-That address is a relay port on the public internet, and Ollama has no
+## The endpoint is authenticated now (#119, #124)
+
+The old address was a relay port on the public internet, and Ollama has no
 authentication of its own: for a while, anyone who found `3308` had an
 unrestricted vision model. It was switched off on 2026-08-19, which closed
 the hole and stopped receipt scanning dead — there is no silent fallback to
 Claude (§"If we ever enable the Claude fallback"), so uploads simply failed.
 
-What replaces it: nginx on the house machine, listening on the loopback
-address the relay dials, passing nothing through without SlyTab's token.
-Source and instructions live in `scripts/ops/llm-proxy/`.
+What replaces it is two doors, checked in that order:
 
-So a working production configuration is now three variables, not two:
+1. **Cloudflare Access** on the tunnel that publishes `llm.slymega.com`,
+   which admits a service token and nothing else. Same pattern as SlyTesla's
+   `tesla.slymega.com`. It refuses with **403 and an HTML page**, or a
+   redirect to its login screen, before the request reaches the house at all.
+2. **nginx**, SlyTab's own front door, listening on the loopback address the
+   tunnel dials and passing nothing through without SlyTab's bearer token. It
+   refuses with **401** and the single word `unauthorized`. Source and
+   instructions live in `scripts/ops/llm-proxy/`.
+
+`ReceiptService::describeRefusal` tells those two apart deliberately: neither
+answer is JSON, so without it both surface as a JSON syntax error naming
+nothing, and they are fixed by different people in different places.
+
+So a working production configuration is five variables:
 
 | Variable | Why |
 |---|---|
-| `LOCAL_LLM_URL` | unchanged — the relay port |
+| `LOCAL_LLM_URL` | `https://llm.slymega.com` — the tunnel, not the relay |
 | `LOCAL_LLM_MODEL` | unchanged — `qwen2.5vl:7b` |
-| `LOCAL_LLM_TOKEN` | the front door's token; without it every parse fails with `local model refused the token` |
+| `LOCAL_LLM_TOKEN` | the front door's bearer token; without it every parse fails with `local model refused the token` |
+| `LOCAL_LLM_CF_ACCESS_ID` | Cloudflare Access service token id |
+| `LOCAL_LLM_CF_ACCESS_SECRET` | its secret; without the pair, every parse fails with `Cloudflare Access refused the request (HTTP 403)` |
 
-`scripts/deploy-api.sh` writes it from `PROD_LLM_TOKEN` in the repo env file.
-A dev box talking to a local Ollama directly needs none of this — absent the
-variable, the request goes out exactly as it always did.
+`scripts/deploy-api.sh` writes all three credentials from `PROD_LLM_TOKEN`,
+`PROD_LLM_CF_ACCESS_ID` and `PROD_LLM_CF_ACCESS_SECRET` in the repo env file.
+All three are optional in the code: a dev box talking to a LAN Ollama directly
+sends none of them and the request goes out exactly as it always did. The
+Access pair is all-or-nothing — half a service token is refused exactly as
+none is, so the id alone is not sent.
+
+The availability probe carries the same headers as a parse
+(`ScanAvailabilityService::headers()` mirrors `ReceiptService::localHeaders()`,
+and a test asserts they stay identical). A probe missing a credential would
+report scanning offline for precisely as long as it was working.
