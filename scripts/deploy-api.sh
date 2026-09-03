@@ -85,14 +85,18 @@ APPLE_TEAM_ID=${PROD_APPLE_TEAM_ID:-}
 APPLE_SIWA_KEY_PATH=$APPDIR/apple-siwa.p8
 ANTHROPIC_API_KEY=
 RECEIPT_ENGINE=auto
-LOCAL_LLM_URL=http://147.5.121.145:3308
+# The Cloudflare tunnel that replaced the house relay (#124). The relay entry
+# was closed on 2026-08-19 (#119) and took receipt scanning with it; the port
+# on 147.5.121.145:3308 is dead and must not come back.
+LOCAL_LLM_URL=https://llm.slymega.com
 LOCAL_LLM_MODEL=qwen2.5vl:7b
 LOCAL_LLM_TIMEOUT=90
 # How many receipts may be at the reader at once: one per Ollama behind the
 # front door (#123). Raise it when a backend is added to the door's backends
 # file - scripts/ops/llm-proxy/README.md. (No backticks in this heredoc: it
 # is unquoted, so they would run as a command.)
-LOCAL_LLM_PARALLEL=1
+# Two since 2026-09-03 (#124): each door fans out to both house Ollamas.
+LOCAL_LLM_PARALLEL=2
 # The token the house-side front door expects (#119). Ollama has no auth of
 # its own and that port is on the public internet, so without this the
 # endpoint is open to anyone who finds it — which is why it was switched off.
