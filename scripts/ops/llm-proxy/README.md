@@ -74,9 +74,15 @@ only** to `~/llm-health.log`:
    equal of the others (below).
 3. Wait a minute. `healthcheck.sh` sees it advertise the model, renders it
    into the upstream, reloads nginx, and warms the model in. `status.json`
-   shows it. Nothing on the API side changes for that — but do raise
-   `LOCAL_LLM_PARALLEL` in `scripts/deploy-api.sh` to the number of backends
-   and redeploy, or the API will keep admitting one receipt at a time.
+   shows it. Nothing on the API side changes for that — but consider whether
+   `LOCAL_LLM_PARALLEL` in `scripts/deploy-api.sh` should go up. It is the
+   number of backends that actually **serve and run concurrently**, which is
+   not the number of lines in this file: a `backup` does not serve, and an
+   Ollama that runs one request at a time gains nothing from a second slot.
+   Measure before raising it — fire two parses at the same instant and compare
+   the elapsed times. Equal means concurrent; doubled means a queue the user
+   cannot see, which is worse than a queue they can (FR-4.10). On 2026-09-03
+   the answer was 1, with two backends listed.
 4. Run the corpus against the new box directly, before it takes live
    receipts — `LOCAL_LLM_URL=http://host:port vendor/bin/phpunit --filter
    ReceiptCorpusTest`. A backend that answers with a different ollama version
@@ -89,9 +95,18 @@ only** to `~/llm-health.log`:
 
 A backends line may carry nginx upstream flags after the address:
 
+What the house actually runs, since 2026-09-03:
+
 ```
-192.168.10.38:11434 weight=3     # kdocker3, R9700 — ~3.4 s warm
-127.0.0.1:11434                  # kdocker2, iGPU  — ~6.7 s warm
+192.168.10.38:11434              # kdocker3, R9700 — ~3.4 s warm
+127.0.0.1:11434 backup           # kdocker2, iGPU  — ~6.7 s warm
+```
+
+The softer form, if you would rather both boxes served:
+
+```
+192.168.10.38:11434 weight=3     # three receipts here for every one there
+127.0.0.1:11434
 ```
 
 `least_conn` alone treats the boxes as equals, and they are not: measured on
@@ -106,6 +121,9 @@ is refused by `render.sh` rather than rendered, because an unknown word would
 otherwise only surface later as an `nginx -t` failure with the door left on
 its old config. At least one backend must be a primary — an upstream of
 nothing but `backup` servers does not load.
+
+Measured effect of the `backup` layout, corpus through the door: **10.2 s**
+for three receipts, against 50.5 s and 31.8 s when both boxes were primaries.
 
 `healthcheck.sh` reads only the address from these lines. Health and weight
 are separate questions: the check decides `down`, the flags decide the share
