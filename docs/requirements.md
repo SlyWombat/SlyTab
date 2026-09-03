@@ -187,7 +187,9 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
     over a 3.4 s box and a 6.7 s one still sends half the receipts to the slow
     one (#124).
   - *Queuing.* The API admits at most `LOCAL_LLM_PARALLEL` parses at once (one
-    per backend; flock slots, so a crashed parse frees its own). A scan that
+    per backend that is actually serving and actually concurrent — a `backup`
+    does not count, and neither does a second slot on an Ollama that runs
+    requests one at a time; flock slots, so a crashed parse frees its own). A scan that
     cannot start is **not refused and not held open** — the photo is stored,
     the receipt row exists, and the response carries `queued: {ticket,
     position, ahead, inFlight, slots, etaMs, retryAfterMs}` with `parsed:

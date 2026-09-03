@@ -40,10 +40,17 @@ is a door on **each** house box, so scanning no longer dies with kdocker2.
 The backends, and the ollama pinned on each — both are SlyTab's dependency
 now, not the house's free choice, and neither moves without a corpus run:
 
-| Backend | Hardware | ollama | Warm scan | Notes |
+| Backend | Hardware | ollama | Warm scan | Role |
 |---|---|---|---|---|
-| `192.168.10.38:11434` (kdocker3) | Radeon AI PRO R9700 32 GB | **0.33.3** (`ollama/ollama:rocm`, digest-pinned) | **3.4 s** | `weight=3` — it earns the larger share |
-| `127.0.0.1:11434` (kdocker2) | iGPU | **0.30.10** | 6.7 s | the original box; still correct, just slower |
+| kdocker3 | Radeon AI PRO R9700 32 GB | **0.33.3** (`ollama/ollama:rocm`, digest-pinned) | **3.4 s** | the only **primary** — it serves everything |
+| kdocker2 | iGPU | **0.30.10** | 6.7 s | **`backup`** — serves only when no primary is up |
+
+Each door lists both, its own Ollama on loopback and the other box over the
+LAN, so the addresses differ per door while the roles do not. The house set
+this on 2026-09-03 (house-network-ops#102): weighting was offered and it chose
+the stronger form, since a 3.4 s box and a 19 s cold prompt are not really
+peers. Measured effect, corpus through the door: **10.2 s** for three
+receipts, against 50.5 s and 31.8 s when both boxes were primaries.
 
 Both run model `qwen2.5vl:7b`, digest `5ced39dfa4ba`. The house falls back to
 `0.31.2-rocm` on kdocker3 if the corpus ever fails there — that is a house
@@ -62,13 +69,26 @@ the short version:
   (house-network-ops#48); without this every reboot cost the next receipt a
   cold load or a timeout.
 - **Concurrency** on the API side is `LOCAL_LLM_PARALLEL` (default 1): one
-  parse per backend at a time, the rest in a fair line with feedback
-  (FR-4.10). When a backend is added, raise it in `scripts/deploy-api.sh` and
-  redeploy.
+  parse per **serving** backend at a time, the rest in a fair line with
+  feedback (FR-4.10). Count serving backends, not listed ones — a `backup` is
+  not one until a primary falls over, which is why two listed backends still
+  means `1` today.
+
+  And check before raising it, because a backend does not have to be
+  concurrent. Measured through the door on 2026-09-03: two parses fired at the
+  same instant finished in 3.5 s and 6.7 s, three in 3.5 / 6.7 / 9.9 — Ollama
+  serves them strictly one at a time. Admitting more than it can run does not
+  make anyone's receipt faster; it moves the wait inside the model call, where
+  the queue cannot show a position or an ETA. The visible line is the point.
+  The test is one command: fire two parses at the same instant and compare
+  their two elapsed times. Equal means concurrent; doubled means a queue you
+  cannot see.
 - **Share** between backends is `weight=N` on the backends line, because the
   boxes are not equals: plain `least_conn` over a 3.4 s box and a 6.7 s box
   still sends half of every day's receipts to the slow one. `backup` keeps a
-  box out of rotation until nothing else is up.
+  box out of rotation until nothing else is up — which is what the house
+  actually chose for the iGPU, and it is the reason `LOCAL_LLM_PARALLEL` is 1
+  rather than 2.
 - **The pinned model tag lives in two places** that must agree: the door's
   `model` file (what "healthy" means) and `LOCAL_LLM_MODEL` in the deployed
   config (what the API asks for). Change both in the same breath.

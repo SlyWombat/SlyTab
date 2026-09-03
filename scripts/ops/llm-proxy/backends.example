@@ -11,7 +11,14 @@
 #   fail_timeout=Ns override the default sideline period (fail_timeout=20s)
 #
 # The boxes are not equals, so plain least_conn is not what you want: kdocker3
-# parses a receipt in ~3.4 s warm against kdocker2's ~6.7 s (#124). Weighted,
-# the fast box takes the share it can actually turn around.
-192.168.10.38:11434 weight=3     # kdocker3, Radeon AI PRO R9700 32 GB
-127.0.0.1:11434                  # kdocker2, iGPU — slower, still useful
+# parses a receipt in ~3.4 s warm against kdocker2's ~6.7 s (#124). This is
+# what the house runs as of 2026-09-03 — the fast box takes everything, the
+# slow one is there for when it cannot:
+192.168.10.38:11434              # kdocker3, Radeon AI PRO R9700 32 GB
+127.0.0.1:11434 backup           # kdocker2, iGPU — only when no primary is up
+#
+# `weight=3` on the first line instead of `backup` on the second is the softer
+# form: both serve, the fast one three times as often. Whichever you pick, set
+# LOCAL_LLM_PARALLEL to the number of backends that actually SERVE — a backup
+# is not one of them, and nor is a second slot on an Ollama that runs requests
+# one at a time (measured: it does).

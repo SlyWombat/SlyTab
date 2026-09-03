@@ -91,12 +91,19 @@ RECEIPT_ENGINE=auto
 LOCAL_LLM_URL=https://llm.slymega.com
 LOCAL_LLM_MODEL=qwen2.5vl:7b
 LOCAL_LLM_TIMEOUT=90
-# How many receipts may be at the reader at once: one per Ollama behind the
-# front door (#123). Raise it when a backend is added to the door's backends
-# file - scripts/ops/llm-proxy/README.md. (No backticks in this heredoc: it
-# is unquoted, so they would run as a command.)
-# Two since 2026-09-03 (#124): each door fans out to both house Ollamas.
-LOCAL_LLM_PARALLEL=2
+# How many receipts may be at the reader at once: one per Ollama that is
+# actually SERVING behind the front door (#123). Raise it when a backend is
+# added to the door's backends file - scripts/ops/llm-proxy/README.md. (No
+# backticks in this heredoc: it is unquoted, so they would run as a command.)
+#
+# One, not two, even though each door lists two backends (#124). The house
+# demoted the iGPU to 'backup' on 2026-09-03, so only the R9700 serves, and
+# measured through the door it takes receipts strictly one at a time: two at
+# once finished in 3.5 s and 6.7 s, three in 3.5 / 6.7 / 9.9. Admitting two
+# would not make them any faster - it would only move the second person's
+# wait inside the model call, where the queue cannot show them a position or
+# an ETA, which is the whole of FR-4.10.
+LOCAL_LLM_PARALLEL=1
 # The token the house-side front door expects (#119). Ollama has no auth of
 # its own and that port is on the public internet, so without this the
 # endpoint is open to anyone who finds it — which is why it was switched off.
