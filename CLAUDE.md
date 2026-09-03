@@ -49,11 +49,19 @@ https://electricrv.ca/slytab — live user data; treat with care.
   for a mobile-only fix. Use `Refs #N` for anything that needs a build,
   and close it once the build is actually out (2026-07-30 — this caught
   #87 and #95 and they had to be reopened).
+- **Mobile releases are ON HOLD (owner, 2026-09-03):** *"holding all mobile
+  releases, do the work, don't release."* This is a standing hold, not a
+  per-change question. Finish the mobile work, commit with `Refs #N`, note on
+  the issue that a mobile release is pending, leave it open — and **do not
+  ask each time whether to release**. The hold lifts only when the owner says
+  so explicitly and unprompted; until then the answer is already no. It is
+  still worth saying, once, in the session summary that a given fix will not
+  reach phones until a build.
 - **Release policy (owner, 2026-09-02):** **never submit a mobile build to
   the stores without the owner's explicit approval in the session.** Mobile
   fixes are BATCHED; the owner decides when a release goes out. So: finish
   the mobile work, commit with `Refs #N`, comment on the issue that a mobile
-  release is pending, leave it open, and ask. Do not push `ios-v*` /
+  release is pending, and leave it open. Do not push `ios-v*` /
   `android-v*` tags, run `play-api.py upload-aab`/`promote`, or create an
   App Store version or review submission on your own. (This replaced the
   2026-07-25 "when mobile work is done, release BOTH platforms" rule after a
