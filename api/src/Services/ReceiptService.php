@@ -174,11 +174,31 @@ final class ReceiptService
      */
     public static function eta(PDO $pdo): array
     {
+        // RECENT parses only, and few of them. The reader's speed is a property
+        // of the hardware behind the door, and that changes: on 2026-09-03 it
+        // moved from an iGPU to an R9700 and went from ~19 s a receipt to ~3.2 s
+        // (#124). A median over the last 20 of all time then promised people
+        // "about 19s" for something that took three, which is not feedback, it
+        // is a stale number wearing feedback's clothes.
+        //
+        // Ten samples inside a week: enough to be a median rather than a
+        // coin-flip, few enough that the estimate follows a hardware change
+        // within about five scans instead of ten. If the last week is too thin
+        // to say anything, fall back to the last ten whenever they happened —
+        // an old number beats no number, and `samples` tells the caller which
+        // it got.
+        $recent = "SELECT parse_ms FROM receipt_metrics
+                    WHERE outcome = 'parsed' AND parse_ms > 0
+                      AND created_at >= UTC_TIMESTAMP() - INTERVAL 7 DAY
+                 ORDER BY id DESC LIMIT 10";
+        $any = "SELECT parse_ms FROM receipt_metrics
+                 WHERE outcome = 'parsed' AND parse_ms > 0
+              ORDER BY id DESC LIMIT 10";
         try {
-            $stmt = $pdo->query(
-                "SELECT parse_ms FROM receipt_metrics WHERE outcome = 'parsed' ORDER BY id DESC LIMIT 20",
-            );
-            $ms = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+            $ms = array_map('intval', $pdo->query($recent)->fetchAll(PDO::FETCH_COLUMN));
+            if (count($ms) < 3) {
+                $ms = array_map('intval', $pdo->query($any)->fetchAll(PDO::FETCH_COLUMN));
+            }
         } catch (\Throwable) {
             $ms = [];
         }
@@ -488,39 +508,65 @@ final class ReceiptService
     }
 
     /**
-     * Was this reply a door saying no, and which door? Null when it is not a
-     * refusal at all and the caller should read the body as the model's answer.
+     * Nothing between us and the model answers in JSON when it says no — every
+     * layer has its own status code and its own error page — so a refusal read
+     * as a parse becomes a JsonException about a syntax error at offset 0,
+     * which names neither the layer nor the fix. This sorts them out and hands
+     * back the exception to throw, or null when the body really is the model's
+     * answer.
      *
-     * The two are worth telling apart because different people fix them in
-     * different places: an Access refusal is the service token in
-     * `LOCAL_LLM_CF_ACCESS_ID` / `LOCAL_LLM_CF_ACCESS_SECRET` (or the Access
-     * policy itself, which is house-side), a 401 is `LOCAL_LLM_TOKEN` against
-     * the front door's `token` file. Cloudflare answers 403 with an HTML page,
-     * or redirects to its login screen; the front door answers 401 with the
-     * single word `unauthorized`. Neither is JSON, so without this both would
-     * surface as a JsonException about a syntax error, which names nothing.
+     * Four kinds, because four different things are wrong and three different
+     * people fix them:
      *
-     * None of this text reaches the user: both mean the reader is shut, and
-     * `ScanAvailabilityService` probes the same doors with the same headers,
-     * so the scan buttons are already disabled before a photo is taken (#123).
-     * This is for `error_log` and whoever reads it.
+     *   403 / 30x  Cloudflare Access, before the request reaches the house at
+     *              all: the service token is wrong, expired or out of the
+     *              policy. HTML, or a redirect to its login page.
+     *   401        SlyTab's own front door (#119): `LOCAL_LLM_TOKEN` against
+     *              the door's `token` file. The single word `unauthorized`.
+     *   429 / 503  The door's rate limiter (`limit_req`, 60 r/m on one shared
+     *              bucket — every request arrives from cloudflared on
+     *              127.0.0.1, so it is one bucket for everybody). This is the
+     *              reader being BUSY, not broken, and the difference matters to
+     *              the person holding the phone: "try again in a moment" is
+     *              true and "enter the details manually" is not. Measured
+     *              2026-09-04: 12 requests at once, one came back 503.
+     *   502 / 504  No backend serving, or the gateway gave up. That is the
+     *              reader being offline; `unreachable` in the message is what
+     *              both callers match on to say so and offer Rescan.
+     *
+     * Only the busy case reaches the user as itself, as an ApiException the
+     * callers pass through. The rest are for `error_log` and whoever reads it:
+     * an auth failure shuts `ScanAvailabilityService` too, so the scan buttons
+     * are already disabled before a photo is taken (#123).
      */
-    private static function describeRefusal(int $code, string $raw): ?string
+    private static function refusal(int $code, string $raw): ?\Throwable
     {
         if ($code === 403 || ($code >= 300 && $code < 400)) {
-            return sprintf(
+            return new \RuntimeException(sprintf(
                 'Cloudflare Access refused the request (HTTP %d) — check %s / %s, '
                 . 'and that the service token is still in the Access policy',
                 $code,
                 'LOCAL_LLM_CF_ACCESS_ID',
                 'LOCAL_LLM_CF_ACCESS_SECRET',
-            );
+            ));
         }
         if ($code === 401 || trim($raw) === 'unauthorized') {
             // The front door answered, the token did not match. Worth its own
             // message: everything else here means "the model struggled", and
             // this means nobody has updated LOCAL_LLM_TOKEN.
-            return 'local model refused the token — check LOCAL_LLM_TOKEN';
+            return new \RuntimeException('local model refused the token — check LOCAL_LLM_TOKEN');
+        }
+        if ($code === 429 || $code === 503) {
+            return new ApiException(
+                'SCAN_BUSY',
+                'the receipt reader is busy right now — the photo is attached, try Rescan in a moment',
+                429,
+            );
+        }
+        if ($code === 502 || $code === 504) {
+            return new \RuntimeException(
+                "local model unreachable: the front door answered {$code} — no backend is serving",
+            );
         }
         return null;
     }
@@ -597,9 +643,9 @@ final class ReceiptService
         if ($raw === false) {
             throw new \RuntimeException("local model unreachable: {$err}");
         }
-        $refusal = self::describeRefusal($code, (string) $raw);
+        $refusal = self::refusal($code, (string) $raw);
         if ($refusal !== null) {
-            throw new \RuntimeException($refusal);
+            throw $refusal;
         }
         $resp = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
         if (isset($resp['error'])) {

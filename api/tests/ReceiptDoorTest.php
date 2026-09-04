@@ -7,6 +7,7 @@ namespace SlyTab\Tests;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use SlyTab\Services\ReceiptService;
+use SlyTab\Support\ApiException;
 
 /**
  * The doors in front of the model host, from SlyTab's side (#119, #124).
@@ -45,10 +46,17 @@ final class ReceiptDoorTest extends TestCase
         return $m->invoke(null, ...$args);
     }
 
+    private static function refusalMessage(int $code, string $body = ''): string
+    {
+        $e = self::call('refusal', $code, $body);
+        self::assertInstanceOf(\Throwable::class, $e, "expected a refusal for HTTP {$code}");
+        return $e->getMessage();
+    }
+
     /** Cloudflare answers 403 with an HTML page when the service token is wrong. */
     public function testAccessRefusalNamesTheAccessVariables(): void
     {
-        $msg = (string) self::call('describeRefusal', 403, '<!DOCTYPE html><title>Access denied</title>');
+        $msg = self::refusalMessage(403, '<!DOCTYPE html><title>Access denied</title>');
         self::assertStringContainsString('Cloudflare Access', $msg);
         self::assertStringContainsString('LOCAL_LLM_CF_ACCESS_ID', $msg);
         self::assertStringContainsString('LOCAL_LLM_CF_ACCESS_SECRET', $msg);
@@ -58,14 +66,13 @@ final class ReceiptDoorTest extends TestCase
     /** Without a service token at all it redirects to its own login page instead. */
     public function testAccessLoginRedirectIsAlsoAnAccessRefusal(): void
     {
-        $msg = (string) self::call('describeRefusal', 302, '');
-        self::assertStringContainsString('Cloudflare Access', $msg);
+        self::assertStringContainsString('Cloudflare Access', self::refusalMessage(302));
     }
 
     /** The front door answers 401 with one word; that one is LOCAL_LLM_TOKEN's. */
     public function testFrontDoorRefusalNamesTheBearerToken(): void
     {
-        $msg = (string) self::call('describeRefusal', 401, "unauthorized\n");
+        $msg = self::refusalMessage(401, "unauthorized\n");
         self::assertSame('local model refused the token — check LOCAL_LLM_TOKEN', $msg);
         self::assertStringNotContainsString('Cloudflare', $msg);
     }
@@ -77,15 +84,50 @@ final class ReceiptDoorTest extends TestCase
      */
     public function testTheDoorsBodyAloneStillReadsAsARefusal(): void
     {
-        self::assertNotNull(self::call('describeRefusal', 0, 'unauthorized'));
+        self::assertNotNull(self::call('refusal', 0, 'unauthorized'));
+    }
+
+    /**
+     * The door's rate limiter answers 503 (`limit_req`, one shared bucket for
+     * everybody). Busy is not broken, and the user-facing difference is real:
+     * "try Rescan in a moment" is true, "enter the details manually" is not.
+     * Before this it fell through to json_decode on nginx's HTML error page and
+     * surfaced as a syntax error at offset 0.
+     */
+    public function testTheDoorsRateLimitReadsAsBusyNotBroken(): void
+    {
+        foreach ([429, 503] as $code) {
+            $e = self::call('refusal', $code, '<html><head><title>503 Service Temporarily Unavailable</title>');
+            self::assertInstanceOf(ApiException::class, $e, "HTTP {$code}");
+            self::assertSame('SCAN_BUSY', $e->errorCode);
+            self::assertSame(429, $e->status);
+            self::assertStringContainsString('busy', $e->getMessage());
+            // It must NOT read as offline: that sends the user to Rescan later
+            // rather than in a moment, and it is not what happened.
+            self::assertStringNotContainsString('unreachable', $e->getMessage());
+        }
+    }
+
+    /**
+     * No backend serving is the door's 502. That IS offline, and both callers
+     * key the user-facing "try Rescan later" off the word `unreachable`.
+     */
+    public function testNoBackendServingReadsAsUnreachable(): void
+    {
+        foreach ([502, 504] as $code) {
+            $msg = self::refusalMessage($code, '<html><title>502 Bad Gateway</title>');
+            self::assertStringContainsString('unreachable', $msg, "HTTP {$code}");
+        }
     }
 
     /** A real answer is not a refusal, whatever it says inside. */
     public function testAModelAnswerIsNotARefusal(): void
     {
-        self::assertNull(self::call('describeRefusal', 200, '{"message":{"content":"{}"}}'));
-        self::assertNull(self::call('describeRefusal', 500, '{"error":"model is loading"}'));
-        self::assertNull(self::call('describeRefusal', 404, 'not found'));
+        self::assertNull(self::call('refusal', 200, '{"message":{"content":"{}"}}'));
+        // Ollama's own 500 carries {"error": ...}, which parseLocal reports with
+        // the model's words in it — better than anything this could invent.
+        self::assertNull(self::call('refusal', 500, '{"error":"model is loading"}'));
+        self::assertNull(self::call('refusal', 404, 'not found'));
     }
 
     /**
