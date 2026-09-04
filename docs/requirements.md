@@ -208,6 +208,19 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
     After four minutes in line it stops and shows the server's own message,
     with the photo attached and Rescan a tap away. A client from before the
     queue existed sees that same message in `parseError`.
+- **FR-4.11 (MUST)** **The owner is told when the service itself changes
+  scale** (owner, 2026-09-04). Two alerts, by email, from `OpsAlertService`:
+  more than **5** people waiting in the scan queue at once — which for a beta
+  this size is either a good day or a queue that has stopped draining — and
+  reaching **10** and **100** real signups. "Real" is the metrics dashboard's
+  own definition (`deleted_at IS NULL AND placeholder_at IS NULL AND
+  is_test = 0`); the two must never disagree about the number. A milestone
+  sends exactly once ever, the queue alert at most once an hour, both recorded
+  in `ops_alerts` — an alert that repeats is one that gets filtered away and
+  then missed. The queue alert is raised where the queue grows, not by a cron:
+  a line of six clears in about twenty seconds, so anything polling would
+  arrive after it had gone. Every path is best-effort and can never fail the
+  signup or the scan it runs inside.
 
 ### 2.5 Multi-currency
 

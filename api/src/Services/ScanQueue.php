@@ -98,6 +98,11 @@ final class ScanQueue
                 'INSERT INTO scan_queue (ticket, receipt_id, user_id, created_at, last_seen_at)
                  VALUES (?, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))',
             )->execute([$mine['ticket'], $receiptId, $userId]);
+            // A line this long is news for a beta this size (owner, 2026-09-04),
+            // and it has to be noticed HERE: the queue drains in seconds, so a
+            // cron would look after it had already gone. Throttled to one mail
+            // an hour, and best-effort — an alert never fails a scan.
+            (new OpsAlertService($this->pdo))->scanQueueDeep($this->waiting());
         } else {
             $this->pdo->prepare('UPDATE scan_queue SET last_seen_at = UTC_TIMESTAMP(3) WHERE ticket = ?')
                 ->execute([$mine['ticket']]);

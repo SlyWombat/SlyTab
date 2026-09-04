@@ -77,6 +77,10 @@ final class AuthService
             }
         }
 
+        // Both branches above are a signup: a new row, or a placeholder finally
+        // claiming its account. Best-effort, never in the way of registering.
+        (new OpsAlertService($this->pdo))->userMilestone();
+
         return ['token' => $this->createSession($id, $deviceLabel), 'user' => $this->userById($id)];
     }
 

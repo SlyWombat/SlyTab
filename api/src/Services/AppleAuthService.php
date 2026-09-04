@@ -174,6 +174,10 @@ class AppleAuthService
             'INSERT INTO oauth_identities (id, user_id, provider, subject, email) VALUES (?, ?, ?, ?, ?)',
         )->execute([Ulid::generate(), $userId, 'apple', $sub, $email]);
 
+        // A first sign-in with Apple is a signup, whether it made a new
+        // row above or claimed a placeholder. Best-effort; never blocks sign-in.
+        (new OpsAlertService($this->pdo))->userMilestone();
+
         return (string) $userId;
     }
 
