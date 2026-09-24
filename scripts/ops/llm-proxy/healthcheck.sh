@@ -8,7 +8,9 @@
 #      default qwen2.5vl:7b)? That is the definition of "available" the API uses
 #      (FR-4.8) — so a backend that fails it is rendered `down` in nginx and
 #      SlyTab never sends it a receipt.
-#   2. Is the model RESIDENT (/api/ps)? If not, load it with keep_alive -1.
+#   2. Is the model RESIDENT (/api/ps)? If not, load it with keep_alive -1 —
+#      unless the backends line says `nowarm` (a fallback on a machine that has
+#      other work: it keeps its memory until a receipt actually needs it).
 #      This is what survives a host reset: kdocker2 hard-reset ~11 times in the
 #      week before this was written (house-network-ops#48), and every reset
 #      unloaded the model so the next receipt paid ~20 s of cold start — or,
@@ -55,8 +57,10 @@ DETAILS=()
 while read -r line; do
   # A backends line may carry nginx flags after the address (`weight=3`,
   # `backup` — render.sh reads those). Health is about the address alone.
-  read -r addr _ <<<"${line%%#*}"
+  read -r addr flags <<<"${line%%#*}"
   [ -n "$addr" ] || continue
+  nowarm=false
+  case " $flags " in *" nowarm "*) nowarm=true ;; esac
   tags="$(curl -sS -m 4 "http://$addr/api/tags" 2>/dev/null)" || tags=""
   if [ -z "$tags" ]; then
     DETAILS+=("{\"backend\":\"$addr\",\"ok\":false,\"reason\":\"no answer\"}")
@@ -72,14 +76,14 @@ while read -r line; do
   resident=$(printf '%s' "$ps" | python3 -c "$PY_RESIDENT" "$MODEL" 2>/dev/null)
   is_resident="$(printf '%s\n' "$resident" | sed -n 1p)"
   others="$(printf '%s\n' "$resident" | sed -n 2p)"
-  if [ "$is_resident" != "yes" ]; then
+  if [ "$is_resident" != "yes" ] && [ "$nowarm" = false ]; then
     say "warming $MODEL on $addr (resident now: ${others:-nothing})"
     (curl -sS -m 180 -X POST "http://$addr/api/generate" \
        -H 'Content-Type: application/json' \
        -d "{\"model\":\"$MODEL\",\"prompt\":\"\",\"keep_alive\":-1}" >/dev/null 2>&1 || true) &
   fi
   HEALTHY+=("$addr")
-  DETAILS+=("{\"backend\":\"$addr\",\"ok\":true,\"resident\":$([ "$is_resident" = yes ] && echo true || echo false),\"loaded\":\"${others//\"/}\"}")
+  DETAILS+=("{\"backend\":\"$addr\",\"ok\":true,\"resident\":$([ "$is_resident" = yes ] && echo true || echo false),\"nowarm\":$nowarm,\"loaded\":\"${others//\"/}\"}")
 done < "$D/backends"
 
 NOW="$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')"

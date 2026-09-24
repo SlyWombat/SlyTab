@@ -9,6 +9,8 @@
 #   backup          only used when no primary is up
 #   max_fails=N     override the default passive check (max_fails=1)
 #   fail_timeout=Ns override the default sideline period (fail_timeout=20s)
+#   nowarm          healthcheck.sh does not preload the model there (a fallback
+#                   on a machine with other work); not passed to nginx
 #
 # The boxes are not equals, so plain least_conn is not what you want: kdocker3
 # parses a receipt in ~3.4 s warm against kdocker2's ~6.7 s (#124). This is
@@ -22,3 +24,8 @@
 # LOCAL_LLM_PARALLEL to the number of backends that actually SERVE — a backup
 # is not one of them, and nor is a second slot on an Ollama that runs requests
 # one at a time (measured: it does).
+#
+# A last-resort fallback on a machine that has other work (see README, "A
+# last-resort backup on a machine with other work"). Two backups share the load
+# by weight once no primary is up; nowarm leaves its memory alone until needed:
+#<shared-host>:11434 backup nowarm

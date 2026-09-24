@@ -20,7 +20,9 @@
 # receipt in ~3.4 s warm where kdocker2's iGPU takes ~6.7 s (#124), and plain
 # `least_conn` over the two would still send half of them to the slow one.
 # Recognised: `weight=N`, `backup`, and overrides of the per-server defaults
-# `max_fails=1` / `fail_timeout=20s`. Anything else is refused here rather than
+# `max_fails=1` / `fail_timeout=20s`. `nowarm` is accepted too but is not an
+# nginx flag: it is healthcheck.sh's (do not preload the model there) and is
+# left out of the upstream. Anything else is refused here rather than
 # rendered — an unknown word would only fail later, in `nginx -t`, with the
 # door left on its old config and no clue why.
 #
@@ -53,6 +55,7 @@ while read -r line; do
       weight=[1-9]|weight=[1-9][0-9])      weight=" $f" ;;
       max_fails=[0-9]|max_fails=[0-9][0-9]) max_fails="$f" ;;
       fail_timeout=[1-9]*[sm])             fail_timeout="$f" ;;
+      nowarm)                              ;;  # healthcheck.sh's flag, not nginx's
       *) echo "backends: $addr carries an unrecognised flag '$f' — refusing to render" >&2; exit 1 ;;
     esac
   done

@@ -33,7 +33,7 @@ longer dies with kdocker2. The API sends `CF-Access-Client-Id` /
 | `nginx.conf.tmpl` | the config, with `__TOKEN__` and `__UPSTREAMS__` placeholders |
 | `render.sh` | template + token + backends → `nginx.conf`; validates with `nginx -t` first; `--apply` reloads |
 | `healthcheck.sh` | the active check; renders `down` onto sick backends; warms the model; writes `status/status.json` |
-| `backends.example` | copy to `backends`: one `host:port` per line, plus optional `weight=N` / `backup` |
+| `backends.example` | copy to `backends`: one `host:port` per line, plus optional `weight=N` / `backup` / `nowarm` |
 | `docker-compose.yml` | `nginx:1.27-alpine`, host networking |
 
 On kdocker2 these live in `/data/stacks/slytab/llm-proxy/` (owner `dave`),
@@ -125,9 +125,43 @@ nothing but `backup` servers does not load.
 Measured effect of the `backup` layout, corpus through the door: **10.2 s**
 for three receipts, against 50.5 s and 31.8 s when both boxes were primaries.
 
-`healthcheck.sh` reads only the address from these lines. Health and weight
-are separate questions: the check decides `down`, the flags decide the share
-among whatever is up.
+`healthcheck.sh` reads only the address from these lines, plus the one flag
+that is its own, `nowarm` (below). Health and weight are separate questions:
+the check decides `down`, the flags decide the share among whatever is up.
+
+### A last-resort backup on a machine with other work
+
+A fallback does not have to be a dedicated box. A workstation or build machine
+that already runs Ollama can be listed as one more `backup`, so receipts keep
+reading when the primary is gone:
+
+```
+<primary-host>:11434  weight=3
+<second-host>:11434   backup weight=3    # the faster fallback
+<shared-host>:11434   backup nowarm      # last resort, a machine with other work
+```
+
+- **`backup`** keeps it out of rotation while any primary is up — which is the
+  whole point for a machine that is not there for SlyTab.
+- **nginx has only two tiers**, primaries and backups. Two backups share the
+  load between them when the primaries are gone; `weight=` on the backups sets
+  that share (above, three receipts to the faster fallback for every one on the
+  shared machine). There is no strict "try this backup before that one".
+- **`nowarm`** tells `healthcheck.sh` not to preload the model there. The check
+  still asks `/api/tags` every minute, so the machine is only used while it
+  advertises the pinned model — but it keeps its memory until a receipt actually
+  needs it, and the first receipt there pays the cold load (seconds, on a fast
+  disk; it has to fit inside `LOCAL_LLM_TIMEOUT`). The API's own requests carry
+  `keep_alive: -1`, so once that machine has read a receipt the model stays
+  resident until its Ollama restarts. `status.json` reports `"nowarm": true` for
+  such a backend. `render.sh` accepts the flag and leaves it out of nginx.
+- The same rules as any other backend apply: the pinned model pulled, the same
+  Ollama version (the corpus run decides that, not the version number), and
+  reachable from the door's host only — Ollama itself has no authentication.
+- A backup does not count towards `LOCAL_LLM_PARALLEL`.
+- Before it can take a receipt, run the corpus against it directly (step 4 of
+  "Adding a machine"); the weekly `model-corpus-check.sh` then covers it,
+  because it reads the same `backends` file.
 
 Do **not** list a backend on one of kdocker2's own macvlan addresses: the
 host cannot reach those (macvlan host isolation), so it would look dead for
