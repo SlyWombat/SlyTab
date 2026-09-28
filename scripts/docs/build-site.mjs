@@ -143,6 +143,7 @@ function page({ title, description, body, toc }) {
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <link rel="stylesheet" href="./guide.css">
+<script defer src="https://electricrv.ca/api/analytics/a.js"></script>
 </head>
 <body>
 <div class="wrap">

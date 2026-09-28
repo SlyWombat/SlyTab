@@ -18,8 +18,8 @@ they like — or never, and you still have accurate numbers.
 
 **It costs nothing? What's the catch?**
 There isn't one. SlyTab was built for the author's family and friends and is
-shared as-is. There is no premium tier, no ads, and no analytics collecting
-anything about you.
+shared as-is. There is no premium tier, no ads, and no tracking — the website
+counts page views, without cookies, and that is all.
 
 **I already use Splitwise. Can I bring my history?**
 Yes — import a group directly, mapping their members onto people you already
@@ -100,7 +100,10 @@ location *before* uploading, but only to guess which currency you paid in.
 **Do you track me?**
 No. There is no analytics SDK, no advertising identifier and no crash
 reporter in either app. The app talks to our server and, if you enable
-notifications, to Apple's or Google's push service.
+notifications, to Apple's or Google's push service. The website (including the
+web app) keeps a page-view count — which page, when, the referring site and
+screen width — with no cookies, no IP addresses and nobody else involved.
+Browsers set to Do Not Track or Global Privacy Control are not counted.
 
 **What if the scan gets a total wrong?**
 Correct it — the scan fills the form in, it does not have the final word.

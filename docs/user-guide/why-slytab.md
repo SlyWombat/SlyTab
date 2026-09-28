@@ -10,7 +10,7 @@ twice.
 |---|---|---|
 | **Exchange rates** | Fixed to the day of the expense and stored on it, so a balance never drifts on its own — nothing re-values your history in the background. Editing an expense re-reads the rate for that same date, and a rate you overrode by hand needs entering again. | Conversion is a bulk action over past expenses. Splitwise warns that it affects settled ones and can move other members' balances, and that new expenses need it re-running. |
 | **Receipt scanning** | Read by a model on our own server. No third-party vision service is configured, so receipts do not leave it. Location data is stripped from JPEG photos on arrival. | Usually a third-party vision API, with the photo leaving the vendor's control. |
-| **Tracking** | None. No analytics SDK, no advertising identifier, no crash reporter. The app talks to our server, and to Apple's or Google's push service if you turn notifications on. | Analytics and crash SDKs are close to universal. |
+| **Tracking** | None. No analytics SDK, no advertising identifier, no crash reporter. The app talks to our server, and to Apple's or Google's push service if you turn notifications on. The website counts page views without cookies or IP addresses. | Analytics and crash SDKs are close to universal. |
 | **Deleting your account** | In the app, in two taps. Your share of shared history is anonymised so nobody else's balance moves, and Apple is told to revoke the sign-in. | Often a web form or an email request. |
 | **Money handling** | Integer minor units with per-currency scale everywhere, so zero-decimal currencies like CLP and JPY are never a rounding accident. | Varies; floating-point money bugs are a common complaint. |
 | **Price** | Free. No premium tier holding a feature hostage. | Currency conversion, receipt scanning and charts are common paid upgrades. |
@@ -56,7 +56,8 @@ rather than glossing.
 - **Move money.** SlyTab records that a payment happened. You pay each other
   however you already do.
 - **Charge.** There is no paid tier, so no feature is withheld.
-- **Track you.** No analytics, so no dashboard of your behaviour exists to be
-  breached or sold.
+- **Track you.** The website counts page views — no cookies, no IP addresses,
+  nobody else involved — and that is all, so no dashboard of your behaviour
+  exists to be breached or sold.
 - **Guess.** Where a number is approximate — a total converted from several
   currencies — it is marked approximate rather than presented as exact.

@@ -405,7 +405,11 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 ## 3. Non-functional requirements
 
 - **NFR-1 Privacy.** No analytics/telemetry SDKs anywhere (family
-  convention). The only third-party calls are: Claude API (receipt images,
+  convention). The one exception is the shared first-party, cookie-free
+  page-view tag (`electricrv.ca/api/analytics/a.js`, #131) on the web SPA
+  shell and the static guide/marketing pages: path, referrer domain, screen
+  width and a daily-rotating hash; no cookies, no IPs, DNT/GPC honoured, and
+  disclosed on the privacy page. Not in the mobile apps. The only third-party calls are: Claude API (receipt images,
   server-side), frankfurter (currency codes only), and Expo push (device
   tokens). A privacy policy at `electricrv.ca/slytab/marketing/privacy/`
   names Electric RV (Ontario, Canada) as data controller, per PIPEDA.

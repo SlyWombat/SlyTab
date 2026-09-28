@@ -7,6 +7,7 @@
 <title>SlyTab — questions people actually ask</title>
 <meta name="description" content="Splitting unevenly, several currencies, receipts and privacy, leaving a group, deleting your account.">
 <link rel="stylesheet" href="../guide.css">
+<script defer src="https://electricrv.ca/api/analytics/a.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -33,7 +34,7 @@
 <h2 id="getting-started">Getting started</h2>
 <p><strong>Do I have to install anything?</strong> No. SlyTab runs in any browser and works on a phone that way. There are iPhone and Android apps if you prefer one, and the same account works everywhere.</p>
 <p><strong>Does everyone I split with need an account?</strong> No. You can add someone by email before they have signed up, and their share is tracked from that moment. They get an invitation and can join whenever they like — or never, and you still have accurate numbers.</p>
-<p><strong>It costs nothing? What's the catch?</strong> There isn't one. SlyTab was built for the author's family and friends and is shared as-is. There is no premium tier, no ads, and no analytics collecting anything about you.</p>
+<p><strong>It costs nothing? What's the catch?</strong> There isn't one. SlyTab was built for the author's family and friends and is shared as-is. There is no premium tier, no ads, and no tracking — the website counts page views, without cookies, and that is all.</p>
 <p><strong>I already use Splitwise. Can I bring my history?</strong> Yes — import a group directly, mapping their members onto people you already know. Anything already in SlyTab is skipped rather than duplicated.</p>
 <hr>
 <h2 id="money-and-splitting">Money and splitting</h2>
@@ -55,7 +56,7 @@
 <h2 id="receipts-and-privacy">Receipts and privacy</h2>
 <p><strong>Where do my receipt photos go?</strong> To our own server, which runs the model that reads them. No third-party vision service is configured, so receipts do not leave it.</p>
 <p><strong>Do you strip the location from my photos?</strong> Yes, from JPEG photos when they arrive. The phone app also reads the photo's location <em>before</em> uploading, but only to guess which currency you paid in.</p>
-<p><strong>Do you track me?</strong> No. There is no analytics SDK, no advertising identifier and no crash reporter in either app. The app talks to our server and, if you enable notifications, to Apple's or Google's push service.</p>
+<p><strong>Do you track me?</strong> No. There is no analytics SDK, no advertising identifier and no crash reporter in either app. The app talks to our server and, if you enable notifications, to Apple's or Google's push service. The website (including the web app) keeps a page-view count — which page, when, the referring site and screen width — with no cookies, no IP addresses and nobody else involved. Browsers set to Do Not Track or Global Privacy Control are not counted.</p>
 <p><strong>What if the scan gets a total wrong?</strong> Correct it — the scan fills the form in, it does not have the final word. Please report it with the photo attached, so it can be added to the test set.</p>
 <hr>
 <h2 id="groups-and-people">Groups and people</h2>
