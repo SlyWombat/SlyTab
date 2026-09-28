@@ -104,3 +104,20 @@ are zero-decimal). Never hand-roll money math — use `@slytab/core`
 (`parseAmount`, `minorToAmountString`, `convertAcrossMinor`,
 `normalizeParsedReceipt`, `receiptBill`, `assignedShares`) and
 `Support\Money` in PHP.
+
+## Node environment & where to run (machine setup, 2026-09-14)
+
+- **Node 24 LTS** (`engines.node >=22`). WSL Debian: nvm, `nvm use 24` (default is
+  24.21). Windows: `winget install OpenJS.NodeJS.LTS`.
+- **Pick one side per checkout — WSL or Windows, never both.** `node_modules` holds
+  OS-specific native binaries (esbuild/rolldown/vite) and `.bin` links; installing from
+  one side and running from the other breaks.
+- **Never `npm install` from WSL inside the OneDrive folder.** WSL creates Linux
+  symlinks in `node_modules/.bin` that OneDrive cannot sync (error Reason 334) → endless
+  upload retries and a OneDrive/Web Account Manager CPU loop. On 2026-09-14 this repo's
+  root `node_modules` was deleted to stop it.
+- **Recommended home:** WSL filesystem, e.g. `~/projects/SlyTab` (ext4: fast installs,
+  real symlinks). Back up via git remote, not OneDrive.
+- npm workspaces: restore with `npm ci` at the repo root (uses `package-lock.json`;
+  never commit `node_modules`). PHP tests need Docker (`slytab-php:dev`).
+- Playwright in WSL: `npx playwright install --with-deps chromium` once (needs sudo).
