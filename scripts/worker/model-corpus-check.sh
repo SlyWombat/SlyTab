@@ -22,7 +22,10 @@
 #      boxes and a receipt lands on whichever nginx picks, so a smoke alarm
 #      that only watched this host would miss half the receipts going wrong;
 #   3. optionally screens CANDIDATE models listed one per line in
-#      ~/.slytab-corpus-candidates — reported, never gating, on one backend;
+#      ~/.slytab-corpus-candidates — reported, never gating, on one backend.
+#      A candidate that FAILed is not re-screened until its digest or the
+#      Ollama version changes (#132: one stale FAIL cost ~4 min of CPU every
+#      Sunday for five weeks). State lives in ~/.slytab-corpus-state;
 #   4. mails the owner when the pinned model fails on ANY backend, with the
 #      test's own diagnosis (what was resident, how long it took) and which
 #      box it was. A pass is a log line.
@@ -37,6 +40,7 @@ HARNESS="${SLYTAB_TEST_HARNESS:-$HOME/slytab-test}"
 FRONT="/data/stacks/slytab/llm-proxy"
 MODEL="${LOCAL_LLM_MODEL:-$(cat "$FRONT/model" 2>/dev/null || echo qwen2.5vl:7b)}"
 CANDIDATES_FILE="$HOME/.slytab-corpus-candidates"
+CANDIDATE_STATE="${SLYTAB_CORPUS_STATE:-$HOME/.slytab-corpus-state}"  # model<TAB>digest<TAB>ollama<TAB>failed-on
 API_INTERNAL="https://electricrv.ca/slytab/api/internal"
 OWNER="dave@drscapital.com"
 say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] model-corpus: $*"; }
@@ -126,13 +130,37 @@ done
 # on — and each run loads a second model onto that GPU, which is the very
 # neighbour this test exists to catch.
 CAND_BE="${BACKENDS[0]}"
+cand_digest() { # cand_digest <model> -> the pulled tag's digest, empty if not pulled/unreachable
+  curl -s -m 5 "http://$CAND_BE/api/tags" 2>/dev/null | python3 -c '
+import json,sys
+for m in json.load(sys.stdin).get("models",[]):
+    if m.get("name") in (sys.argv[1], sys.argv[1]+":latest"): print(m.get("digest","")); break
+' "$1" 2>/dev/null
+}
 if [ -s "$CANDIDATES_FILE" ]; then
+  OLLAMA_VER="$(curl -s -m 5 "http://$CAND_BE/api/version" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version",""))' 2>/dev/null)"
+  touch "$CANDIDATE_STATE"
   while read -r cand; do
     cand="${cand%%#*}"; cand="$(echo "$cand" | tr -d '[:space:]')"
     [ -n "$cand" ] || continue
+    DIGEST="$(cand_digest "$cand")"
+    if [ -n "$DIGEST" ] && [ -n "$OLLAMA_VER" ]; then
+      PREV="$(awk -F'\t' -v m="$cand" -v d="$DIGEST" -v v="$OLLAMA_VER" '$1==m && $2==d && $3==v {print $4; exit}' "$CANDIDATE_STATE")"
+      if [ -n "$PREV" ]; then
+        say "candidate $cand: skipped: unchanged since FAIL on $PREV (digest ${DIGEST:0:12}, ollama $OLLAMA_VER)"
+        continue
+      fi
+    fi
     T0=$(date +%s)
     COUT="$(run_corpus "$cand" "$CAND_BE")"; CRC=$?
     say "candidate $cand on $CAND_BE: $([ $CRC -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - T0 ))s — $(printf '%s\n' "$COUT" | grep -E '^(OK|FAILURES|ERRORS|Tests:)' | tail -1)"
+    # Remember a FAIL against the exact digest + Ollama version it failed on;
+    # a PASS (or any change to either) clears it so the next run screens again.
+    if [ -n "$DIGEST" ] && [ -n "$OLLAMA_VER" ]; then
+      grep -v -P "^\Q$cand\E\t" "$CANDIDATE_STATE" > "$CANDIDATE_STATE.new" 2>/dev/null || true
+      [ "$CRC" -eq 0 ] || printf '%s\t%s\t%s\t%s\n' "$cand" "$DIGEST" "$OLLAMA_VER" "$(date -u +%F)" >> "$CANDIDATE_STATE.new"
+      mv "$CANDIDATE_STATE.new" "$CANDIDATE_STATE"
+    fi
   done < "$CANDIDATES_FILE"
 fi
 
