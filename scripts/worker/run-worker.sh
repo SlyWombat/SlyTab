@@ -1,11 +1,13 @@
 #!/bin/bash
 # One feedback-worker cycle (kdocker2). Intended for cron every 15 min:
-#   */15 * * * * /home/<user>/slytab-worker/Splitwise/scripts/worker/run-worker.sh
-# flock prevents overlapping cycles; everything logs to worker.log.
+#   */15 * * * * <worker-dir>/Splitwise/scripts/worker/run-worker.sh
+# flock prevents overlapping cycles; everything logs to worker.log
+# (in SLYTAB_LOG_DIR if set, else beside the checkout). Unlike the scheduled
+# watchers, this one needs a checkout it can write: it pulls, commits, pushes.
 set -e
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 LOCK="/tmp/slytab-worker.lock"
-LOG="$REPO/../worker.log"
+LOG="${SLYTAB_LOG_DIR:-$REPO/..}/worker.log"
 # cron has a minimal PATH — make user-local node/claude and docker visible.
 # ~/.local/bin (PC install) and ~/.npm-global/bin (kdocker2 install) both covered.
 export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"

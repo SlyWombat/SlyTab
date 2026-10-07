@@ -59,10 +59,25 @@ curl -so /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat $D/token)
 curl -s -H "Authorization: Bearer $(cat $D/token)" http://127.0.0.1:11435/slytab/status
 ```
 
-The health check runs from dave's crontab, every minute, logging **changes
-only** to `~/llm-health.log`:
+The health check runs every minute, logging **changes only** to
+`llm-health.log`. Today that is the admin login's crontab:
 
     * * * * * /data/stacks/slytab/llm-proxy/healthcheck.sh >> /home/dave/llm-health.log 2>&1
+
+It is ready to move to the `slytab` service account (#129, house-network-ops
+#130) whenever the house moves it: a systemd timer logging to
+`/var/log/slytab/llm-health.log`, with render.sh's two docker calls sent
+through a root helper by setting
+
+    SLYTAB_NGINX_TEST_CMD="sudo -n /usr/local/sbin/slytab-llmproxy-nginx test"      # candidate on stdin
+    SLYTAB_NGINX_RELOAD_CMD="sudo -n /usr/local/sbin/slytab-llmproxy-nginx reload"
+
+Unset, both are plain `docker`, exactly as before. Running as `slytab` it
+needs to read `token`, `backends`, `model` and the template, and to own
+`nginx.conf` (render.sh `chmod`s it) and `status/`.
+
+Deploying a change to these scripts means copying them from the repo into
+`/data/stacks/slytab/llm-proxy/`; the next minute's run picks them up.
 
 ## Adding a machine
 

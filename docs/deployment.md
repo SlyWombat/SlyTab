@@ -42,14 +42,63 @@ Browser ── https://electricrv.ca/slytab ────────────
 | Rathole configs | VM `/etc/rathole/server.toml` (systemd `rathole-server`); kdocker2 `/data/stacks/tesla-log/relay/client.toml` (`tesla-relay-client`, watched by `relay-guard.sh`) — both have `.bak` copies from before the SlyTab service was added |
 | OCI | Port 3307 opened in the VM's security list ("SlyTab MySQL tunnel" rules); backup of prior rules at kdocker2 `/tmp/sl-ingress-backup.json` |
 
-## Recurring jobs (cron on kdocker2 — always on, no cPanel cron needed)
+## Recurring jobs (kdocker2 — always on, no cPanel cron needed)
 
-```
-20 3 * * * /data/stacks/slytab/backup.sh       # mysqldump slytab_prod → backups/, 30-day retention
-10 6 * * * /data/stacks/slytab/fetch-rates.sh  # POST /api/internal/fetch-rates (ECB rates)
-```
+Five scheduled jobs, all UTC. They began as crontab lines of the admin login;
+house IT is moving them to systemd timers running as the unprivileged
+`slytab` service account (#129, house-network-ops#130) — same times, no
+docker group, no home under `/home`, logs in `/var/log/slytab/`.
 
-Secrets for both live in `/data/stacks/slytab/cron.env` (0600).
+| Job | When | Script (as installed) | Source in this repo |
+|---|---|---|---|
+| DB backup → `backups/`, 30-day retention | 03:20 daily | `/data/stacks/slytab/backup.sh` | `scripts/ops/kdocker2/backup.sh` |
+| ECB rate fetch | 06:10 daily | `/data/stacks/slytab/fetch-rates.sh` | `scripts/ops/kdocker2/fetch-rates.sh` |
+| Store-release watcher | 12:00 daily | `<worker>/Splitwise/scripts/worker/store-release-watch.sh` | same path |
+| LLM-proxy health check | every minute | `/data/stacks/slytab/llm-proxy/healthcheck.sh` | `scripts/ops/llm-proxy/` |
+| Receipt-corpus model check | Sun 13:00 | `<worker>/Splitwise/scripts/worker/model-corpus-check.sh` | same path |
+
+`<worker>` is `/opt/slytab-worker` once moved (a root-owned clone,
+read-only to `slytab`), `~/slytab-worker` before. Secrets for the first two
+live in `/data/stacks/slytab/cron.env` (0600, owned by whichever account runs
+them); the worker scripts read the clone's own `.env`.
+
+**Nothing in these scripts assumes a home directory.** Locations come from the
+environment, and every default is the pre-move location, so an unset variable
+means "as it always was":
+
+| Variable | Used by | Default |
+|---|---|---|
+| `SLYTAB_ENV_FILE` | every script that reads secrets | the checkout's `.env`; `cron.env` for backup/fetch-rates |
+| `SLYTAB_STATE_DIR` | store-release / TestFlight markers; corpus candidates + their FAIL memory | `scripts/worker/` (markers); `$HOME` (corpus) |
+| `SLYTAB_LOG_DIR` | fetch-rates.log, worker.log | `/data/stacks/slytab`; beside the checkout |
+| `SLYTAB_TEST_HARNESS` | corpus check (writable harness it rsyncs into) | `$HOME/slytab-test` |
+| `SLYTAB_CORPUS_CANDIDATES`, `SLYTAB_CORPUS_STATE` | corpus check | in `SLYTAB_STATE_DIR` |
+| `SLYTAB_LLM_PROXY_DIR` | corpus check (reads `model`, `backends`) | `/data/stacks/slytab/llm-proxy` |
+| `SLYTAB_BACKUP_DIR`, `SLYTAB_BACKUP_DAYS` | backup | `/data/stacks/slytab/backups`, 30 |
+
+The jobs that touch containers send every container call through one
+swappable command, so the service account can use a root helper instead of
+docker. Unset, each is today's plain `docker` call:
+
+| Variable | Job | Contract |
+|---|---|---|
+| `SLYTAB_DBDUMP_CMD` | backup | no arguments; plain SQL dump of `slytab_prod` on stdout. The backup's **only** database or container call |
+| `SLYTAB_CORPUS_DOCKER_CMD` | corpus check | `start-db` · `gateway` · `run <model> <timeout> <host:port>` (header of `model-corpus-check.sh`) |
+| `SLYTAB_NGINX_TEST_CMD`, `SLYTAB_NGINX_RELOAD_CMD` | health check (via `render.sh`) | candidate config on stdin → `nginx -t` status · `nginx -s reload` in `slytab-llm-proxy` |
+
+### Deploying a change to the scheduled jobs
+
+- **Worker scripts** (store-release watcher, corpus check): after the move,
+  the scheduled jobs run from the system copy, not from a checkout in anyone's
+  home. Update it with
+  `sudo git -C /opt/slytab-worker/Splitwise pull --ff-only origin main`
+  (`.env` and `secrets/` are gitignored, so a pull leaves them alone). The
+  feedback worker's own checkout (`run-worker.sh`, which pulls, commits and
+  pushes) is separate and needs to stay writable by the account that runs it.
+- **backup.sh / fetch-rates.sh**: `sudo install -o root -g root -m 0755
+  scripts/ops/kdocker2/{backup,fetch-rates}.sh /data/stacks/slytab/`.
+- **LLM-proxy scripts**: copy `healthcheck.sh` and `render.sh` into
+  `/data/stacks/slytab/llm-proxy/` (root-owned once moved).
 
 ## How to redeploy
 

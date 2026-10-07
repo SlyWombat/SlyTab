@@ -4,7 +4,7 @@
 # secret is ever echoed.
 set -e
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-ENVFILE="$REPO/.env"
+ENVFILE="${SLYTAB_ENV_FILE:-$REPO/.env}"
 set -a; source "$ENVFILE"; set +a
 if [ -z "$PROD_DB_PASS" ]; then echo "PROD_DB_PASS not set" >&2; exit 1; fi
 exec docker run --rm -i \

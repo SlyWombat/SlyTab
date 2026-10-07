@@ -27,11 +27,37 @@
 # door left on its old config and no clue why.
 #
 # Prints "changed" or "unchanged" so a cron caller can stay quiet.
+#
+# Its only two container calls can be handed to another command, for a caller
+# with no docker access of its own (#129). Each is word-split; unset means
+# today's plain docker:
+#   SLYTAB_NGINX_TEST_CMD    gets the candidate nginx.conf on STDIN and exits
+#                            with `nginx -t`'s status, run as nginx:1.27-alpine
+#                            with status/ mounted at /srv/status
+#   SLYTAB_NGINX_RELOAD_CMD  `nginx -s reload` inside slytab-llm-proxy
 set -euo pipefail
 D="$(cd "$(dirname "$0")" && pwd)"
 TOKEN_FILE="$D/token"
 BACKENDS_FILE="$D/backends"
 OUT="$D/nginx.conf"
+
+nginx_test() { # nginx_test <candidate-file>
+  if [ -n "${SLYTAB_NGINX_TEST_CMD:-}" ]; then
+    local -a cmd; read -r -a cmd <<<"$SLYTAB_NGINX_TEST_CMD"
+    "${cmd[@]}" < "$1"
+  else
+    docker run --rm -v "$1":/etc/nginx/nginx.conf:ro -v "$D/status":/srv/status:ro \
+      nginx:1.27-alpine nginx -t
+  fi
+}
+nginx_reload() {
+  if [ -n "${SLYTAB_NGINX_RELOAD_CMD:-}" ]; then
+    local -a cmd; read -r -a cmd <<<"$SLYTAB_NGINX_RELOAD_CMD"
+    "${cmd[@]}"
+  else
+    docker exec slytab-llm-proxy nginx -s reload
+  fi
+}
 
 [ -s "$TOKEN_FILE" ] || { echo "no token at $TOKEN_FILE — see README" >&2; exit 1; }
 [ -s "$BACKENDS_FILE" ] || { echo "no backends at $BACKENDS_FILE — one host:port per line" >&2; exit 1; }
@@ -93,13 +119,12 @@ fi
 
 # Validate in a throwaway container against the same image the door runs.
 mkdir -p "$D/status"
-docker run --rm -v "$NEW":/etc/nginx/nginx.conf:ro -v "$D/status":/srv/status:ro \
-  nginx:1.27-alpine nginx -t >/dev/null 2>&1 \
-  || { echo "rendered config is INVALID — leaving the running one alone" >&2; docker run --rm -v "$NEW":/etc/nginx/nginx.conf:ro nginx:1.27-alpine nginx -t >&2 || true; exit 1; }
+nginx_test "$NEW" >/dev/null 2>&1 \
+  || { echo "rendered config is INVALID — leaving the running one alone" >&2; nginx_test "$NEW" >&2 || true; exit 1; }
 
 cat "$NEW" > "$OUT"
 chmod 600 "$OUT"
 if [ "${1:-}" = "--apply" ]; then
-  docker exec slytab-llm-proxy nginx -s reload >/dev/null 2>&1 || echo "nginx reload failed — is slytab-llm-proxy running?" >&2
+  nginx_reload >/dev/null 2>&1 || echo "nginx reload failed — is slytab-llm-proxy running?" >&2
 fi
 echo changed

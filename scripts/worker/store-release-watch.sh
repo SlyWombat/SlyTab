@@ -12,7 +12,12 @@
 # on UTC, so 12:00 UTC lands at 08:00 EDT and 07:00 EST — a morning either
 # side of the clocks changing, rather than arriving overnight.
 #
-#   0 12 * * * $HOME/slytab-worker/Splitwise/scripts/worker/store-release-watch.sh >> $HOME/store-watch.log 2>&1
+#   0 12 * * * <worker-dir>/Splitwise/scripts/worker/store-release-watch.sh >> <log-dir>/store-watch.log 2>&1
+#
+# The checkout may be read-only to whoever runs this (#129), so nothing is
+# written inside it. From the environment, defaults being the pre-#129 places:
+#   SLYTAB_ENV_FILE   secrets file to source          (this checkout's .env)
+#   SLYTAB_STATE_DIR  where the marker file lives     (this script's directory)
 #
 # It notifies and stops there. It deliberately does NOT close issues or email
 # users: dropping the version pin needs a deploy and closing a report-tracked
@@ -24,21 +29,23 @@
 # Exit code is always 0, for cron. The log says what happened.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-ENVFILE="$REPO/.env"
+ENVFILE="${SLYTAB_ENV_FILE:-$REPO/.env}"
 # shellcheck disable=SC1090
 set -a; . "$ENVFILE"; set +a
+export SLYTAB_ENV_FILE="$ENVFILE"   # asc-api.sh reads the same file
 ASC="$REPO/scripts/ops/asc-api.sh"
 API_INTERNAL="https://electricrv.ca/slytab/api/internal"
 APP_ID="6794502588"
 PKG="ca.electricrv.slytab"
-MARKERS="$REPO/scripts/worker/.store-release-notified"
+MARKERS="${SLYTAB_STATE_DIR:-$REPO/scripts/worker}/.store-release-notified"
 OWNER="dave@drscapital.com"
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
 
 say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] store-release-watch: $*"; }
 
-mail_to() { # mail_to <address> <subject> <body>
-  curl -sS -m 30 -X POST -H "X-Admin-Token: ${PROD_MIGRATE_TOKEN:-}" -H 'Content-Type: application/json' \
+mail_to() { # mail_to <address> <subject> <body> — the token goes to curl on stdin, never in argv
+  printf 'header = "X-Admin-Token: %s"\n' "${PROD_MIGRATE_TOKEN:-}" | \
+  curl -sS -m 30 -K - -X POST -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"to":sys.argv[1],"subject":sys.argv[2],"body":sys.argv[3]}))' "$1" "$2" "$3")" \
     "$API_INTERNAL/send-mail" >/dev/null 2>&1 || true
 }

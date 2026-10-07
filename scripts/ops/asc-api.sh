@@ -3,7 +3,7 @@
 # e.g. asc-api.sh /v1/apps  — signs an ES256 JWT; key material never printed.
 set -e
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-ENVFILE="$REPO/.env"
+ENVFILE="${SLYTAB_ENV_FILE:-$REPO/.env}"
 set -a; source "$ENVFILE"; set +a
 KEYDIR="$REPO/se""crets"
 # Prefer the team key (AuthKey_*, works with provisioning) over the

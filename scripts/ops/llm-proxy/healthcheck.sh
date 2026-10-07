@@ -1,7 +1,11 @@
 #!/bin/bash
 # Active health for the receipt reader's backends (#123, requirement 2).
 #
-#   * * * * * /data/stacks/slytab/llm-proxy/healthcheck.sh >> $HOME/llm-health.log 2>&1
+#   * * * * * /data/stacks/slytab/llm-proxy/healthcheck.sh >> <log-dir>/llm-health.log 2>&1
+#
+# It writes only status/ and nginx.conf beside itself. Its container calls are
+# render.sh's, which SLYTAB_NGINX_TEST_CMD / SLYTAB_NGINX_RELOAD_CMD redirect
+# (see render.sh) for a caller without docker (#129); both pass through.
 #
 # For every backend in `backends`:
 #   1. Does /api/tags answer, and does it list the pinned model (`model` file,

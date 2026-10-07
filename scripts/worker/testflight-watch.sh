@@ -14,12 +14,15 @@
 # Exit codes: 0 always (cron-friendly); the log says what happened.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-ENVFILE="$REPO/.env"
+# SLYTAB_ENV_FILE / SLYTAB_STATE_DIR move the secrets file and the markers out
+# of the checkout (#129); the defaults are where they always were.
+ENVFILE="${SLYTAB_ENV_FILE:-$REPO/.env}"
 set -a; source "$ENVFILE"; set +a
+export SLYTAB_ENV_FILE="$ENVFILE"   # asc-api.sh and proddb.sh read the same file
 ASC="$REPO/scripts/ops/asc-api.sh"
 API_INTERNAL="https://electricrv.ca/slytab/api/internal"
 APP_ID="6794502588"
-MARKERS="$REPO/scripts/worker/.testflight-notified"
+MARKERS="${SLYTAB_STATE_DIR:-$REPO/scripts/worker}/.testflight-notified"
 TESTFLIGHT_URL="https://testflight.apple.com/join/eK9sm1jH"
 
 say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] testflight-watch: $*"; }
@@ -62,8 +65,9 @@ if grep -qx "$BUILD_ID" "$MARKERS" 2>/dev/null; then
   exit 0
 fi
 
-mail_to() { # mail_to <address> <subject> <body>
-  curl -sS -m 30 -X POST -H "X-Admin-Token: $PROD_MIGRATE_TOKEN" -H 'Content-Type: application/json' \
+mail_to() { # mail_to <address> <subject> <body> — the token goes to curl on stdin, never in argv
+  printf 'header = "X-Admin-Token: %s"\n' "$PROD_MIGRATE_TOKEN" | \
+  curl -sS -m 30 -K - -X POST -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"to":sys.argv[1],"subject":sys.argv[2],"body":sys.argv[3]}))' "$1" "$2" "$3")" \
     "$API_INTERNAL/send-mail" >/dev/null 2>&1 || true
 }

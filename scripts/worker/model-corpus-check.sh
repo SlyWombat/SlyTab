@@ -3,7 +3,31 @@
 # the owner when the model has quietly stopped reading money correctly (#123,
 # "test regularly as new models come out").
 #
-#   0 13 * * 0 /bin/bash /home/dave/slytab-worker/Splitwise/scripts/worker/model-corpus-check.sh >> /home/dave/model-corpus.log 2>&1
+#   0 13 * * 0 /bin/bash <worker-dir>/Splitwise/scripts/worker/model-corpus-check.sh >> <log-dir>/model-corpus.log 2>&1
+#
+# Where things live comes from the environment (#129: a job must not assume
+# whose login runs it). Every default is the pre-#129 location, so a run with
+# none of these set behaves exactly as before:
+#   SLYTAB_ENV_FILE           secrets file to source        (this checkout's .env)
+#   SLYTAB_TEST_HARNESS       writable test harness         ($HOME/slytab-test)
+#   SLYTAB_STATE_DIR          run-to-run state              ($HOME)
+#   SLYTAB_CORPUS_CANDIDATES  candidate model list          ($SLYTAB_STATE_DIR/.slytab-corpus-candidates)
+#   SLYTAB_CORPUS_STATE       candidate FAIL memory         ($SLYTAB_STATE_DIR/.slytab-corpus-state)
+#   SLYTAB_LLM_PROXY_DIR      the front door's directory    (/data/stacks/slytab/llm-proxy)
+#   SLYTAB_CORPUS_DOCKER_CMD  container calls, see below    (unset: plain docker)
+#
+# Container calls. Unset, the script runs docker itself. Set to a command
+# (word-split, e.g. "sudo -n /usr/local/sbin/slytab-corpus-docker"), every
+# container operation goes through it and the script runs no docker at all.
+# The command must accept exactly these three forms:
+#   <cmd> start-db      = docker start slytab-test-mysql
+#   <cmd> gateway       = docker network inspect slytab-test-net -f '{{(index .IPAM.Config 0).Gateway}}'
+#   <cmd> run <model> <timeout> <host:port>
+#                       = the docker run in run_corpus() below, with
+#                         LOCAL_LLM_MODEL=<model>, LOCAL_LLM_TIMEOUT=<timeout>,
+#                         LOCAL_LLM_URL=http://<host:port>, mounting its own
+#                         harness, which must be the same directory as
+#                         SLYTAB_TEST_HARNESS (this script rsyncs code into it).
 #
 # Why a schedule: a model change that still returns valid JSON produces wrong
 # NUMBERS, and wrong numbers become wrong money. That has happened three ways
@@ -13,8 +37,7 @@
 # docs/llm-requirements.md has the history; this is the smoke alarm.
 #
 # What it does, on kdocker2 (which has docker, the slytab-php:dev image, the
-# test harness in ~/slytab-test and the fixtures that are deliberately not
-# committed):
+# test harness and the fixtures that are deliberately not committed):
 #   1. syncs api/ from this checkout into the harness (never .env);
 #   2. runs ReceiptCorpusTest against the pinned model (`LOCAL_LLM_MODEL`, from
 #      the front door's `model` file) on EVERY backend in the door's `backends`
@@ -22,10 +45,10 @@
 #      boxes and a receipt lands on whichever nginx picks, so a smoke alarm
 #      that only watched this host would miss half the receipts going wrong;
 #   3. optionally screens CANDIDATE models listed one per line in
-#      ~/.slytab-corpus-candidates — reported, never gating, on one backend.
+#      the candidates file — reported, never gating, on one backend.
 #      A candidate that FAILed is not re-screened until its digest or the
 #      Ollama version changes (#132: one stale FAIL cost ~4 min of CPU every
-#      Sunday for five weeks). State lives in ~/.slytab-corpus-state;
+#      Sunday for five weeks). That memory is the state file;
 #   4. mails the owner when the pinned model fails on ANY backend, with the
 #      test's own diagnosis (what was resident, how long it took) and which
 #      box it was. A pass is a log line.
@@ -33,20 +56,23 @@
 # Notify-only. It changes no pin and restarts nothing.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-ENVFILE="$REPO/.env"
+ENVFILE="${SLYTAB_ENV_FILE:-$REPO/.env}"
 # shellcheck disable=SC1090
 set -a; . "$ENVFILE"; set +a
 HARNESS="${SLYTAB_TEST_HARNESS:-$HOME/slytab-test}"
-FRONT="/data/stacks/slytab/llm-proxy"
+STATE_DIR="${SLYTAB_STATE_DIR:-$HOME}"
+FRONT="${SLYTAB_LLM_PROXY_DIR:-/data/stacks/slytab/llm-proxy}"
 MODEL="${LOCAL_LLM_MODEL:-$(cat "$FRONT/model" 2>/dev/null || echo qwen2.5vl:7b)}"
-CANDIDATES_FILE="$HOME/.slytab-corpus-candidates"
-CANDIDATE_STATE="${SLYTAB_CORPUS_STATE:-$HOME/.slytab-corpus-state}"  # model<TAB>digest<TAB>ollama<TAB>failed-on
+CANDIDATES_FILE="${SLYTAB_CORPUS_CANDIDATES:-$STATE_DIR/.slytab-corpus-candidates}"
+CANDIDATE_STATE="${SLYTAB_CORPUS_STATE:-$STATE_DIR/.slytab-corpus-state}"  # model<TAB>digest<TAB>ollama<TAB>failed-on
+LLM_TIMEOUT="${LOCAL_LLM_TIMEOUT:-90}"
 API_INTERNAL="https://electricrv.ca/slytab/api/internal"
 OWNER="dave@drscapital.com"
 say() { echo "[$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T')] model-corpus: $*"; }
 
-mail_to() { # mail_to <subject> <body>
-  curl -sS -m 30 -X POST -H "X-Admin-Token: ${PROD_MIGRATE_TOKEN:-}" -H 'Content-Type: application/json' \
+mail_to() { # mail_to <subject> <body> — the token goes to curl on stdin, never in argv
+  printf 'header = "X-Admin-Token: %s"\n' "${PROD_MIGRATE_TOKEN:-}" | \
+  curl -sS -m 30 -K - -X POST -H 'Content-Type: application/json' \
     -d "$(python3 -c 'import json,sys;print(json.dumps({"to":sys.argv[1],"subject":sys.argv[2],"body":sys.argv[3]}))' "$OWNER" "$1" "$2")" \
     "$API_INTERNAL/send-mail" >/dev/null 2>&1 || true
 }
@@ -60,8 +86,20 @@ rsync -a --delete \
   "$REPO/api/src" "$REPO/api/tests" "$REPO/api/bin" "$REPO/api/composer.json" "$REPO/api/composer.lock" "$REPO/api/phpunit.xml" \
   "$HARNESS/api/" 2>/dev/null || { say "rsync into harness failed"; exit 0; }
 
-docker start slytab-test-mysql >/dev/null 2>&1 || true
-GW="$(docker network inspect slytab-test-net -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo 172.17.0.1)"
+# Every container call is in ctr_start_db, ctr_gateway and run_corpus — nowhere else.
+CTR=()
+[ -z "${SLYTAB_CORPUS_DOCKER_CMD:-}" ] || read -r -a CTR <<<"$SLYTAB_CORPUS_DOCKER_CMD"
+ctr_start_db() {
+  if [ "${#CTR[@]}" -gt 0 ]; then "${CTR[@]}" start-db; else docker start slytab-test-mysql; fi
+}
+ctr_gateway() {
+  if [ "${#CTR[@]}" -gt 0 ]; then "${CTR[@]}" gateway
+  else docker network inspect slytab-test-net -f '{{(index .IPAM.Config 0).Gateway}}'; fi
+}
+
+ctr_start_db >/dev/null 2>&1 || true
+GW="$(ctr_gateway 2>/dev/null)"
+[[ "$GW" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || GW=172.17.0.1
 
 # Every backend the door fans out to (#124). A line may carry nginx flags after
 # the address (`weight=3`, `backup`) — the address is the first field. This
@@ -77,12 +115,16 @@ done < <(cat "$FRONT/backends" 2>/dev/null || echo 127.0.0.1:11434)
 [ "${#BACKENDS[@]}" -gt 0 ] || BACKENDS=("$GW:11434")
 
 run_corpus() { # run_corpus <model> <host:port> -> prints phpunit tail, returns its exit code
+  if [ "${#CTR[@]}" -gt 0 ]; then
+    "${CTR[@]}" run "$1" "$LLM_TIMEOUT" "$2" 2>&1
+    return
+  fi
   docker run --rm --network slytab-test-net \
     -v "$HARNESS":/repo -w /repo/api \
     -e DB_HOST=slytab-test-mysql -e DB_PORT=3306 -e DB_NAME=slytab_test -e DB_TEST_NAME=slytab_test \
     -e DB_USER=slytab -e DB_PASS=ci \
     -e SESSION_PEPPER=ci-only -e INVITE_HMAC_KEY=ci-only -e MIGRATE_TOKEN=ci-only \
-    -e LOCAL_LLM_URL="http://$2" -e LOCAL_LLM_MODEL="$1" -e LOCAL_LLM_TIMEOUT="${LOCAL_LLM_TIMEOUT:-90}" \
+    -e LOCAL_LLM_URL="http://$2" -e LOCAL_LLM_MODEL="$1" -e LOCAL_LLM_TIMEOUT="$LLM_TIMEOUT" \
     slytab-php:dev sh -c "vendor/bin/phpunit --filter ReceiptCorpusTest --testdox 2>&1" 2>&1
 }
 
