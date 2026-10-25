@@ -64,17 +64,11 @@ MIGRATE_TOKEN=$PROD_MIGRATE_TOKEN
 DATA_DIR=$APPDIR/data
 APP_URL=https://electricrv.ca/slytab
 MAIL_FROM=SlyTab <noreply@electricrv.ca>
+# Only the ops-alert fallback address now (OpsAlertService).
 BUG_REPORT_EMAIL=${BUG_REPORT_EMAIL:-dave@drscapital.com}
-BUG_GITHUB_TOKEN=${BUG_GITHUB_TOKEN:-$(python3 -c "
-import os
-try:
-    for line in open(os.path.expanduser('~/.git-credentials')):
-        line = line.strip()
-        if 'github.com' in line and '@' in line:
-            cred = line.split('//', 1)[1].split('@', 1)[0]
-            print(cred.split(':', 1)[1] if ':' in cred else cred); break
-except OSError: pass")}
-BUG_GITHUB_REPO=${BUG_GITHUB_REPO:-SlyWombat/SlyTab}
+# #133: in-app reports go to the shared support intake as email. The GitHub
+# token the old report pipeline needed is no longer written to the server.
+SUPPORT_INTAKE_EMAIL=${SUPPORT_INTAKE_EMAIL:-support@electricrv.ca}
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
 APPLE_CLIENT_ID=${APPLE_CLIENT_ID:-}
 APPLE_BUNDLE_ID=ca.electricrv.slytab

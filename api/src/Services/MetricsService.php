@@ -55,7 +55,12 @@ final class MetricsService
 
         $settlements = $this->one('SELECT COUNT(*) FROM settlements');
         $receipts = $this->one('SELECT COUNT(*) FROM receipts');
-        $bugsOpen = $this->one("SELECT COUNT(*) FROM bug_reports WHERE status <> 'closed'");
+        // #133: a report is SlyTab's to worry about only until the support
+        // intake has it; after that its open/closed life is over there. So
+        // "open" here means waiting to be forwarded, which should be zero.
+        $bugsOpen = $this->one(
+            "SELECT COUNT(*) FROM bug_reports WHERE status <> 'closed' AND forwarded_at IS NULL",
+        );
         $push = $this->one(
             "SELECT COUNT(*) FROM push_tokens t
              WHERE t.user_id IN (SELECT id FROM users WHERE {$real})",

@@ -29,6 +29,9 @@
   .updated { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
   .card { background: var(--surface); border: 1px solid var(--outline);
     border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  details.answer { border-bottom: 1px solid var(--outline); padding: 10px 0; }
+  details.answer summary { cursor: pointer; color: var(--text); font-weight: 600; }
+  details.answer .body { color: var(--text2); margin-top: 6px; }
 </style>
 <script defer src="https://electricrv.ca/api/analytics/a.js"></script>
 </head>
@@ -43,31 +46,48 @@
     <p>We usually reply within a couple of days. If you are reporting a
     problem, the fastest route is in the app: <strong>Profile → Report a
     bug</strong>. That attaches your app version and a screenshot, which
-    saves a round of questions, and you will get an email when it is
-    fixed.</p>
+    saves a round of questions. You get a reference like
+    <em>ST-261025-AC34</em> straight away, and a reply from Electric RV
+    Support once a person has looked at it. Quote the reference if you
+    write to us about it.</p>
   </div>
 
   <h2>Common questions</h2>
+  <!-- The support system matches reports against these answers (#133).
+       The ids are its interface: add new ones freely, but never rename or
+       remove one without telling the support system first. The titles and
+       text can be reworded. -->
 
-  <p><strong>Someone added an expense and the split looks wrong.</strong>
-  Open the expense and check the split method — Equal, Exact, Shares or
-  percentage. Anyone in the group can edit an expense, and deleting one can
-  be undone straight afterwards from the Expenses tab.</p>
+  <details class="answer" id="a-split-wrong">
+    <summary>Someone added an expense and the split looks wrong.</summary>
+    <div class="body">Open the expense and check the split method — Equal,
+    Exact, Shares or percentage. Anyone in the group can edit an expense,
+    and deleting one can be undone straight afterwards from the Expenses
+    tab.</div>
+  </details>
 
-  <p><strong>Amounts in a currency I don't use.</strong> A group has its own
-  home currency, and each expense keeps the currency it was entered in.
-  Under each amount you will also see the value in your own currency at
-  today's rate. Set yours in Profile → Default currency.</p>
+  <details class="answer" id="a-other-currency">
+    <summary>Amounts in a currency I don't use.</summary>
+    <div class="body">A group has its own home currency, and each expense
+    keeps the currency it was entered in. Under each amount you will also
+    see the value in your own currency at today's rate. Set yours in
+    Profile → Default currency.</div>
+  </details>
 
-  <p><strong>Receipt scanning got the total wrong.</strong> Tap the amount
-  and correct it — the scan is a starting point, not the final word. Some
-  currencies use no decimal places, and a receipt printed as
-  <em>88.930</em> means 88,930, not 88.93. If it reads a receipt badly,
-  please report it with the photo attached so we can add it to our test
-  set.</p>
+  <details class="answer" id="a-scan-total-wrong">
+    <summary>Receipt scanning got the total wrong.</summary>
+    <div class="body">Tap the amount and correct it — the scan is a
+    starting point, not the final word. Some currencies use no decimal
+    places, and a receipt printed as <em>88.930</em> means 88,930, not
+    88.93. If it reads a receipt badly, please report it with the photo
+    attached so we can add it to our test set.</div>
+  </details>
 
-  <p><strong>I want to leave a group.</strong> Ask any member to remove you,
-  or email us and we will do it. A self-service option is on the way.</p>
+  <details class="answer" id="a-leave-group">
+    <summary>I want to leave a group.</summary>
+    <div class="body">Ask any member to remove you, or email us and we will
+    do it. A self-service option is on the way.</div>
+  </details>
 
   <h2>Your data</h2>
   <p>Receipt photos are parsed on our own server — they are not sent to any

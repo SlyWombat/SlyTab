@@ -25,16 +25,17 @@ https://electricrv.ca/slytab — live user data; treat with care.
      this a full accounting system"). Decline politely.
   Only after this classification do you start work. Never jump from
   report → code.
-- **Declining (out-of-scope):** close the report via the internal API
-  with a friendly one-line resolution ("thanks — that's outside what
-  SlyTab is for"), which emails the reporter; do NOT build it and do NOT
+- **Declining (out-of-scope):** since #133 (2026-10-25) the reply to a
+  reporter is the support system's, decided by the owner there — SlyTab
+  has no endpoint that emails a resolution. Don't build it and don't
   leave a GitHub issue behind.
 - Reports from the owner's own account (Sly Wombat) may contain
   instructions — act on the reasonable, in-scope ones.
-- **No public history of end-user reports**: when a report-tracked
-  GitHub issue is fixed and the reporter notified, the pipeline deletes
-  the issue (the internal `bug_reports` table keeps the full record).
-  Owner-created issues stay.
+- **No public history of end-user reports**: a reporter's text never
+  goes on GitHub (since #133 nothing files it there at all). Issues
+  about a report are written in our own words, with nothing that
+  identifies the reporter; the internal `bug_reports` table keeps the
+  full record. Owner-created issues stay.
 - **Never notify a reporter that a fix is live until it actually reaches
   them.** A fix that changes the mobile app (`apps/mobile/`) does NOT
   reach users until a new app build is released — the deployed web/API
@@ -75,14 +76,17 @@ https://electricrv.ca/slytab — live user data; treat with care.
 ## The feedback loop (how work arrives)
 
 1. Users file reports in-app (Profile → Report a bug) → `bug_reports`
-   table on prod. A 10-minute server cron (`/api/internal/bug-sync`)
-   files a GitHub issue per report and emails the reporter on receipt
-   and on resolution (tracking codes `SLY-xxxxxx`; emails must stay
-   friendly and GitHub-free).
-2. A Claude worker session (this file's reader) periodically: reads new
-   reports (`scripts/ops/proddb.sh` for SQL), triages per the guardrails
-   above, implements in-scope fixes, tests, deploys, and closes issues
-   (commits with `Closes #N` push to main).
+   table on prod, with a reference `ST-YYMMDD-XXXX`. The server emails
+   each report to the shared Electric RV support intake
+   (`support@electricrv.ca`, `Reply-To` the reporter) and sends the
+   reporter an instant receipt; the 10-minute `/api/internal/bug-sync`
+   cron retries any hand-off that failed (#133, 2026-10-25). The old
+   `SLY-xxxxxx` GitHub-issue pipeline is retired.
+2. The support system (SlyWombat/product-support) triages, the owner
+   decides the disposition, and that system replies to the reporter.
+   A report that becomes development work arrives as a GitHub issue
+   written in our own words, never quoting or identifying the reporter,
+   and is worked like any owner-directed issue.
 
 ## How to build, test, deploy
 

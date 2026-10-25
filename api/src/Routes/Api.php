@@ -143,19 +143,9 @@ final class Api
                 $rs->getBody()->write(file_get_contents($img['path']));
                 return $rs->withHeader('Content-Type', $img['mime']);
             });
-            // Issue #25: link a report to its GitHub issue / close + email reporter.
-            $g->patch('/bugs/{id}', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
-                $bugs->linkIssue($a['id'], (int) Http::str(Http::body($rq), 'issueNumber'));
-                return Http::json($rs, ['ok' => true]);
-            });
-            $g->post('/bugs/{id}/notify-closed', function (Request $rq, Response $rs, array $a) use ($bugs): Response {
-                $b = $rq->getParsedBody() ?? [];
-                $resolution = (string) ($b['resolution'] ?? '');
-                // Where the fix landed decides the "how to get it" line. Omit
-                // to fall back to the report-platform guess (legacy).
-                $needsAppUpdate = array_key_exists('needsAppUpdate', $b) ? (bool) $b['needsAppUpdate'] : null;
-                return Http::json($rs, $bugs->closeAndNotify($a['id'], $resolution, $needsAppUpdate));
-            });
+            // Issue #133: no link-issue or notify-closed here any more. The
+            // support intake owns the reply to the reporter, so nothing in
+            // SlyTab closes a report or emails a resolution.
             // Manual trigger for the feedback pipeline (cron runs it too).
             // It also sweeps queued notification emails: that keeps issue #77
             // working on the existing 10-minute cron instead of needing a new
@@ -169,7 +159,8 @@ final class Api
                 // saying which. Each reports for itself now.
                 $result = [];
                 foreach ([
-                    'reports' => fn(): array => $bugs->syncGithub(),
+                    // #133: retry any report the support intake did not take.
+                    'reports' => fn(): array => $bugs->forwardPending(),
                     'digestsSent' => fn(): int => $emailNotify->flushDigests(),
                     'reminders' => fn(): array => (new \SlyTab\Services\ReminderService($pdo, $balances))->sweep(),
                     // #111: diagnostics should not become an archive.

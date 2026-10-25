@@ -14,20 +14,40 @@ use SlyTab\Support\Ulid;
  * In-app bug reports (profile page): a comment plus an optional
  * screenshot, stored like receipts (image in DATA_DIR, row in MySQL) so
  * the reviewer sees both together via the token-guarded internal
- * endpoints. If BUG_REPORT_EMAIL is configured the owner also gets an
- * email heads-up; mail failure never loses the report.
+ * endpoints.
+ *
+ * Issue #133: each report is then handed to the shared Electric RV support
+ * intake as one email in the support convention (subject, header block,
+ * screenshot attached, Reply-To the reporter). That system triages it, a
+ * person decides, and it sends the reporter the reply. SlyTab no longer
+ * files GitHub issues for reports or emails a resolution; it sends only the
+ * instant receipt.
  */
 final class BugReportService
 {
     private const MAX_BYTES = 25 * 1024 * 1024;
     private const MIME_EXT = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
 
+    /**
+     * The support convention's reference alphabet: no B, I, O, S or Z and
+     * only the digits 3 4 6 7 9, so a reference read aloud or retyped from a
+     * phone screen survives. The same alphabet MegaPDF's MP- references use.
+     */
+    private const REF_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY34679';
+
+    /**
+     * A report the request itself failed to forward is retried by the cron,
+     * but only once it is this old, so the cron never forwards a report the
+     * request that created it is still forwarding.
+     */
+    private const RETRY_AFTER_SECONDS = 120;
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly Mailer $mailer = new Mailer(),
     ) {}
 
-    /** @return array{id:string, status:string} */
+    /** @return array{id:string, status:string, reference:string, tracking:string} */
     public function report(string $userId, string $message, string $context, ?UploadedFileInterface $image): array
     {
         $message = trim($message);
@@ -58,116 +78,199 @@ final class BugReportService
             $image->moveTo(self::dataDir() . '/' . $imagePath);
         }
 
-        $this->pdo->prepare(
-            'INSERT INTO bug_reports (id, user_id, message, context, image_path) VALUES (?, ?, ?, ?, ?)',
-        )->execute([$id, $userId, $message, $context === '' ? null : $context, $imagePath]);
+        // A clash is one in 390,625 per day; a fresh draw settles it.
+        for ($attempt = 0; ; $attempt++) {
+            $reference = self::newReference();
+            try {
+                $this->pdo->prepare(
+                    'INSERT INTO bug_reports (id, reference, user_id, message, context, image_path)
+                     VALUES (?, ?, ?, ?, ?, ?)',
+                )->execute([$id, $reference, $userId, $message, $context === '' ? null : $context, $imagePath]);
+                break;
+            } catch (\PDOException $e) {
+                if (($e->errorInfo[1] ?? 0) !== 1062 || $attempt >= 5) { // duplicate key
+                    throw $e;
+                }
+            }
+        }
+
+        $forwarded = $this->forward($id);
 
         $user = $this->pdo->prepare('SELECT display_name, email FROM users WHERE id = ?');
         $user->execute([$userId]);
-        $u = $user->fetch() ?: ['display_name' => 'unknown', 'email' => 'unknown'];
-
-        $notify = Env::get('BUG_REPORT_EMAIL');
-        if ($notify !== '') {
+        $u = $user->fetch() ?: ['display_name' => 'there', 'email' => ''];
+        if ($u['email'] !== '') {
+            // The one email SlyTab still sends about a report (owner, #133:
+            // keep the receipt). The answer comes from Electric RV Support.
             $this->mailer->dispatch(
-                $notify,
-                "SlyTab bug report from {$u['display_name']}",
-                "{$u['display_name']} <{$u['email']}> reports:\n\n{$message}\n\n"
-                . ($context !== '' ? "Context: {$context}\n" : '')
-                . ($imagePath !== null ? "Screenshot attached — review at /api/internal/bugs (report {$id}).\n" : '')
-                . "\nReport id: {$id}",
+                $u['email'],
+                "We got your SlyTab report — {$reference}",
+                "Hi {$u['display_name']},\n\n"
+                . "Thanks for the report! It's in as {$reference}.\n\n"
+                . "What you told us:\n"
+                . "  \"{$message}\"\n\n"
+                . "Electric RV Support will reply to this address once someone has\n"
+                . "looked at it. If you write to us about it, quote {$reference} so\n"
+                . "it joins this report.\n\n"
+                . "— The SlyTab team",
             );
         }
 
-        // Issues #25 + #34: immediate acknowledgment with a tracking number.
-        $tracking = self::trackingCode($id);
-        $this->mailer->dispatch(
-            $u['email'],
-            "We got your SlyTab report — {$tracking}",
-            "Hi {$u['display_name']},\n\n"
-            . "Thanks for the report! It's in our queue as {$tracking}.\n\n"
-            . "What you told us:\n"
-            . "  \"{$message}\"\n\n"
-            . "We'll email you at this address as soon as it's fixed, with what\n"
-            . "changed and how to pick up the update.\n\n"
-            . "— The SlyTab team",
-        );
-
-        return ['id' => $id, 'status' => 'new', 'tracking' => $tracking];
+        return [
+            'id' => $id,
+            'status' => $forwarded ? 'seen' : 'new',
+            'reference' => $reference,
+            // The apps show `tracking` after sending. Same value under the
+            // old key, so a phone on an older build shows the new reference.
+            'tracking' => $reference,
+        ];
     }
 
-    /** Issue #34: short human-friendly tracking ref, stable per report. */
-    public static function trackingCode(string $bugId): string
+    /** `ST-YYMMDD-XXXX`, dated in UTC. */
+    public static function newReference(): string
     {
-        return 'SLY-' . substr($bugId, -6);
-    }
-
-    /** Issue #25: remember which GitHub issue tracks this report. */
-    public function linkIssue(string $bugId, int $issueNumber): void
-    {
-        $this->pdo->prepare('UPDATE bug_reports SET issue_number = ? WHERE id = ?')
-            ->execute([$issueNumber, $bugId]);
+        $tail = '';
+        for ($i = 0; $i < 4; $i++) {
+            $tail .= self::REF_ALPHABET[random_int(0, strlen(self::REF_ALPHABET) - 1)];
+        }
+        return 'ST-' . gmdate('ymd') . '-' . $tail;
     }
 
     /**
-     * Issue #25: …and hears back again when the issue closes. Marks the
-     * report closed; safe to call once per report.
+     * Hand one report to the support intake. True once the MTA accepted it;
+     * the report is then marked forwarded and never sent again.
      */
-    /**
-     * @param bool|null $needsAppUpdate Whether the fix requires a new app
-     *   build to reach the user. true → tell them to update the app; false →
-     *   it's live now (server/web fix), just retry; null → guess from the
-     *   platform the report came from (legacy fallback). A server-side fix to
-     *   a mobile-reported issue is `false` — do not infer "update the app"
-     *   from the report context, or the email contradicts its own resolution.
-     */
-    public function closeAndNotify(string $bugId, string $resolution = '', ?bool $needsAppUpdate = null): array
+    public function forward(string $bugId): bool
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.message, b.status, b.context, b.issue_number, u.display_name, u.email
-             FROM bug_reports b JOIN users u ON u.id = b.user_id WHERE b.id = ?',
+            'SELECT b.reference, b.message, b.context, b.image_path, b.created_at, u.email
+             FROM bug_reports b JOIN users u ON u.id = b.user_id
+             WHERE b.id = ? AND b.forwarded_at IS NULL AND b.reference IS NOT NULL',
         );
         $stmt->execute([$bugId]);
         $r = $stmt->fetch();
         if (!$r) {
-            throw new ApiException('NOT_FOUND', 'bug report not found', 404);
+            return false;
         }
-        if ($r['status'] !== 'closed') {
-            $this->pdo->prepare("UPDATE bug_reports SET status = 'closed' WHERE id = ?")->execute([$bugId]);
-            $tracking = self::trackingCode($bugId);
-            // Issues #34 + #38: plain, friendly, and strictly user-facing —
-            // no GitHub links or internal jargon. Say what's fixed, then how
-            // to pick it up. The how-to follows where the FIX landed (server
-            // vs app), not where the report came from — a backend fix reaches
-            // a mobile reporter immediately with no update needed.
-            $howTo = match ($needsAppUpdate) {
-                true => 'Update to the latest version of the SlyTab app to get the fix.',
-                false => 'No app update needed — reopen SlyTab (or refresh your browser) and it should work now.',
-                null => str_starts_with((string) $r['context'], 'mobile')
-                    ? 'Update to the latest version of the SlyTab app to get the fix.'
-                    : 'Refresh SlyTab in your browser to get the fix (hold Shift and click reload if it looks unchanged).',
-            };
-            $this->mailer->dispatch(
-                $r['email'],
-                "Fixed: your SlyTab report {$tracking}",
-                "Hi {$r['display_name']},\n\n"
-                . "Good news — the issue you reported is fixed and live.\n\n"
-                . "Your report ({$tracking}):\n"
-                . "  \"{$r['message']}\"\n\n"
-                . ($resolution !== '' ? "What changed: {$resolution}\n\n" : '')
-                . "{$howTo}\n\n"
-                . "Thanks for helping make SlyTab better.\n\n"
-                . "— The SlyTab team",
-            );
+        $mail = self::supportMail($r);
+        $attachments = [];
+        if ($r['image_path'] !== null) {
+            $ext = pathinfo((string) $r['image_path'], PATHINFO_EXTENSION);
+            $attachments[] = [
+                'path' => self::dataDir() . '/' . $r['image_path'],
+                'name' => "{$r['reference']}-screenshot.{$ext}",
+                'mime' => array_search($ext, self::MIME_EXT, true) ?: 'image/jpeg',
+            ];
         }
-        return ['id' => $bugId, 'status' => 'closed'];
+        $ok = $this->mailer->dispatchMessage(
+            Env::get('SUPPORT_INTAKE_EMAIL', 'support@electricrv.ca'),
+            $mail['subject'],
+            $mail['body'],
+            $r['email'],
+            $attachments,
+        );
+        if (!$ok) {
+            // References only in the log, never the reporter's text.
+            error_log("bug-report: support intake refused {$r['reference']}; the cron will retry");
+            return false;
+        }
+        $this->pdo->prepare(
+            "UPDATE bug_reports SET forwarded_at = NOW(), status = 'seen' WHERE id = ? AND forwarded_at IS NULL",
+        )->execute([$bugId]);
+        return true;
+    }
+
+    /**
+     * Cron (bug-sync): forward every report the request could not. Safe to
+     * run repeatedly.
+     *
+     * @return array{forwarded:int, pending:int}
+     */
+    public function forwardPending(): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM bug_reports
+             WHERE forwarded_at IS NULL AND reference IS NOT NULL
+               AND created_at <= NOW() - INTERVAL ? SECOND
+             ORDER BY created_at',
+        );
+        $stmt->bindValue(1, self::RETRY_AFTER_SECONDS, PDO::PARAM_INT);
+        $stmt->execute();
+        $forwarded = 0;
+        $pending = 0;
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            $this->forward((string) $id) ? $forwarded++ : $pending++;
+        }
+        return ['forwarded' => $forwarded, 'pending' => $pending];
+    }
+
+    /**
+     * The email the support system parses (issue #133's convention, the
+     * same shape as MegaPDF's): a subject carrying the reference and the
+     * platform and kind tags, then a header block of `Label: value` lines,
+     * then the reporter's words. The subject tags are a hint; the
+     * `Reference:` line in the body is what a consumer falls back to.
+     *
+     * Kind is always `problem`: the only way in is "Report a bug".
+     *
+     * @param array{reference:string, message:string, context:?string, created_at:string} $r
+     * @return array{subject:string, body:string}
+     */
+    public static function supportMail(array $r): array
+    {
+        $device = self::device((string) ($r['context'] ?? ''));
+        $kind = 'problem';
+        $subject = "SlyTab support {$r['reference']}"
+            . ($device['platform'] !== null ? " [{$device['platform']}]" : '')
+            . " [{$kind}]";
+        $platformLine = $device['platform'] === null
+            ? '(not given)'
+            : $device['platform'] . ($device['os'] !== null ? " — {$device['os']}" : '');
+        $body = "Reference: {$r['reference']}\n"
+            . 'App: ' . ($device['app'] ?? 'SlyTab (version not given)') . "\n"
+            . "Platform: {$platformLine}\n"
+            . "Kind: {$kind}\n"
+            . "\n"
+            . "What happened\n"
+            . trim($r['message']) . "\n"
+            . "\n"
+            . "Sent from the app's Report a bug form at {$r['created_at']} UTC.\n"
+            . ($device['diagnostics'] !== '' ? "Diagnostics: {$device['diagnostics']}\n" : '');
+        return ['subject' => $subject, 'body' => $body];
+    }
+
+    /**
+     * Read the context string the apps attach:
+     *   mobile: `mobile ios 18.2 app v1.2.1(18) | recent API errors: …`
+     *   web:    `web <user agent>`
+     *
+     * @return array{platform:?string, os:?string, app:?string, diagnostics:string}
+     */
+    private static function device(string $context): array
+    {
+        if (preg_match('/^mobile (ios|android) (\S+) app v([^\s(]+)\(([^)]*)\)\s*(?:\|\s*(.*))?$/s', $context, $m) === 1) {
+            $platform = $m[1] === 'ios' ? 'iOS' : 'Android';
+            $build = $m[4] !== '' && $m[4] !== '?' ? " ({$m[4]})" : '';
+            return [
+                'platform' => $platform,
+                // Android reports its API level, not the release number.
+                'os' => $m[1] === 'ios' ? "iOS {$m[2]}" : "Android API {$m[2]}",
+                'app' => $m[3] === '?' ? null : "SlyTab {$m[3]}{$build}",
+                'diagnostics' => trim($m[5] ?? ''),
+            ];
+        }
+        if (str_starts_with($context, 'web')) {
+            return ['platform' => 'web', 'os' => null, 'app' => 'SlyTab web', 'diagnostics' => trim(substr($context, 3))];
+        }
+        return ['platform' => null, 'os' => null, 'app' => null, 'diagnostics' => $context];
     }
 
     /** Newest-first listing for the internal review endpoint. @return array<int,array<string,mixed>> */
     public function listRecent(int $limit = 50): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.id, b.message, b.context, b.image_path IS NOT NULL AS has_image, b.status,
-                    b.issue_number, b.created_at, u.display_name, u.email
+            'SELECT b.id, b.reference, b.message, b.context, b.image_path IS NOT NULL AS has_image, b.status,
+                    b.issue_number, b.forwarded_at, b.created_at, u.display_name, u.email
              FROM bug_reports b JOIN users u ON u.id = b.user_id
              ORDER BY b.created_at DESC LIMIT ?',
         );
@@ -175,130 +278,16 @@ final class BugReportService
         $stmt->execute();
         return array_map(static fn(array $r): array => [
             'id' => $r['id'],
+            'reference' => $r['reference'],
             'from' => ['displayName' => $r['display_name'], 'email' => $r['email']],
             'message' => $r['message'],
             'context' => $r['context'],
             'hasImage' => (bool) $r['has_image'],
             'status' => $r['status'],
+            'forwardedAt' => $r['forwarded_at'],
             'issueNumber' => $r['issue_number'] === null ? null : (int) $r['issue_number'],
             'createdAt' => $r['created_at'],
         ], $stmt->fetchAll());
-    }
-
-    /**
-     * Durable feedback pipeline (server cron / internal endpoint): file a
-     * GitHub issue for every new report, and email the reporter when a
-     * previously filed issue has been closed. Safe to run repeatedly.
-     * $http is injectable for tests: fn(method, url, ?body) => array.
-     *
-     * @param ?callable(string,string,?array):array $http
-     * @return array{filed:int, notified:int, skipped:string}
-     */
-    public function syncGithub(?callable $http = null): array
-    {
-        $token = Env::get('BUG_GITHUB_TOKEN');
-        $repo = Env::get('BUG_GITHUB_REPO', 'SlyWombat/SlyTab');
-        if ($token === '' && $http === null) {
-            return ['filed' => 0, 'notified' => 0, 'skipped' => 'BUG_GITHUB_TOKEN not configured'];
-        }
-        $http ??= static function (string $method, string $url, ?array $body) use ($token): array {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_CUSTOMREQUEST => $method,
-                CURLOPT_TIMEOUT => 30,
-                CURLOPT_USERAGENT => 'slytab-bug-sync',
-                CURLOPT_HTTPHEADER => [
-                    "Authorization: Bearer {$token}",
-                    'Accept: application/vnd.github+json',
-                    'Content-Type: application/json',
-                ],
-            ]);
-            if ($body !== null) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR));
-            }
-            $raw = curl_exec($ch);
-            curl_close($ch);
-            return is_string($raw) ? (json_decode($raw, true) ?: []) : [];
-        };
-
-        $filed = 0;
-        $new = $this->pdo->query(
-            "SELECT b.id, b.message, b.context, b.image_path IS NOT NULL AS has_image, b.created_at,
-                    u.display_name
-             FROM bug_reports b JOIN users u ON u.id = b.user_id
-             WHERE b.status = 'new' ORDER BY b.created_at",
-        )->fetchAll();
-        foreach ($new as $r) {
-            $firstLine = trim(explode("\n", trim($r['message']))[0]);
-            $title = mb_strlen($firstLine) > 70 ? mb_substr($firstLine, 0, 67) . '...' : $firstLine;
-            $quoted = '> ' . str_replace("\n", "\n> ", trim($r['message']));
-            $body = "**In-app bug report** from **{$r['display_name']}** at {$r['created_at']} UTC (report `{$r['id']}`).\n\n"
-                . "{$quoted}\n\n"
-                . '- Context: `' . ($r['context'] ?: 'none') . "`\n"
-                . '- Screenshot: ' . ($r['has_image']
-                    ? "attached — review with `GET /api/internal/bugs/{$r['id']}/image` (X-Admin-Token)"
-                    : 'none') . "\n\n"
-                . "Filed automatically by the server-side feedback pipeline (FR-10.3).";
-            $resp = $http('POST', "https://api.github.com/repos/{$repo}/issues",
-                ['title' => "Bug report: {$title}", 'body' => $body, 'labels' => ['bug']]);
-            if (isset($resp['number'])) {
-                $this->pdo->prepare("UPDATE bug_reports SET status = 'seen', issue_number = ? WHERE id = ?")
-                    ->execute([(int) $resp['number'], $r['id']]);
-                $filed++;
-            }
-        }
-
-        $notified = 0;
-        $open = $this->pdo->query(
-            "SELECT id, issue_number FROM bug_reports
-             WHERE issue_number IS NOT NULL AND status <> 'closed'",
-        )->fetchAll();
-        foreach ($open as $r) {
-            $issue = $http('GET', "https://api.github.com/repos/{$repo}/issues/{$r['issue_number']}", null);
-            if (($issue['state'] ?? '') === 'closed') {
-                // No resolution text here — the email stays link-free and
-                // human (issue #38); a hand-written summary can still be
-                // passed via the notify-closed endpoint when closing manually.
-                $this->closeAndNotify($r['id'], '');
-                $notified++;
-                // Owner policy (issue #38 follow-on): once fixed, end-user
-                // reports leave no public trace — delete the GitHub issue.
-                // The full record stays in bug_reports.
-                if (isset($issue['node_id'])) {
-                    $http('POST', 'https://api.github.com/graphql', [
-                        'query' => 'mutation($id: ID!) { deleteIssue(input: {issueId: $id}) { clientMutationId } }',
-                        'variables' => ['id' => $issue['node_id']],
-                    ]);
-                }
-            }
-        }
-        // A report closed through the API — the notify-closed endpoint, i.e.
-        // the normal route when a fix is deployed — never passed through the
-        // loop above, because that only looks at reports still open. So its
-        // tracking issue stayed on GitHub forever, quietly contradicting the
-        // rule that fixed end-user reports leave no public trace. Sweep them.
-        $orphans = 0;
-        $closed = $this->pdo->query(
-            "SELECT id, issue_number FROM bug_reports
-             WHERE issue_number IS NOT NULL AND status = 'closed'",
-        )->fetchAll();
-        foreach ($closed as $r) {
-            $issue = $http('GET', "https://api.github.com/repos/{$repo}/issues/{$r['issue_number']}", null);
-            if (isset($issue['node_id'])) {
-                $http('POST', 'https://api.github.com/graphql', [
-                    'query' => 'mutation($id: ID!) { deleteIssue(input: {issueId: $id}) { clientMutationId } }',
-                    'variables' => ['id' => $issue['node_id']],
-                ]);
-                $orphans++;
-            }
-            // Forget the number either way: if the issue is already gone we
-            // must not ask GitHub about it again on every cron run.
-            $this->pdo->prepare('UPDATE bug_reports SET issue_number = NULL WHERE id = ?')
-                ->execute([$r['id']]);
-        }
-
-        return ['filed' => $filed, 'notified' => $notified, 'deleted' => $orphans, 'skipped' => ''];
     }
 
     /** @return array{path:string, mime:string} */

@@ -808,6 +808,10 @@ session's balances and expenses linger in `localStorage` and in
   (`:266-273`). The window is short and the deletion is deliberate policy, but
   the content is world-readable while it exists, and users are not told this
   when they file a report.
+  **Resolved by #133 (2026-10-25):** `syncGithub` is gone. A report now goes
+  only to the Electric RV support mailbox by email; nothing about it is
+  written to GitHub, and the privacy policy's `#support-triage` section says
+  where it goes. The server config no longer carries a GitHub token.
 
 ---
 
@@ -1207,8 +1211,8 @@ access — in the route body, or in the service method the route delegates to.
 
 All guarded by one group middleware: `hash_equals(MIGRATE_TOKEN, X-Admin-Token)`
 at `Api.php:231-237`, failing closed via `Env::require`. Routes: `GET /bugs`,
-`GET /bugs/{id}/image`, `PATCH /bugs/{id}`, `POST /bugs/{id}/notify-closed`,
-`POST /bug-sync`, `GET /metrics`, `POST /reminders`, `POST /notify-digest`,
+`GET /bugs/{id}/image`, `POST /bug-sync` (`PATCH /bugs/{id}` and
+`POST /bugs/{id}/notify-closed` were removed by #133), `GET /metrics`, `POST /reminders`, `POST /notify-digest`,
 `POST /send-mail`, `POST /migrate`, `POST /fetch-rates`,
 `GET /receipts/prunable`, `GET /metrics/timing`, `GET /metrics/receipts`,
 `POST /mail-test`. ✅

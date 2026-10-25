@@ -225,12 +225,10 @@ fi
 
 # --- Both shipped? close reports + notify owner -------------------------------
 if [ "$(get "['android']['stage']")" = "done" ] && [ "$(get "['ios']['stage']")" = "review" ]; then
-  MSG="This is fixed in SlyTab v$VER, which has now been released."
-  for R in $(python3 -c "import json;print(' '.join(json.load(open('$STATE'))['reports']))"); do
-    curl -sS -m 30 -X POST -H "X-Admin-Token: $PROD_MIGRATE_TOKEN" -H 'Content-Type: application/json' \
-      -d "$(python3 -c 'import json,sys;print(json.dumps({"resolution":sys.argv[1],"needsAppUpdate":True}))' "$MSG")" \
-      "$INTERNAL/bugs/$R/notify-closed" >/dev/null && say "closed report $R" || say "close $R failed"
-  done
-  owner_mail "SlyTab v$VER released (auto)" "Android APK is live on the download link; iOS build v$VER is in TestFlight beta review. Linked reports were closed and reporters emailed."
+  # #133: SlyTab no longer emails reporters. The support intake owns that
+  # reply, so the owner is told which reports this release carries and
+  # decides the disposition there.
+  REPORTS=$(python3 -c "import json;print(', '.join(json.load(open('$STATE'))['reports']) or 'none')")
+  owner_mail "SlyTab v$VER released (auto)" "Android APK is live on the download link; iOS build v$VER is in TestFlight beta review. Reports this release fixes: $REPORTS. Their replies go out from the support system, not from here."
   rm -f "$STATE"; say "release v$VER complete"
 fi

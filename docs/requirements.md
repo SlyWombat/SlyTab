@@ -331,19 +331,30 @@ v1.0 if time allows, **MAY** = post-1.0 candidate.
 - **FR-10.1 (MUST)** Any signed-in user can report a bug from their
   profile page: a free-text comment plus an optional screenshot. Reports
   are stored server-side (screenshot alongside the comment, like receipt
-  images) and reviewable together via the token-guarded internal API;
-  the owner is notified by email when configured (`BUG_REPORT_EMAIL`).
+  images) and reviewable together via the token-guarded internal API.
   Rate-limited (10/day/user) like other upload endpoints.
-- **FR-10.2 (MUST)** The reporter is kept in the loop by email (issue
-  #25): an acknowledgment when the report lands, and a resolution note
-  when the tracking issue closes (reports carry their GitHub issue
-  number; the close notification includes the issue link).
-- **FR-10.3 (MUST)** The feedback pipeline is durable — it runs
-  server-side, independent of any dev session: a 10-minute cron on the
-  host calls `POST /api/internal/bug-sync`, which files a GitHub issue
-  for every new report and sends the FR-10.2 resolution email once an
-  issue closes. Requires `BUG_GITHUB_TOKEN` (+ `BUG_GITHUB_REPO`) in the
-  server config; logs to `data/bug-sync.log`.
+- **FR-10.2 (MUST)** Each report goes to the shared Electric RV support
+  intake (issue #133), which triages it; a person decides the
+  disposition and that system sends the reporter the one reply saying
+  what was decided. SlyTab mints a reference `ST-YYMMDD-XXXX` (UTC date;
+  `XXXX` from `ACDEFGHJKLMNPQRTUVWXY34679`) when the report is created,
+  shows it in the app, and emails the reporter an instant receipt
+  quoting it. SlyTab sends no resolution email and files no GitHub issue
+  for a report; development issues are written by us, in our own words,
+  never quoting or identifying the reporter.
+- **FR-10.3 (MUST)** The hand-off is one email to `SUPPORT_INTAKE_EMAIL`
+  (default `support@electricrv.ca`), `Reply-To` the reporter's account
+  email, screenshot attached, in the support convention:
+  subject `SlyTab support ST-… [<platform>] [problem]`, then a body that
+  starts `Reference:`, `App:`, `Platform:`, `Kind:` lines, a blank line,
+  `What happened` and the reporter's text, then diagnostics. Platforms are
+  `iOS`, `Android`, `web` (read from the client's context string); kinds
+  are `problem` / `question` / `request`, and the in-app form is always
+  `problem`. A hand-off the MTA refuses is retried by the 10-minute
+  `POST /api/internal/bug-sync` cron (reports at least two minutes old,
+  never twice). The answers the support system can suggest are the
+  `<details class="answer" id="a-…">` entries on `marketing/support/`;
+  their ids are an interface and are never renamed or removed silently.
 
 ### 2.11 My expenses (cross-group)
 

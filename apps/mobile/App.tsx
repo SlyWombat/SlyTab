@@ -1356,8 +1356,8 @@ function BugReportSection() {
   if (sent !== null) {
     return (
       <Text style={[s.meta, { textAlign: 'center', paddingVertical: 8 }]}>
-        Thanks — your report is in as {sent}. We read every one, and
-        you'll get an email when it's fixed. 🐛✓
+        Thanks — your report is in as {sent}. A person reads every one,
+        and Electric RV Support will email you with what happens next. 🐛✓
       </Text>
     );
   }
